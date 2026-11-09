@@ -9,6 +9,7 @@ import { useSignInFlow } from '@/components/auth/SignInFlow'
 import { CodeStep } from '@/components/auth/steps/CodeStep'
 import { EmailStep } from '@/components/auth/steps/EmailStep'
 import { PhoneStep } from '@/components/auth/steps/PhoneStep'
+import { ServerStep } from '@/components/auth/steps/ServerStep'
 import { StartStep, type StartLayout } from '@/components/auth/steps/StartStep'
 import { ForemanOrb } from '@/components/orb/ForemanOrb'
 import { GlassButton } from '@/components/ui/GlassButton'
@@ -112,6 +113,7 @@ export function SignInSheet({ startLayout = 'phone-first' }: { startLayout?: Sta
                                 {step.name === 'start' && <StartStep layout={startLayout} />}
                                 {step.name === 'phone' && <PhoneStep />}
                                 {step.name === 'email' && <EmailStep />}
+                                {step.name === 'server' && <ServerStep />}
                                 {step.name === 'code' && <CodeStep step={step} />}
                             </Animated.View>
                         </View>

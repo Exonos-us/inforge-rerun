@@ -1,0 +1,35 @@
+---
+title: "iPhone app"
+description: "Use the Rerun app for iPhone with your own install."
+---
+
+The Rerun app from the App Store works with your install. It asks your app for everything else it needs, so you only type one address.
+
+## Connect
+
+<Steps>
+  <Step title="Open the app">
+    Install Rerun from the App Store and open it. On the sign-in screen, tap **Use your own server**.
+  </Step>
+  <Step title="Type your address">
+    Type the address you open Rerun at in a browser, for example `rerun.example.com` or `192.168.1.20:3000`, then tap **Connect**. The app reopens on your install.
+  </Step>
+  <Step title="Sign in">
+    Tap **Continue with email**. The code goes out the way your install sends them, see [Sign-in](/self-host/configuration#sign-in).
+  </Step>
+</Steps>
+
+To go back to Rerun Cloud, open **Preferences**, tap **Server**, then **Leave**. You are signed out first.
+
+## What the phone needs to reach
+
+- **The app**, at the address you typed. Use `https://` on the internet. Plain `http://` only works on your local network: a private address such as `192.168.1.20`, a `.local` name, or a Tailscale address. The first time, iOS asks to let Rerun find devices on your local network: allow it.
+- **Supabase**, at the address your app is configured with (`NEXT_PUBLIC_SUPABASE_URL`). When that is `localhost`, as with `npx supabase start`, the phone uses the same machine as the app, on the same port: open that port on your network.
+- **The engine**, at `RERUN_ENGINE_BROWSER_URL`, only to watch a coworker's screen.
+
+If **Connect** says the address is not a Rerun server, or that the server needs an update, check the address in a browser and update your install.
+
+## What is different from Rerun Cloud
+
+- Sign-in is by email code only.
+- No push notifications: they go out through Rerun Cloud. Notifications show in the app.

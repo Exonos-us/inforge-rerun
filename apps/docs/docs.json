@@ -86,7 +86,8 @@
               "self-host/models",
               "self-host/services",
               "self-host/coworkers",
-              "self-host/administration"
+              "self-host/administration",
+              "self-host/mobile"
             ]
           },
           {

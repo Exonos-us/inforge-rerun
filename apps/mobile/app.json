@@ -16,7 +16,11 @@
       "usesAppleSignIn": true,
       "deploymentTarget": "26.0",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        },
+        "NSLocalNetworkUsageDescription": "Rerun connects to a Rerun server on your local network when you choose one."
       }
     },
     "plugins": [

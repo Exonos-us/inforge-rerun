@@ -8,6 +8,7 @@ export type SignInStep =
     | { name: 'start' }
     | { name: 'phone' }
     | { name: 'email' }
+    | { name: 'server' }
     // `resendIn` is what the hub said is left of a code sent earlier.
     | { name: 'code'; method: 'phone'; channel: PhoneChannel; resendIn?: number }
     | { name: 'code'; method: 'email' }

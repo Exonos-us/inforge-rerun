@@ -12,7 +12,7 @@ jest.mock('expo-constants', () => ({ expoConfig: { extra: { eas: { projectId: 'p
 const mockDevice = { isDevice: true }
 jest.mock('expo-device', () => ({ get isDevice() { return mockDevice.isDevice } }))
 const mockStore = new Map<string, string>()
-jest.mock('expo-secure-store', () => ({ getItemAsync: async (key: string) => mockStore.get(key) ?? null, setItemAsync: async (key: string, value: string) => void mockStore.set(key, value) }))
+jest.mock('expo-secure-store', () => ({ getItem: () => null, getItemAsync: async (key: string) => mockStore.get(key) ?? null, setItemAsync: async (key: string, value: string) => void mockStore.set(key, value) }))
 
 const mockPermissions = { status: 'granted' }
 const mockRequestPermissions = jest.fn(async () => mockPermissions)

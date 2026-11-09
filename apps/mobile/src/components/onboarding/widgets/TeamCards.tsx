@@ -4,6 +4,7 @@ import { ActivityIndicator, View } from 'react-native'
 import { ForemanOrb } from '@/components/orb/ForemanOrb'
 import { AppText } from '@/components/ui/AppText'
 import { Button } from '@/components/ui/Button'
+import { webHost } from '@/config/environment'
 import { useTheme } from '@/theme/theme'
 import { radius, spacing } from '@/theme/tokens'
 
@@ -37,7 +38,7 @@ export function TeamStartCard({ state, onRetry }: { state: TeamStartState; onRet
                 <View style={{ flex: 1, gap: 2 }}>
                     <AppText variant="headline">{state === 'starting' ? 'Getting your workspace ready' : state === 'failed' ? 'That did not go through' : 'This workspace cannot start here'}</AppText>
                     <AppText variant="footnote" tone="muted">
-                        {state === 'starting' ? 'Your coworker is built right after.' : state === 'failed' ? 'Nothing was lost. Try again in a moment.' : 'Finish setting it up at rerun.build.'}
+                        {state === 'starting' ? 'Your coworker is built right after.' : state === 'failed' ? 'Nothing was lost. Try again in a moment.' : `Finish setting it up at ${webHost}.`}
                     </AppText>
                 </View>
             </View>

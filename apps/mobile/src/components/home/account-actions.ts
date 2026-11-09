@@ -4,6 +4,8 @@ import { Alert } from 'react-native'
 
 import { deleteAccount, fetchDeletionBlockers } from '@/api/account'
 import { ApiError } from '@/api/client'
+import { switchServer } from '@/config/custom-server'
+import { webHost } from '@/config/environment'
 
 // The web opens the same Crisp chat; the app has no widget of its own, so it opens the chat page.
 const CRISP_WEBSITE_ID = 'fa9be3a1-b3f1-4813-840f-d6e235a05179'
@@ -26,6 +28,13 @@ const confirm = (title: string, message: string, action: string) =>
             { text: action, style: 'destructive', onPress: () => resolve(true) },
         ])
     )
+
+export async function askToLeaveServer(signOut: () => Promise<void>) {
+    const confirmed = await confirm(`Leave ${webHost}?`, 'You will be signed out, and Rerun reopens on Rerun Cloud.', 'Leave')
+    if (!confirmed) return
+    await signOut()
+    await switchServer(null)
+}
 
 // Same rule as the web: a workspace only this account holds and that still bills stops the deletion,
 // and is named so it can be cancelled first.

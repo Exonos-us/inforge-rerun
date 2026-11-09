@@ -6,10 +6,15 @@ import * as Notifications from 'expo-notifications'
 import * as SecureStore from 'expo-secure-store'
 
 import { api, appBuild } from '@/api/client'
+import { onCustomServer } from '@/config/environment'
 
 type Caller = { accessToken: string; workspaceId: number }
 
 const ASKED_KEY = 'rerun.push-asked'
+
+// Pushes go out through Rerun's Expo project, which only Rerun Cloud sends with: on a server of the
+// person's own, the app never asks for them.
+export const pushAvailable = !onCustomServer
 
 let registeredToken: string | null = null
 
@@ -36,7 +41,7 @@ Notifications.setNotificationHandler({
 // Registered on every launch once allowed: Expo can rotate the token, and the hub keeps the last
 // time it was seen. A simulator has no token to give.
 export async function registerDevice(caller: Caller): Promise<void> {
-    if (!Device.isDevice) return
+    if (!pushAvailable || !Device.isDevice) return
     const { status } = await Notifications.getPermissionsAsync()
     if (status !== 'granted') return
     const { data: token } = await Notifications.getExpoPushTokenAsync({ projectId: Constants.expoConfig?.extra?.eas?.projectId })
@@ -46,6 +51,7 @@ export async function registerDevice(caller: Caller): Promise<void> {
 
 // Asked once, after the first message the person sends: by then a coworker has something to say back.
 export async function askForPushOnce(caller: Caller): Promise<void> {
+    if (!pushAvailable) return
     if (await SecureStore.getItemAsync(ASKED_KEY)) return
     await SecureStore.setItemAsync(ASKED_KEY, '1')
     const { status } = await Notifications.requestPermissionsAsync()

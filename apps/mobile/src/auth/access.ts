@@ -1,11 +1,13 @@
 import { FOREMAN_AGENT_ID, type BoardAgent, type Box, type BoxAccessLevel, type WorkspaceRole } from '@rerun/contracts'
 
+import { webHost } from '@/config/environment'
+
 // The app's copy of the web's rules. They only decide which controls are open: the hub checks every
 // write again and answers 403.
 
 export const BOX_MANAGE_REASON = 'Only an admin or a manager of this Box can change this.'
 export const AI_PROVIDERS_ADMIN_ONLY = 'Only an admin can change the AI providers.'
-export const NO_MANAGED_BOX = 'You need a Box you manage to add a coworker. Create one at rerun.build, or ask an admin.'
+export const NO_MANAGED_BOX = `You need a Box you manage to add a coworker. Create one at ${webHost}, or ask an admin.`
 
 // A hub older than roles sends none, and a copy of the account cached before them has none: both
 // meant every member ran the workspace.
@@ -30,7 +32,7 @@ export function boxForNewCoworker(manageable: readonly Box[], wanted: string | n
 export function newCoworkerBlocker({ failed, manageable, admin }: { failed: boolean; manageable: readonly Box[] | null; admin: boolean }): string | null {
     if (failed) return 'We could not load your Boxes. Try again in a moment.'
     if (!manageable || manageable.length > 0) return null
-    return admin ? 'This workspace has no Box yet. Create one at rerun.build.' : NO_MANAGED_BOX
+    return admin ? `This workspace has no Box yet. Create one at ${webHost}.` : NO_MANAGED_BOX
 }
 
 // The caller's level on a coworker. `known` is false until a copy of the coworker, the phone's or the

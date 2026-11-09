@@ -14,7 +14,7 @@ import { foremanEndpoints } from '@/chat/endpoints'
 import { ForemanOrb } from '@/components/orb/ForemanOrb'
 import { AppText } from '@/components/ui/AppText'
 import { PillButton } from '@/components/ui/PillButton'
-import { environment } from '@/config/environment'
+import { environment, webHost } from '@/config/environment'
 import { cachedForeman } from '@/data/local-cache'
 import { useTheme } from '@/theme/theme'
 import { spacing } from '@/theme/tokens'
@@ -37,8 +37,8 @@ const TITLE_DELAY_MS = 4000
 type SurfaceState = ForemanSurface | 'loading' | 'error'
 
 const AWAY: Record<'onboarding' | 'none', { title: string; body: string }> = {
-    onboarding: { title: 'Rerun is setting up your workspace', body: 'Finish setting it up at rerun.build.' },
-    none: { title: 'Rerun is not running', body: 'This workspace has no machine right now. Check it at rerun.build.' },
+    onboarding: { title: 'Rerun is setting up your workspace', body: `Finish setting it up at ${webHost}.` },
+    none: { title: 'Rerun is not running', body: `This workspace has no machine right now. Check it at ${webHost}.` },
 }
 
 const noop = () => {}

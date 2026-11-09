@@ -9,6 +9,7 @@ const STEPS: Record<string, SignInStep> = {
     start: { name: 'start' },
     phone: { name: 'phone' },
     email: { name: 'email' },
+    server: { name: 'server' },
     'code-phone': { name: 'code', method: 'phone', channel: 'whatsapp' },
     'code-email': { name: 'code', method: 'email' },
 }
