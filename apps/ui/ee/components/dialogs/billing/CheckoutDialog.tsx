@@ -3,6 +3,7 @@
 import { APP_INFO } from '@/lib/apps/catalog'
 import { APP_ADDON_KEYS, APP_SLUGS } from '@/lib/apps/types'
 import { useCheckout } from '@stripe/react-stripe-js/checkout'
+import type { StripeExpressCheckoutElementConfirmEvent } from '@stripe/stripe-js'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
 
@@ -354,12 +355,12 @@ function SubscribeForm({
         setError(terms.error)
     }
 
-    const pay = async () => {
+    const pay = async (expressCheckoutConfirmEvent?: StripeExpressCheckoutElementConfirmEvent) => {
         if (!loaded || submitting) return
         setSubmitting(true)
         setError(null)
         try {
-            const result = await loaded.confirm({ redirect: 'if_required' })
+            const result = await loaded.confirm({ redirect: 'if_required', expressCheckoutConfirmEvent })
             if (result.type === 'error') throw new Error(result.error.message)
 
             const outcome = await awaitOutcome(sessionId)
@@ -376,6 +377,9 @@ function SubscribeForm({
         }
     }
 
+    const blockedReason = !accepted ? 'Accept the terms first' : failedKey === key ? 'Your plan could not be updated' : stale ? 'Your plan is still updating' : undefined
+    const walletBlocked = !loaded || submitting || updating || stale || !accepted || recordingTerms
+
     return (
         <>
             <PayHeader title={trial ? `Rerun Pro, free for ${TRIAL_DAYS} days` : 'Subscribe to Rerun Pro'} amount={amount} unit={trial ? 'due today' : interval === 'yearly' ? 'per year' : 'per month'} />
@@ -388,15 +392,15 @@ function SubscribeForm({
                 <StripePromoCode disabled={submitting || updating} />
             </div>
             <div className="mt-4">
-                <StripePaymentFields />
+                <StripePaymentFields wallet={{ onConfirm: event => void pay(event), disabledReason: walletBlocked ? (blockedReason ?? 'Please wait') : undefined }} />
             </div>
             <PayFooter
                 cta={copy.cta}
                 footnote={copy.footnote ?? 'By subscribing, you authorize Rerun to charge you until you cancel.'}
                 onClick={() => void pay()}
                 loading={submitting}
-                disabled={!loaded || updating || stale || !accepted || recordingTerms || !loaded.canConfirm}
-                disabledReason={!accepted ? 'Accept the terms first' : failedKey === key ? 'Your plan could not be updated' : stale ? 'Your plan is still updating' : undefined}
+                disabled={walletBlocked || !loaded?.canConfirm}
+                disabledReason={blockedReason}
                 error={error}
             >
                 <TermsConsent checked={accepted} onChange={checked => void acceptTerms(checked)} />
@@ -451,12 +455,12 @@ function CardForm({ sessionId, selection, priceArm, copy, trialEnds, onDone }: {
     const [error, setError] = useState<string | null>(null)
     const interval = selection.interval
 
-    const save = async (when: 'now' | 'later') => {
+    const save = async (when: 'now' | 'later', expressCheckoutConfirmEvent?: StripeExpressCheckoutElementConfirmEvent) => {
         if (!loaded || submitting) return
         setSubmitting(when)
         setError(null)
         try {
-            const result = await loaded.confirm({ redirect: 'if_required' })
+            const result = await loaded.confirm({ redirect: 'if_required', expressCheckoutConfirmEvent })
             if (result.type === 'error') throw new Error(result.error.message)
             const saved = await confirmCardSetupAction(sessionId)
             if (!saved.ok) throw new Error(saved.error)
@@ -477,7 +481,7 @@ function CardForm({ sessionId, selection, priceArm, copy, trialEnds, onDone }: {
             <PayHeader title="Subscribe to Rerun Pro" amount={<UsdFlow cents={planPriceCents(selection.quantities, interval, priceArm)} />} unit={interval === 'yearly' ? 'per year' : 'per month'} />
             <p className="mt-2 text-sm text-muted-foreground">Excl. VAT, computed from your address.</p>
             <div className="mt-6">
-                <StripePaymentFields />
+                <StripePaymentFields wallet={{ onConfirm: event => void save('now', event), disabledReason: !accepted ? 'Accept the terms first' : submitting ? 'Please wait' : undefined }} />
             </div>
             <PayFooter
                 cta={copy.cta}

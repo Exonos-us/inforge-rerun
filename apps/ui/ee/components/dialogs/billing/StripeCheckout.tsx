@@ -1,12 +1,14 @@
 'use client'
 
-import { BillingAddressElement, CheckoutElementsProvider, PaymentElement, useCheckout } from '@stripe/react-stripe-js/checkout'
-import type { Appearance } from '@stripe/stripe-js'
+import { BillingAddressElement, CheckoutElementsProvider, ExpressCheckoutElement, PaymentElement, useCheckout } from '@stripe/react-stripe-js/checkout'
+import type { Appearance, StripeCheckoutExpressCheckoutElementOptions, StripeExpressCheckoutElementConfirmEvent } from '@stripe/stripe-js'
 import { useTheme } from 'next-themes'
 import { useState, type ReactNode } from 'react'
 
 import { Skeleton } from '@/components/ui/skeleton'
+import { TooltipDisabledReason } from '@/components/ui/tooltip'
 import { stripeBrowser } from '@/ee/lib/billing/stripe-client'
+import { cn } from '@/lib/utils'
 
 import { Notice, PromoCodeField, usd } from './parts'
 
@@ -49,14 +51,56 @@ export function StripePaymentFieldsSkeleton() {
     )
 }
 
-// The card and the billing address. The address is not optional: the tax is computed from it.
-export function StripePaymentFields() {
+// The Payment Element never offers Apple Pay in a Chromium browser nor Google Pay in Safari: only the
+// Express Checkout Element set to `always` does. Once it is on the page, Stripe moves the wallets
+// out of the Payment Element, so they are never shown twice. Link stays in the Payment Element.
+const WALLET_OPTIONS: StripeCheckoutExpressCheckoutElementOptions = {
+    buttonHeight: 44,
+    buttonTheme: undefined,
+    buttonType: { applePay: 'subscribe', googlePay: 'subscribe' },
+    layout: undefined,
+    paymentMethodOrder: ['apple_pay', 'google_pay'],
+    paymentMethods: { applePay: 'always', googlePay: 'always', link: 'never', paypal: 'never', amazonPay: 'never', klarna: 'never' },
+}
+
+export type WalletPayment = {
+    onConfirm: (event: StripeExpressCheckoutElementConfirmEvent) => void
+    // This mode of the element has no click hook, so a wallet that may not pay yet is greyed out and
+    // its clicks never reach the iframe.
+    disabledReason?: string
+}
+
+// The wallets, the card and the billing address. The address is not optional: the tax is computed from
+// it, and a wallet hands over its own.
+export function StripePaymentFields({ wallet }: { wallet?: WalletPayment }) {
     const checkout = useCheckout()
+    const [walletsShown, setWalletsShown] = useState(false)
     if (checkout.type === 'loading') return <StripePaymentFieldsSkeleton />
     if (checkout.type === 'error') return <Notice tone="danger">{checkout.error.message}</Notice>
 
     return (
         <div className="flex flex-col gap-4">
+            {wallet && (
+                <div className={cn('flex flex-col gap-4', !walletsShown && 'hidden')}>
+                    <TooltipDisabledReason reason={wallet.disabledReason} className="w-full">
+                        <div className={cn('w-full', wallet.disabledReason && 'pointer-events-none opacity-50')}>
+                            <ExpressCheckoutElement
+                                options={WALLET_OPTIONS}
+                                onAvailablePaymentMethodsChange={({ paymentMethods }) => setWalletsShown(!!paymentMethods)}
+                                onConfirm={event => {
+                                    if (wallet.disabledReason) return event.paymentFailed({ reason: 'fail', message: wallet.disabledReason })
+                                    wallet.onConfirm(event)
+                                }}
+                            />
+                        </div>
+                    </TooltipDisabledReason>
+                    <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                        <span className="h-px flex-1 bg-border" />
+                        or pay with card
+                        <span className="h-px flex-1 bg-border" />
+                    </div>
+                </div>
+            )}
             <PaymentElement options={{ layout: 'tabs' }} />
             <BillingAddressElement />
         </div>

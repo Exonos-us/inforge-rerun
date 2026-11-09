@@ -1,6 +1,7 @@
 'use client'
 
 import { useCheckout } from '@stripe/react-stripe-js/checkout'
+import type { StripeExpressCheckoutElementConfirmEvent } from '@stripe/stripe-js'
 import { Badge, Stripes, type BadgeTone } from '@rerun/ui/primitives'
 import { useEffect, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
@@ -390,12 +391,12 @@ function SetupForm({ sessionId, cta, footnote, onSaved }: { sessionId: string; c
     const [submitting, setSubmitting] = useState(false)
     const [error, setError] = useState<string | null>(null)
 
-    const save = async () => {
-        if (!loaded) return
+    const save = async (expressCheckoutConfirmEvent?: StripeExpressCheckoutElementConfirmEvent) => {
+        if (!loaded || submitting) return
         setSubmitting(true)
         setError(null)
         try {
-            const result = await loaded.confirm({ redirect: 'if_required' })
+            const result = await loaded.confirm({ redirect: 'if_required', expressCheckoutConfirmEvent })
             if (result.type === 'error') throw new Error(result.error.message)
             const saved = await confirmCardSetupAction(sessionId)
             if (!saved.ok) throw new Error(saved.error)
@@ -410,7 +411,7 @@ function SetupForm({ sessionId, cta, footnote, onSaved }: { sessionId: string; c
     return (
         <>
             <div className="mt-6">
-                <StripePaymentFields />
+                <StripePaymentFields wallet={{ onConfirm: event => void save(event), disabledReason: submitting ? 'Please wait' : undefined }} />
             </div>
             <PayFooter cta={cta} footnote={footnote} onClick={() => void save()} loading={submitting} disabled={!loaded} error={error} />
         </>
