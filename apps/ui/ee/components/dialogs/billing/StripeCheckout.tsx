@@ -88,8 +88,10 @@ export function StripePaymentFields({ wallet }: { wallet?: WalletPayment }) {
         <div className="flex flex-col gap-4">
             {wallet && (
                 <div className={cn('flex flex-col gap-4', !walletsShown && 'hidden')}>
-                    <TooltipDisabledReason reason={wallet.disabledReason} className="w-full">
-                        <div className={cn('w-full', wallet.disabledReason && 'pointer-events-none opacity-50')}>
+                    {/* The tooltip sits on a layer above the element rather than around it: wrapping it
+                        only while disabled would remount the element, and Stripe draws it back empty. */}
+                    <div className="relative">
+                        <div className={cn(wallet.disabledReason && 'pointer-events-none opacity-50')}>
                             <ExpressCheckoutElement
                                 options={WALLET_OPTIONS}
                                 onAvailablePaymentMethodsChange={({ paymentMethods }) => setWalletsShown(!!paymentMethods)}
@@ -99,7 +101,12 @@ export function StripePaymentFields({ wallet }: { wallet?: WalletPayment }) {
                                 }}
                             />
                         </div>
-                    </TooltipDisabledReason>
+                        {wallet.disabledReason && (
+                            <TooltipDisabledReason reason={wallet.disabledReason} className="absolute inset-0">
+                                <span className="size-full" />
+                            </TooltipDisabledReason>
+                        )}
+                    </div>
                     <div className="flex items-center gap-3 text-xs text-muted-foreground">
                         <span className="h-px flex-1 bg-border" />
                         or pay with card
