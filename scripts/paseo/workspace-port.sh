@@ -36,7 +36,7 @@ fi
 base=$(cat "$port_file")
 
 case "${1:-}" in
-  "" | ui | everything) offset=0 ;;
+  "" | ui) offset=0 ;;
   landing) offset=1 ;;
   emails) offset=3 ;;
   admin) offset=4 ;;

@@ -35,8 +35,7 @@
       "command": "pnpm dev:engine"
     },
     "everything": {
-      "type": "service",
-      "command": "PATH=/opt/homebrew/bin:$PATH pnpm exec concurrently -k -n ui,landing,engine,emails,stripe,trigger -c cyan,blue,green,gray,magenta,yellow \"pnpm --filter rerun exec next dev -p $PASEO_PORT\" \"pnpm --dir cloud/apps/landing exec next dev -p $((PASEO_PORT + 1))\" \"pnpm dev:engine\" \"EMAIL_ASSET_ORIGIN=http://localhost:$PASEO_PORT pnpm --filter @rerun/emails exec email dev --dir emails --port $((PASEO_PORT + 3))\" \"stripe listen --forward-to localhost:$PASEO_PORT/api/webhooks/stripe --forward-connect-to localhost:$PASEO_PORT/api/webhooks/stripe/connect\" \"pnpm cloud trigger:dev\""
+      "command": "port=$(bash scripts/paseo/workspace-port.sh) && PATH=/opt/homebrew/bin:$PATH pnpm exec concurrently -k -n ui,landing,engine,emails,stripe,trigger -c cyan,blue,green,gray,magenta,yellow \"pnpm --filter rerun exec next dev -p $port\" \"pnpm --dir cloud/apps/landing exec next dev -p $((port + 1))\" \"pnpm dev:engine\" \"EMAIL_ASSET_ORIGIN=http://localhost:$port pnpm --filter @rerun/emails exec email dev --dir emails --port $((port + 3))\" \"stripe listen --forward-to localhost:$port/api/webhooks/stripe --forward-connect-to localhost:$port/api/webhooks/stripe/connect\" \"pnpm cloud trigger:dev\""
     },
     "ui-full-env": {
       "command": "pnpm cloud dev:full"
