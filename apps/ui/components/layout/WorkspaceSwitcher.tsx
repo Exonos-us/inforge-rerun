@@ -9,7 +9,6 @@ import { ServersDialog } from '@/components/dialogs/ServersDialog'
 import { ADMIN_URL } from '@rerun/cloud/admin'
 import { RERUN_CLOUD } from '@rerun/cloud/edition'
 import { SERVERS_ENABLED } from '@rerun/cloud/servers'
-import { SUPPORT_CHAT_ENABLED } from '@rerun/cloud/support'
 import { CreateWorkspaceDialog } from '@/components/dialogs/CreateWorkspaceDialog'
 import { CreditMeter, UpgradePill } from '@rerun/cloud/billing.client'
 import { ExpertProfileDialog } from '@/components/dialogs/ExpertProfileDialog'
@@ -20,7 +19,8 @@ import { WorkspaceMembersDialog } from '@/components/dialogs/WorkspaceMembersDia
 import { WorkspaceSettingsDialog } from '@/components/dialogs/WorkspaceSettingsDialog'
 import { SignInPillButton } from '@/components/layout/SignInPill'
 import { ThemeMenuRow } from '@/components/layout/ThemeMenuRow'
-import { HelpMenuItems, WeeklyRewindMenuItem, WhatsNewMenuItem } from '@/components/layout/ToolbarActions'
+import { HelpButton } from '@/components/layout/HelpButton'
+import { WeeklyRewindMenuItem, WhatsNewMenuItem } from '@/components/layout/ToolbarActions'
 import { WorkspacePowerDialog, WorkspacePowerMenuItems, type PowerAction } from '@/components/layout/WorkspacePowerControl'
 import { WorkspaceLogoImage, WorkspacePill } from '@rerun/ui/chrome'
 import { Badge } from '@rerun/ui/primitives'
@@ -39,12 +39,11 @@ import { useForemanStore } from '@/stores/foreman.store'
 import { useNotificationsStore } from '@/stores/notifications.store'
 import { useWorkspaceSettingsStore } from '@/stores/workspace-settings.store'
 import { useIsWorkspaceAdmin, useSession } from '@/supabase/session/SessionProvider'
-import { BadgeCheck, BellIcon, BrainIcon, CheckIcon, CreditCardIcon, FlaskConical, GaugeIcon, GridIcon, HeadsetIcon, IdCardIcon, KeyIcon, LayersIcon, LifeBuoyIcon, Loader2Icon, LockKeyholeIcon, LogOutIcon, PlusIcon, ServerIcon, SettingsIcon, ShieldCheckIcon, UserRoundIcon, UsersIcon } from '@/lib/icons'
-import { openCrisp } from '@/lib/crisp'
+import { BadgeCheck, BellIcon, BrainIcon, CheckIcon, CreditCardIcon, FlaskConical, GaugeIcon, GridIcon, IdCardIcon, KeyIcon, LayersIcon, Loader2Icon, LockKeyholeIcon, LogOutIcon, PlusIcon, ServerIcon, SettingsIcon, ShieldCheckIcon, UserRoundIcon, UsersIcon } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 import { abortWorkspaceSwitch, beginWorkspaceSwitch, enterActiveWorkspace } from '@/lib/workspace/workspace-switch'
 import Link from 'next/link'
-import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useState, type ReactNode } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 
@@ -106,9 +105,6 @@ export function WorkspaceSwitcher() {
     // The confirmation cannot live inside the menu: closing the menu would unmount it before it
     // ever opens.
     const [powerAction, setPowerAction] = useState<PowerAction | null>(null)
-    // The menu hands focus back to its trigger as it closes, which the checklist popover would read
-    // as a click outside and close on the spot.
-    const openingGettingStarted = useRef(false)
     const refreshBrainProposals = useBrainStore(s => s.refreshProposalCount)
     const brainProposals = useBrainProposalCount(Boolean(workspace) && !isAnonymous)
     const guided = useForemanStore(state => state.funnel === 'guided')
@@ -358,25 +354,6 @@ export function WorkspaceSwitcher() {
     const footerSection = (
         <>
             <ThemeMenuRow />
-            {SUPPORT_CHAT_ENABLED && (
-                <DropdownMenuItem onSelect={() => openCrisp(session?.user?.email)} className="gap-2 text-muted-foreground">
-                    <HeadsetIcon className="size-4" />
-                    Contact Support
-                </DropdownMenuItem>
-            )}
-            <DropdownMenuSub>
-                <DropdownMenuSubTrigger className="gap-2 text-muted-foreground">
-                    <LifeBuoyIcon className="size-4" />
-                    Help
-                </DropdownMenuSubTrigger>
-                <DropdownMenuSubContent className="min-w-48">
-                    <HelpMenuItems
-                        onOpenGettingStarted={() => {
-                            openingGettingStarted.current = true
-                        }}
-                    />
-                </DropdownMenuSubContent>
-            </DropdownMenuSub>
             <DropdownMenuItem onSelect={() => useNotificationsStore.getState().openNotifications()} className="gap-2 text-muted-foreground">
                 <BellIcon className="size-4" />
                 Notifications
@@ -396,7 +373,9 @@ export function WorkspaceSwitcher() {
     const sections = [headerSection, workspaceItemsSection, workspacesSection, rolesSection, footerSection].filter(Boolean)
 
     return (
-        <div className="absolute top-4 left-4 z-40 flex items-center gap-2">
+        // Leaves room for the view controls in the top-right corner: on a phone the workspace name
+        // truncates rather than pushing the row under them.
+        <div className="absolute top-4 left-4 z-40 flex max-w-[calc(100%-2*var(--chrome-edge)-var(--chrome-size)-var(--chrome-gap))] items-center gap-2">
             <DropdownMenu
                 onOpenChange={open => {
                     if (!open) return
@@ -404,9 +383,9 @@ export function WorkspaceSwitcher() {
                     if (!workspace.is_sandbox) for (const slug of paidApps) refreshAppAccounts(slug).catch(() => {})
                 }}
             >
-                <div className="relative">
+                <div className="relative min-w-0">
                     <DropdownMenuTrigger asChild>
-                        <WorkspacePill name={workspace.name || 'Workspace'} iconUrl={workspace.icon_url || activeIcon} fallbackIconUrl={activeIcon} stripes={workspace.is_sandbox} />
+                        <WorkspacePill className="max-w-full shrink" name={workspace.name || 'Workspace'} iconUrl={workspace.icon_url || activeIcon} fallbackIconUrl={activeIcon} stripes={workspace.is_sandbox} />
                     </DropdownMenuTrigger>
                     {brainProposals > 0 && <span className="pointer-events-none absolute top-0.5 right-0.5 size-2 rounded-full bg-red-500 ring-2 ring-card" />}
                 </div>
@@ -414,11 +393,6 @@ export function WorkspaceSwitcher() {
                     align="start"
                     side="bottom"
                     className="w-64 max-h-[calc(100dvh-5rem)] overflow-y-auto"
-                    onCloseAutoFocus={event => {
-                        if (!openingGettingStarted.current) return
-                        openingGettingStarted.current = false
-                        event.preventDefault()
-                    }}
                 >
                     {sections.map((section, index) => (
                         <Fragment key={index}>
@@ -428,6 +402,7 @@ export function WorkspaceSwitcher() {
                     ))}
                 </DropdownMenuContent>
             </DropdownMenu>
+            <HelpButton />
             <UpgradePill />
 
             <AccountDialog />
