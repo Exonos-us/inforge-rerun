@@ -19,6 +19,11 @@ export function needsHuman(status: SessionStatus): boolean {
 export const sessionOutcomeSchema = z.enum(['done', 'nothing', 'failed'])
 export type SessionOutcome = z.infer<typeof sessionOutcomeSchema>
 
+// A coworker has one `general` conversation; every other one is a `thread` of it, placed in General
+// by the time it was opened.
+export const sessionKindSchema = z.enum(['general', 'thread'])
+export type SessionKind = z.infer<typeof sessionKindSchema>
+
 export const conversationSchema = z.object({
     // Null for a conversation another agent opened on this one's engine: it has no hub row until
     // it is adopted, and cannot be opened before that.
@@ -40,6 +45,10 @@ export const conversationSchema = z.object({
     // what the run did, `automationName` names its routine and `outcome` how it ended.
     automationName: z.string().nullable().optional(),
     outcome: sessionOutcomeSchema.nullable().optional(),
+    // Optional for a hub older than them. `kind` tells the coworker's General from its threads,
+    // `createdAt` is where a thread sits in General.
+    kind: sessionKindSchema.optional(),
+    createdAt: z.string().optional(),
 })
 export type Conversation = z.infer<typeof conversationSchema>
 

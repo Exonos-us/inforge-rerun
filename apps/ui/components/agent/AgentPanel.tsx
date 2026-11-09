@@ -42,7 +42,7 @@ function trimOpenedAgents(ids: string[], busy: Set<string>): string[] {
     return kept
 }
 
-// What floats over the thread, one at a time: the coworker's card, or its list of conversations.
+// What floats over the chat, one at a time: the coworker's card, or its list of threads.
 // `entered` is the card's button a screen grew out of, while that screen is open over the card.
 type Surface = { kind: 'card'; entered?: CardOrigin } | { kind: 'chats'; filter: ChatsFilter }
 
@@ -214,7 +214,7 @@ export function AgentPanel() {
                     <TopVeil tall={!locked} />
                     {!locked && (
                         <div className="absolute left-3 top-3 z-50">
-                            <FloatingPill label="Chats" onClick={() => toggleSurface({ kind: 'chats', filter: 'all' })} active={shownSurface?.kind === 'chats'} className="w-10 justify-center px-0">
+                            <FloatingPill label="Threads" onClick={() => toggleSurface({ kind: 'chats', filter: 'all' })} active={shownSurface?.kind === 'chats'} className="w-10 justify-center px-0">
                                 <span className="relative flex">
                                     <MessageCircle className="size-4 text-muted-foreground" />
                                     {attentionCount > 0 && <span className="absolute -right-1 -top-1 size-2 rounded-full bg-red-500 ring-2 ring-background" />}

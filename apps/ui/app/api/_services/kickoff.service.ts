@@ -41,7 +41,7 @@ export async function startKickoff(agentId: string, input: { kickoff?: string; d
         engineRes.body?.cancel().catch(() => {})
         if (!engineSessionId) return { ok: false, error: 'Engine did not return a session id', agentGone: false }
 
-        const sessionId = await createSessionRow(agentId, engineSessionId, message)
+        const sessionId = await createSessionRow(agentId, engineSessionId, message, null, undefined, 'thread', message)
         await updateSessionStatus(sessionId, 'working')
         await recordSessionParticipant(sessionId, author.id)
 

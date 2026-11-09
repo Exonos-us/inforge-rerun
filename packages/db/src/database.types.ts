@@ -2284,7 +2284,9 @@ export type Database = {
           automation_name: string | null
           created_at: string
           engine_session_id: string
+          first_message: string | null
           id: string
+          kind: Database["public"]["Enums"]["session_kind"]
           origin_agent_id: string | null
           outcome: Database["public"]["Enums"]["session_outcome"] | null
           source: Database["public"]["Enums"]["session_source"]
@@ -2297,7 +2299,9 @@ export type Database = {
           automation_name?: string | null
           created_at?: string
           engine_session_id: string
+          first_message?: string | null
           id?: string
+          kind?: Database["public"]["Enums"]["session_kind"]
           origin_agent_id?: string | null
           outcome?: Database["public"]["Enums"]["session_outcome"] | null
           source?: Database["public"]["Enums"]["session_source"]
@@ -2310,7 +2314,9 @@ export type Database = {
           automation_name?: string | null
           created_at?: string
           engine_session_id?: string
+          first_message?: string | null
           id?: string
+          kind?: Database["public"]["Enums"]["session_kind"]
           origin_agent_id?: string | null
           outcome?: Database["public"]["Enums"]["session_outcome"] | null
           source?: Database["public"]["Enums"]["session_source"]
@@ -3879,6 +3885,7 @@ export type Database = {
         | "done"
         | "error"
         | "connector"
+      session_kind: "general" | "thread"
       session_outcome: "done" | "nothing" | "failed"
       session_source:
         | "dashboard"
@@ -4080,6 +4087,7 @@ export const Constants = {
         "error",
         "connector",
       ],
+      session_kind: ["general", "thread"],
       session_outcome: ["done", "nothing", "failed"],
       session_source: [
         "dashboard",

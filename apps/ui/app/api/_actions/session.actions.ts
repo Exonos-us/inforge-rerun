@@ -1,9 +1,9 @@
 'use server'
 
-import { assertSessionInWorkspace } from '@/app/api/_auth/access'
+import { assertAgentAccess, assertSessionInWorkspace } from '@/app/api/_auth/access'
 import { requireWorkspaceContext } from '@/app/api/_auth/ownership'
-import { clearSessionAlert, findIdleSessions, findSessionActiveRun } from '@/app/api/_services/chat.service'
-import { adoptEngineSession, cancelSessionRuns, EMPTY_SESSION_SNAPSHOT, finalizeSession, listAgentSessions, readSessionMessages, readSessionSnapshot, searchWorkspaceConversations, type ConversationHit, type SessionHistoryEntry, type SessionSnapshot } from '@/app/api/_services/conversation.service'
+import { clearSessionAlert, findGeneralSession, findIdleSessions, findSessionActiveRun, type GeneralSession } from '@/app/api/_services/chat.service'
+import { adoptEngineSession, cancelSessionRuns, EMPTY_SESSION_SNAPSHOT, finalizeSession, listAgentSessions, listAgentThreads, readSessionMessages, readSessionSnapshot, searchWorkspaceConversations, type ConversationHit, type SessionHistoryEntry, type SessionSnapshot, type ThreadRow } from '@/app/api/_services/conversation.service'
 
 export async function finalizeSessionAction(sessionId: string, status: 'idle' | 'error'): Promise<void> {
     await finalizeSession(sessionId, status).catch(() => {})
@@ -16,6 +16,17 @@ export async function acknowledgeSessionAlertAction(sessionId: string): Promise<
 
 export async function listAgentSessionsAction(agentId: string): Promise<SessionHistoryEntry[]> {
     return listAgentSessions(agentId).catch(() => [])
+}
+
+export async function listAgentThreadsAction(agentId: string): Promise<ThreadRow[]> {
+    return listAgentThreads(agentId).catch(() => [])
+}
+
+// The coworker's General, null until someone has spoken in it. Read through the caller's own access
+// to the coworker, like every other read of its conversations.
+export async function getGeneralSessionAction(agentId: string): Promise<GeneralSession | null> {
+    await assertAgentAccess(agentId, 'use')
+    return findGeneralSession(agentId).catch(() => null)
 }
 
 export async function searchConversationsAction(query: string, agentId?: string): Promise<ConversationHit[]> {

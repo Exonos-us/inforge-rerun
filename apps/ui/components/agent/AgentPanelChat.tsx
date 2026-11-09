@@ -1,8 +1,10 @@
 'use client'
 
+import { getGeneralSessionAction } from '@/app/api/_actions/session.actions'
 import { useAgentSetup } from '@/hooks/useAgentSetup'
+import { useAgentThreads } from '@/hooks/useAgentThreads'
 import { invalidateAgentSkillSummaries } from '@/hooks/useAgentSkillSummaries'
-import { useSessionTabs } from '@/hooks/useSessionTabs'
+import { isGeneralTab, NEW_THREAD_TITLE, useSessionTabs } from '@/hooks/useSessionTabs'
 import { installSessionTitle } from '@/lib/chat/install-marker'
 import { useBoardStore } from '@/stores/board.store'
 import { useRealtimeSubscription } from '@/supabase/useRealtimeSubscription'
@@ -45,7 +47,19 @@ type AgentPanelChatProps = {
 }
 
 export function AgentPanelChat({ agentId, agentName, selected, openSessionRequest, onOpenSessionConsumed, chats, onCloseChats }: AgentPanelChatProps) {
-    const { tabs, activeIndex, createNew, selectTab, closeTab, openTab, updateTabByUid, updateTabTitle } = useSessionTabs(agentId)
+    const { tabs, activeIndex, createNew, selectTab, closeTab, openTab, updateTabByUid, updateTabTitle, setGeneralSessionId } = useSessionTabs(agentId)
+    const { threads, refresh: refreshThreads } = useAgentThreads(agentId)
+
+    // General's row exists once someone has spoken in it; until then its tab opens on nothing, and
+    // the first message sent there creates it. A General opened after this read, by another tab or
+    // a teammate, arrives through the sessions channel below.
+    useEffect(() => {
+        let alive = true
+        getGeneralSessionAction(agentId).then(general => alive && general && setGeneralSessionId(general.id)).catch(() => {})
+        return () => {
+            alive = false
+        }
+    }, [agentId, setGeneralSessionId])
     const [pendingCloseIndex, setPendingCloseIndex] = useState<number | null>(null)
     // Read once per agent rather than per conversation tab: every tab shows the same gate, and it
     // is the engine that decides when the install is over.
@@ -77,6 +91,13 @@ export function AgentPanelChat({ agentId, agentName, selected, openSessionReques
 
     const activeUid = tabs[activeIndex]?.uid
 
+    // An install runs in a thread of its own, never in General: while it is due, General hands over
+    // to a blank thread, where its gate stands.
+    const installDue = setup.pending && !setup.skipped
+    useEffect(() => {
+        if (installDue && isGeneralTab(tabs[activeIndex])) createNew()
+    }, [installDue, tabs, activeIndex, createNew])
+
     // Session de kickoff créée côté serveur juste après la création de l'agent : on ouvre son
     // onglet et on garde le run id sous la main pour que le chat se rattache au stream en cours.
     const pendingOpenSession = useBoardStore(s => s.pendingOpenSession)
@@ -92,7 +113,7 @@ export function AgentPanelChat({ agentId, agentName, selected, openSessionReques
         if (!pendingOpenSession || pendingOpenSession.agentId !== agentId) return
         setKickoffRun({ sessionId: pendingOpenSession.sessionId, runId: pendingOpenSession.runId })
         arriveAt(pendingOpenSession.sessionId)
-        openTab(pendingOpenSession.sessionId, pendingOpenSession.title ?? 'New conversation')
+        openTab(pendingOpenSession.sessionId, pendingOpenSession.title ?? NEW_THREAD_TITLE)
         clearPendingOpenSession()
     }, [pendingOpenSession, agentId, openTab, clearPendingOpenSession, arriveAt])
 
@@ -120,6 +141,7 @@ export function AgentPanelChat({ agentId, agentName, selected, openSessionReques
 
     const requestCloseTab = useCallback(
         (index: number) => {
+            if (isGeneralTab(tabs[index])) return
             const sessionId = tabs[index]?.id
             const working = !!sessionId && useBoardStore.getState().sessions.some(s => s.id === sessionId && s.status === 'working')
             if (working) setPendingCloseIndex(index)
@@ -157,14 +179,22 @@ export function AgentPanelChat({ agentId, agentName, selected, openSessionReques
         return () => document.removeEventListener('keydown', handleKeyDown)
     }, [selected, createNew, requestCloseTab, activeIndex])
 
+    // One channel on the coworker's sessions: a General opened elsewhere takes its pinned tab, a
+    // title the hub generated reaches its tab, and the threads of General are read again.
     useRealtimeSubscription('sessions', {
         channelId: `sessions-title-${agentId}`,
         filter: { column: 'agent_id', value: agentId },
-        onUpdate: (updated) => {
+        onInsert: inserted => {
+            if (inserted.kind === 'general') setGeneralSessionId(inserted.id)
+            refreshThreads()
+        },
+        onUpdate: updated => {
             if (updated.title) {
                 updateTabTitle(updated.id, updated.title)
             }
+            refreshThreads()
         },
+        onResync: refreshThreads,
     })
 
     return (
@@ -209,11 +239,15 @@ export function AgentPanelChat({ agentId, agentName, selected, openSessionReques
                             onSessionCreated={(id) => handleSessionCreated(tab.uid, id)}
                             initialRunId={tab.id && tab.id === kickoffRun?.sessionId ? kickoffRun.runId : null}
                             arrival={tab.id ? arrivals[tab.id] : undefined}
-                            setup={setup}
+                            setup={isGeneralTab(tab) ? undefined : setup}
                             onSetupSkipped={setup.skip}
                             onOpenInstall={openInstall}
                             onRunFinished={handleRunFinished}
                             onNewConversation={createNew}
+                            kind={tab.kind}
+                            title={tab.title}
+                            threads={isGeneralTab(tab) ? threads : undefined}
+                            onOpenThread={openTab}
                         />
                     </div>
                 )

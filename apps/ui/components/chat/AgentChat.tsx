@@ -1,6 +1,7 @@
 'use client'
 
 import { ModelSelector } from '@/components/agent/ModelSelector'
+import { ThreadBranch } from '@/components/agent/sheet/ThreadBranch'
 import { Context } from '@/components/ai-elements/context'
 import { Conversation, ConversationContent, ConversationEmptyState, type ConversationHandle, ConversationScrollButton } from '@/components/ai-elements/conversation'
 import { Message, MessageContent } from '@/components/ai-elements/message'
@@ -34,6 +35,7 @@ import { SkeletonChat } from '@/components/ui/skeleton'
 import { cancelRunAction, getRunAction } from '@/app/api/_actions/agent.actions'
 import { acknowledgeSessionAlertAction, cancelSessionRunsAction, fetchSessionActiveRun, fetchSessionMessages, finalizeSessionAction, openSessionAction } from '@/app/api/_actions/session.actions'
 import type { SessionUsageSeed } from '@/app/api/_services/chat.service'
+import type { ThreadRow } from '@/app/api/_services/conversation.service'
 import { useAgentModel } from '@/hooks/useAgentModel'
 import { useWorkspaceConnections } from '@/hooks/useWorkspaceConnections'
 import { useArriveByTop } from '@/hooks/useArriveByTop'
@@ -57,6 +59,7 @@ import { hitlCallBefore } from '@/lib/chat/hitl-receipts'
 import { turnRanOutOfPaidCredit } from '@/lib/chat/paid-data-credit'
 import { authorTurnsOf } from '@/lib/chat/message-author'
 import { splitTurnsAtBreaks, timeBreaksOf } from '@/lib/chat/message-times'
+import { threadsByMessage } from '@/lib/chat/thread-rows'
 import { shouldFlush, shouldKeepQueued } from '@/lib/chat/queued-message'
 import { classifyChatError, installInFlightOf, teammateRunOf, unwrapChatError } from '@/lib/chat-error'
 import { findPendingAlert, findPendingHitl, HITL_CANCELLED, pendingApprovals, pendingMcpSignIn, pendingQuestions, pendingSecrets, pendingTakeover, serializeApprovalDecisions } from '@/lib/chat-hitl'
@@ -117,9 +120,13 @@ type AgentChatProps = {
     onMessageSent?: () => void
     // Opens a blank conversation with this coworker, the way out of one it cannot reach.
     onNewConversation?: () => void
+    // General only: the coworker's threads, each hung under the message it was opened after.
+    threads?: ThreadRow[]
+    onOpenThread?: (sessionId: string, title: string) => void
+    composerPlaceholder?: string
 }
 
-export function AgentChat({ uid, active, agentId, agentName, sessionId, onSessionCreated, initialRunId, arrival = 0, mentionAgents = [], mentionSkills = [], sessionWorking = false, sessionIdle = false, alertPending = false, body, header, suppressEmptyState = false, setup, onSetupSkipped, onOpenInstall, onRunFinished, onSessionInserted, onSessionStatusChange, onMessageSent, onNewConversation }: AgentChatProps) {
+export function AgentChat({ uid, active, agentId, agentName, sessionId, onSessionCreated, initialRunId, arrival = 0, mentionAgents = [], mentionSkills = [], sessionWorking = false, sessionIdle = false, alertPending = false, body, header, suppressEmptyState = false, setup, onSetupSkipped, onOpenInstall, onRunFinished, onSessionInserted, onSessionStatusChange, onMessageSent, onNewConversation, threads, onOpenThread, composerPlaceholder }: AgentChatProps) {
     const { workspace, user } = useSession()
     const userId = user?.id
     const onSessionCreatedRef = useRef(onSessionCreated)
@@ -832,6 +839,8 @@ export function AgentChat({ uid, active, agentId, agentName, sessionId, onSessio
     const messageTimes = useMessageTimes(messages)
     const lastAssistant = messages.findLastIndex(message => message.role === 'assistant')
     const timeBreaks = useMemo(() => timeBreaksOf(messageTimes), [messageTimes])
+    const threadRows = useMemo(() => threadsByMessage(messageTimes, threads ?? []), [messageTimes, threads])
+    const threadBranches = (rows: ThreadRow[] | undefined) => rows?.map(thread => <ThreadBranch key={thread.id} thread={thread} onOpen={() => onOpenThread?.(thread.id, thread.title)} />)
     const authorTurns = useMemo(() => splitTurnsAtBreaks(authorTurnsOf(messages), timeBreaks), [messages, timeBreaks])
     const authorIds = useMemo(() => [...new Set(authorTurns.flatMap(turn => (turn.authorId ? [turn.authorId] : [])))], [authorTurns])
     const profileOf = useMemberProfiles(workspace?.id, authorIds)
@@ -888,7 +897,8 @@ export function AgentChat({ uid, active, agentId, agentName, sessionId, onSessio
                 <div className="h-full" style={{ maskImage: scrollMask, WebkitMaskImage: scrollMask }}>
                     <ConversationContent>
                         {historyLoading && <SkeletonChat className="py-2" />}
-                        {messages.length === 0 && !suppressEmptyState && !historyLoading && !showInstallGate && (
+                        {threadRows.leading.length > 0 && !historyLoading && <div className="flex flex-col gap-3">{threadBranches(threadRows.leading)}</div>}
+                        {messages.length === 0 && threadRows.leading.length === 0 && !suppressEmptyState && !historyLoading && !showInstallGate && (
                             <ConversationEmptyState>
                                 <AgentBuddy agentId={agentId} mood={buddyMood} size={96} />
                                 <div className="space-y-1">
@@ -907,7 +917,8 @@ export function AgentChat({ uid, active, agentId, agentName, sessionId, onSessio
                                 const isLast = mi === messages.length - 1
                                 const isActive = isLast && (status === 'streaming' || status === 'submitted')
                                 const hitlCall = hitlCallBefore(messages, mi)
-                                return (
+                                const branches = threadBranches(threadRows.after.get(mi))
+                                const view = (
                                     <MessageView
                                         key={message.id}
                                         message={message}
@@ -934,6 +945,13 @@ export function AgentChat({ uid, active, agentId, agentName, sessionId, onSessio
                                         createdAt={messageTimes[mi]}
                                         paidSources={paidSourcesByTurn.get(message.id)}
                                     />
+                                )
+                                if (!branches?.length) return view
+                                return (
+                                    <Fragment key={message.id}>
+                                        {view}
+                                        {branches}
+                                    </Fragment>
                                 )
                             })
                             const opening = turn.items[0].index
@@ -1026,7 +1044,7 @@ export function AgentChat({ uid, active, agentId, agentName, sessionId, onSessio
                             </motion.div>
                         ) : (
                             <motion.div key="composer" initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.28, ease: [0.4, 0, 0.2, 1] }} className="overflow-hidden pb-px">
-                                <ChatComposer ref={composerRef} uid={uid} active={active} uploadTarget={uploadTarget} status={status} busy={showLoader} onSend={text => sendMessage({ text })} onSent={() => onMessageSentRef.current?.()} onStop={handleStop} onUploadingChange={setUploading} queue={{ text: queued?.text ?? null, pending: stopping, enqueue: enqueueFromComposer, onSendNow: () => void sendQueuedNow(), onDiscard: clearQueued }} gate={{ ready: modelReady, onBlocked: blockSend, hint: modelHint }} modelSlot={<ModelSelector agentId={agentId} pickerKey={uid} onReadyChange={setModelReady} onOwnConnectionChange={setHasOwnConnection} onConnectionChange={setActiveConnectionId} onRefusedModelChange={setRefusedModel} />} contextSlot={contextStats && <Context usedTokens={contextStats.used} maxTokens={contextStats.max ?? modelContextWindow(contextStats.model, contextStats.provider)} usage={contextStats.usage} modelId={contextStats.model} />} textareaRef={inputRef} textareaProps={mentionTextareaProps} mentionTokens={mentionTokens} />
+                                <ChatComposer ref={composerRef} uid={uid} active={active} placeholder={composerPlaceholder} uploadTarget={uploadTarget} status={status} busy={showLoader} onSend={text => sendMessage({ text })} onSent={() => onMessageSentRef.current?.()} onStop={handleStop} onUploadingChange={setUploading} queue={{ text: queued?.text ?? null, pending: stopping, enqueue: enqueueFromComposer, onSendNow: () => void sendQueuedNow(), onDiscard: clearQueued }} gate={{ ready: modelReady, onBlocked: blockSend, hint: modelHint }} modelSlot={<ModelSelector agentId={agentId} pickerKey={uid} onReadyChange={setModelReady} onOwnConnectionChange={setHasOwnConnection} onConnectionChange={setActiveConnectionId} onRefusedModelChange={setRefusedModel} />} contextSlot={contextStats && <Context usedTokens={contextStats.used} maxTokens={contextStats.max ?? modelContextWindow(contextStats.model, contextStats.provider)} usage={contextStats.usage} modelId={contextStats.model} />} textareaRef={inputRef} textareaProps={mentionTextareaProps} mentionTokens={mentionTokens} />
                                 <ComposerSubscriptionCta open={!hasOwnConnection} onClick={connectSubscription} />
                             </motion.div>
                         )}

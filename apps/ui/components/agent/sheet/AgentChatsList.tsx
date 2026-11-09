@@ -31,9 +31,9 @@ type AgentChatsListProps = {
 }
 
 /**
- * One list for the conversations and for what waits on the user: a request is a conversation like
- * any other, only marked, and opening it leads back into its thread. The filter replaces the inbox
- * the panel used to carry beside the chat.
+ * One list for the coworker's threads and for what waits on the user: a request is a thread like
+ * any other, only marked, and opening it leads back into it. General is not listed: it has its own
+ * tab, always there. The filter replaces the inbox the panel used to carry beside the chat.
  */
 export function AgentChatsList({ agentId, agentName, activeSessionId, initialFilter, onSelect, onCreateNew, onClose }: AgentChatsListProps) {
     const [filter, setFilter] = useState<ChatsFilter>(initialFilter)
@@ -57,7 +57,7 @@ export function AgentChatsList({ agentId, agentName, activeSessionId, initialFil
 
     const waitingIds = useMemo(() => new Set(attention.map(item => item.id)), [attention])
     const runningIds = useMemo(() => new Set(sessions.filter(s => s.agentId === agentId && s.status === 'working').map(s => s.id)), [sessions, agentId])
-    const others = (history ?? []).filter(entry => !entry.id || !waitingIds.has(entry.id))
+    const others = (history ?? []).filter(entry => entry.kind !== 'general' && (!entry.id || !waitingIds.has(entry.id)))
     const inboxItems = attention.map(item => ({ ...item, agentName }))
     const listsHistory = filter !== 'needs'
     const shown = others.filter(entry => (filter === 'chats' ? !isAutomated(entry) : filter === 'automations' ? isAutomated(entry) : true))
@@ -83,12 +83,12 @@ export function AgentChatsList({ agentId, agentName, activeSessionId, initialFil
             <div className="flex shrink-0 items-center justify-between gap-2 px-3 pb-1 pt-3">
                 <span className="flex items-center gap-2 pl-1 text-sm font-semibold">
                     <MessageCircle className="size-4 text-muted-foreground" />
-                    Chats
+                    Threads
                 </span>
                 <div className="flex items-center gap-1.5">
                     <Button variant="outline" size="sm" onClick={onCreateNew}>
                         <PlusIcon className="size-3.5" />
-                        New chat
+                        New thread
                     </Button>
                     <Button aria-label="Close" variant="ghost" size="icon-sm" onClick={onClose}>
                         <XIcon className="size-4" />
@@ -111,7 +111,7 @@ export function AgentChatsList({ agentId, agentName, activeSessionId, initialFil
                 {filter === 'needs' && attention.length > 0 && (
                     <ConfirmDialog
                         title="Mark everything as read?"
-                        description={`${attention.length} conversation${attention.length !== 1 ? 's' : ''} will leave this list. Requests still waiting on an answer are cleared too, without being answered.`}
+                        description={`${attention.length} thread${attention.length !== 1 ? 's' : ''} will leave this list. Requests still waiting on an answer are cleared too, without being answered.`}
                         confirmLabel="Mark all as read"
                         confirmVariant="default"
                         onConfirm={() => markSessionsHandled(attention.map(item => item.id))}
@@ -144,9 +144,9 @@ export function AgentChatsList({ agentId, agentName, activeSessionId, initialFil
                             ))}
                         </div>
                     ))}
-                {filter === 'all' && history?.length === 0 && inboxItems.length === 0 && <p className="px-3 py-6 text-center text-xs text-muted-foreground">No conversation yet.</p>}
+                {filter === 'all' && history !== null && shown.length === 0 && inboxItems.length === 0 && <p className="px-3 py-6 text-center text-xs text-muted-foreground">No thread yet.</p>}
                 {(filter === 'chats' || filter === 'automations') && history !== null && shown.length === 0 && (
-                    <p className="px-3 py-6 text-center text-xs text-muted-foreground">{filter === 'chats' ? 'No chat yet.' : 'No automated run yet.'}</p>
+                    <p className="px-3 py-6 text-center text-xs text-muted-foreground">{filter === 'chats' ? 'No thread yet.' : 'No automated run yet.'}</p>
                 )}
             </div>
         </div>

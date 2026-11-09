@@ -1,8 +1,10 @@
 'use client'
 
+import type { ThreadRow } from '@/app/api/_services/conversation.service'
 import { AgentChat } from '@/components/chat/AgentChat'
 import type { MentionAgent } from '@/components/chat/MentionAutocomplete'
 import { useAgentSkillSummaries } from '@/hooks/useAgentSkillSummaries'
+import { NEW_THREAD_TITLE } from '@/hooks/useSessionTabs'
 import { useBoardStore } from '@/stores/board.store'
 import { createClient } from '@/supabase/client'
 import { selectMaybeSingle } from '@/supabase/supabase-helpers'
@@ -23,9 +25,14 @@ type AgentSheetChatProps = {
     onOpenInstall?: (sessionId: string) => void
     onRunFinished?: () => void
     onNewConversation?: () => void
+    // The coworker's General: its first message opens it on the hub, its feed hangs the threads.
+    kind?: 'general'
+    title?: string
+    threads?: ThreadRow[]
+    onOpenThread?: (sessionId: string, title: string) => void
 }
 
-export function AgentSheetChat({ uid, active, agentId, sessionId, onSessionCreated, initialRunId, arrival, setup, onSetupSkipped, onOpenInstall, onRunFinished, onNewConversation }: AgentSheetChatProps) {
+export function AgentSheetChat({ uid, active, agentId, sessionId, onSessionCreated, initialRunId, arrival, setup, onSetupSkipped, onOpenInstall, onRunFinished, onNewConversation, kind, title, threads, onOpenThread }: AgentSheetChatProps) {
     const boardAgents = useBoardStore(s => s.agents)
     const spaces = useBoardStore(s => s.spaces)
     // Every agent of the workspace answers to `call_agent`, whichever Box it sits in. Its own Box
@@ -59,7 +66,10 @@ export function AgentSheetChat({ uid, active, agentId, sessionId, onSessionCreat
     const alertPending = useBoardStore(s => s.sessions.some(entry => entry.id === sessionId && entry.status === 'awaiting_ack'))
     const sessionIdle = useBoardStore(s => s.sessions.some(entry => entry.id === sessionId && entry.status === 'idle'))
 
-    const body = useMemo(() => ({ source: 'builder' as const }), [])
+    const body = useMemo(() => ({ source: 'builder' as const, ...(kind === 'general' && { kind }) }), [kind])
+    const agentName = boardAgents.find(a => a.id === agentId)?.name ?? 'your coworker'
+    // A thread keeps the default name until the hub has named it after its first message.
+    const composerPlaceholder = kind === 'general' || !sessionId || !title || title === NEW_THREAD_TITLE ? `Message ${agentName}...` : `Reply in ${title}...`
 
     const header = originAgentName ? (
         <div className="relative flex items-center gap-2 mx-3 mt-2 p-3 rounded-md border border-border bg-muted/50">
@@ -76,7 +86,7 @@ export function AgentSheetChat({ uid, active, agentId, sessionId, onSessionCreat
             uid={uid}
             active={active}
             agentId={agentId}
-            agentName={boardAgents.find(a => a.id === agentId)?.name ?? 'your coworker'}
+            agentName={agentName}
             sessionId={sessionId}
             onSessionCreated={onSessionCreated}
             initialRunId={initialRunId}
@@ -95,6 +105,9 @@ export function AgentSheetChat({ uid, active, agentId, sessionId, onSessionCreat
             onNewConversation={onNewConversation}
             onSessionInserted={onSessionInsert}
             onSessionStatusChange={setSessionStatus}
+            threads={threads}
+            onOpenThread={onOpenThread}
+            composerPlaceholder={composerPlaceholder}
         />
     )
 }

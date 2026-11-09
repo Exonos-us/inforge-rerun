@@ -6,7 +6,7 @@ import { ATTENTION_NOTIFICATION_COLUMNS, attentionDetailsOf, attentionNotificati
 import { sanitizeIlike } from '@/lib/search/ilike'
 import { cancelRun, getSession, getSessionMessages, listRuns, listSessions, listSkillProposals } from '@/lib/engine/client'
 import type { EngineSkillProposal, SessionSource } from '@/lib/engine/types'
-import { ATTENTION_STATUSES, needsHuman, sessionStatusSchema, type AgentConversationsOverview, type Conversation, type ConversationHit, type SessionOutcome, type SessionStatus, type ToHandleList } from '@rerun/contracts'
+import { ATTENTION_STATUSES, needsHuman, sessionStatusSchema, type AgentConversationsOverview, type Conversation, type ConversationHit, type SessionKind, type SessionOutcome, type SessionStatus, type ToHandleList } from '@rerun/contracts'
 import type { Database } from '@/app/api/database.types'
 import { createClient } from '@/supabase/server'
 import { createServiceRoleClient } from '@/supabase/serviceRole'
@@ -24,6 +24,8 @@ export type SessionHistoryEntry = {
     originAgentName: string | null
     automationName: string | null
     outcome: SessionOutcome | null
+    kind: SessionKind
+    createdAt: string
 }
 
 // Session history for an agent: Supabase-mirrored sessions merged with
@@ -35,7 +37,7 @@ export async function listAgentSessions(agentId: string, actor?: Actor): Promise
     const supabase = createServiceRoleClient()
 
     const [{ data: rows }, target] = await Promise.all([
-        selectMany(supabase, 'sessions', ['id', 'title', 'status', 'updated_at', 'engine_session_id', 'origin_agent_id', 'source', 'automation_name', 'outcome'] as const, { agent_id: agentId }),
+        selectMany(supabase, 'sessions', ['id', 'title', 'status', 'updated_at', 'created_at', 'engine_session_id', 'origin_agent_id', 'source', 'automation_name', 'outcome', 'kind'] as const, { agent_id: agentId }),
         resolveAgentTarget(agentId, caller).catch(() => null),
     ])
     const supabaseRows = rows ?? []
@@ -73,6 +75,8 @@ export async function listAgentSessions(agentId: string, actor?: Actor): Promise
             originAgentName: r.origin_agent_id ? (namesById.get(r.origin_agent_id) ?? 'another coworker') : null,
             automationName: r.automation_name,
             outcome: r.outcome,
+            kind: r.kind,
+            createdAt: r.created_at,
         })),
         ...unmirrored.map(s => ({
             id: null,
@@ -88,10 +92,54 @@ export async function listAgentSessions(agentId: string, actor?: Actor): Promise
             originAgentName: s.originAgentId ? (byEngineId.get(s.originAgentId)?.name ?? 'another coworker') : null,
             automationName: null,
             outcome: null,
+            kind: 'thread' as const,
+            createdAt: s.createdAt,
         })),
     ]
 
     return entries.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+}
+
+export type ThreadRow = {
+    id: string
+    title: string
+    status: SessionStatus
+    source: SessionSource
+    createdAt: string
+    updatedAt: string
+    originAgentId: string | null
+    automationName: string | null
+    outcome: SessionOutcome | null
+    // What the thread opened with, when a person typed it in the app; null for a run the engine
+    // started and for threads older than the column.
+    firstMessage: string | null
+}
+
+export const THREAD_COLUMNS = ['id', 'title', 'status', 'source', 'created_at', 'updated_at', 'origin_agent_id', 'automation_name', 'outcome', 'first_message'] as const
+
+// PostgREST caps a select at 1000 rows: General shows the newest threads, the Threads list stays
+// the way to every older one.
+export const THREAD_FEED_LIMIT = 200
+
+// The threads General hangs under its messages, newest first. Read from Supabase alone: the engine
+// mirrors every conversation it opens on its own (`agent.session.created`), and the live state
+// comes from the board store, so there is nothing to ask the Box for here.
+export async function listAgentThreads(agentId: string, actor?: Actor): Promise<ThreadRow[]> {
+    await assertAgentAccess(agentId, 'use', actor)
+    const { data, error } = await selectMany(createServiceRoleClient(), 'sessions', THREAD_COLUMNS, { agent_id: agentId, kind: 'thread' }, { column: 'created_at', ascending: false }, THREAD_FEED_LIMIT)
+    if (error) throw error
+    return (data ?? []).map(row => ({
+        id: row.id,
+        title: row.title,
+        status: row.status,
+        source: (row.source ?? 'dashboard') as SessionSource,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        originAgentId: row.origin_agent_id,
+        automationName: row.automation_name,
+        outcome: row.outcome,
+        firstMessage: row.first_message,
+    }))
 }
 
 // The app's list of a coworker's conversations: the history, plus what the inbox knows of each one,

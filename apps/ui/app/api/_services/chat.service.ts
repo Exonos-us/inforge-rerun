@@ -4,7 +4,7 @@ import type { Database } from '@/app/api/database.types'
 import type { SessionStatus } from '@/lib/board/types'
 import { getRunSteps, listRuns } from '@/lib/engine/client'
 import type { EngineConnection, EngineRun, SessionSource } from '@/lib/engine/types'
-import { FOREMAN_AGENT_ID, type Usage } from '@rerun/contracts'
+import { FOREMAN_AGENT_ID, type SessionKind, type Usage } from '@rerun/contracts'
 import { createServiceRoleClient } from '@/supabase/serviceRole'
 import { selectMany, selectManyWithJoins, selectMaybeSingle, selectMaybeSingleWithJoins } from '@/supabase/supabase-helpers'
 import { isTemplateContentLocked } from '@/lib/templates/content-lock'
@@ -108,27 +108,58 @@ export async function getExistingSession(sessionId: string): Promise<{ sessionId
     return { sessionId: session.id, agentId: session.agent_id, engineSessionId: session.engine_session_id || null }
 }
 
-// Persist a Supabase session row pointing at the engine-created session.
-export async function createSessionRow(agentId: string, engineSessionId: string, title: string, originAgentId?: string | null, source?: SessionSource): Promise<string> {
+export const GENERAL_SESSION_TITLE = 'General'
+
+// The unique index `sessions_general_per_agent_idx` refuses a second General for the same coworker.
+const UNIQUE_VIOLATION = '23505'
+
+export type GeneralSession = { id: string; engineSessionId: string }
+
+// Thrown when a General is inserted for a coworker that already has one: two tabs raced to open
+// it, and the one that lost is told which row won so the chat can start over on that session.
+export class GeneralAlreadyOpenError extends Error {
+    constructor(readonly general: GeneralSession) {
+        super('General already open')
+    }
+}
+
+// General shows a thread under the message it opened with: the hub keeps that much of it, and no more.
+export const FIRST_MESSAGE_MAX_CHARS = 300
+
+// Persist a Supabase session row pointing at the engine-created session. A `general` row is the
+// coworker's main conversation: fixed title, one per coworker, and no opening message to show.
+export async function createSessionRow(agentId: string, engineSessionId: string, title: string, originAgentId?: string | null, source?: SessionSource, kind: SessionKind = 'thread', firstMessage?: string | null): Promise<string> {
     const supabase = createServiceRoleClient()
 
-    const { data: session } = await supabase
+    const { data: session, error } = await supabase
         .from('sessions')
         .insert<Database['public']['Tables']['sessions']['Insert']>({
             agent_id: agentId,
             engine_session_id: engineSessionId,
-            title: title?.slice(0, 50) || 'New conversation',
+            title: kind === 'general' ? GENERAL_SESSION_TITLE : title?.slice(0, 50) || 'New conversation',
             origin_agent_id: originAgentId ?? null,
             source: source ?? 'dashboard',
+            kind,
+            first_message: kind === 'general' ? null : firstMessage?.trim().slice(0, FIRST_MESSAGE_MAX_CHARS) || null,
         })
         .select('id')
         .single()
 
     if (!session) {
+        if (kind === 'general' && error?.code === UNIQUE_VIOLATION) {
+            const existing = await findGeneralSession(agentId)
+            if (existing) throw new GeneralAlreadyOpenError(existing)
+        }
         throw new Error('Failed to create session')
     }
 
     return session.id
+}
+
+// The coworker's main conversation, once someone has spoken in it.
+export async function findGeneralSession(agentId: string): Promise<GeneralSession | null> {
+    const { data } = await selectMaybeSingle(createServiceRoleClient(), 'sessions', ['id', 'engine_session_id'] as const, { agent_id: agentId, kind: 'general' })
+    return data ? { id: data.id, engineSessionId: data.engine_session_id } : null
 }
 
 // Mirrors an engine session the hub opened outside the browser: the foreman handing an agent its

@@ -9,7 +9,7 @@ import { selectMany, selectMaybeSingle } from '@/supabase/supabase-helpers'
 import { fakeSupabase } from '@/test/supabase-fake'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { adoptEngineSession, cancelSessionRuns, EMPTY_SESSION_SNAPSHOT, listAgentConversations, listWorkspaceConversationOverview, markSessionsHandled, readSessionSnapshot, searchWorkspaceConversations } from './conversation.service'
+import { adoptEngineSession, cancelSessionRuns, EMPTY_SESSION_SNAPSHOT, listAgentConversations, listAgentThreads, listWorkspaceConversationOverview, markSessionsHandled, readSessionSnapshot, searchWorkspaceConversations, THREAD_FEED_LIMIT } from './conversation.service'
 
 vi.mock('@/supabase/supabase-helpers', () => ({ selectMany: vi.fn(), selectMaybeSingle: vi.fn() }))
 vi.mock('@/supabase/serviceRole', () => ({ createServiceRoleClient: vi.fn() }))
@@ -28,7 +28,7 @@ const adminActor: Actor = { kind: 'user', userId: 'admin', workspaceId: 7, role:
 const reached = (agent = { workspace_id: 7, space_id: 'space-1', engine_agent_id: 'engine-agent' }) => ({ actor: adminActor, access: 'manage' as const, agent })
 
 function session(agentId: string, id: string, updatedAt: string, status = 'idle') {
-    return { id, agent_id: agentId, title: `${id} title`, status, updated_at: updatedAt, engine_session_id: `engine-${id}`, source: 'dashboard' }
+    return { id, agent_id: agentId, title: `${id} title`, status, updated_at: updatedAt, created_at: updatedAt, engine_session_id: `engine-${id}`, source: 'dashboard', kind: 'thread' }
 }
 
 // selectMany is called three times in order: agents, the latest scan, then the pending count.
@@ -397,5 +397,34 @@ describe('listAgentConversations', () => {
 
         expect(conversation).not.toHaveProperty('unseen')
         expect(selectMany).toHaveBeenCalledTimes(1)
+    })
+})
+
+describe('listAgentThreads', () => {
+    beforeEach(() => {
+        vi.clearAllMocks()
+        vi.mocked(assertAgentAccess).mockResolvedValue(reached())
+        vi.mocked(createServiceRoleClient).mockReturnValue({} as never)
+    })
+
+    it('reads the newest threads of the coworker from Supabase alone, General left out', async () => {
+        vi.mocked(selectMany).mockResolvedValueOnce({ data: [{ ...session('a', 's2', '2026-11-08T10:00:00Z'), automation_name: 'Daily check', outcome: 'done', origin_agent_id: null, first_message: 'Check the funnel' }], error: null } as never)
+
+        const threads = await listAgentThreads('a', adminActor)
+
+        expect(assertAgentAccess).toHaveBeenCalledWith('a', 'use', adminActor)
+        expect(vi.mocked(selectMany).mock.calls[0].slice(3)).toEqual([{ agent_id: 'a', kind: 'thread' }, { column: 'created_at', ascending: false }, THREAD_FEED_LIMIT])
+        expect(vi.mocked(resolveAgentTarget)).not.toHaveBeenCalled()
+        expect(threads).toEqual([{ id: 's2', title: 's2 title', status: 'idle', source: 'dashboard', createdAt: '2026-11-08T10:00:00Z', updatedAt: '2026-11-08T10:00:00Z', originAgentId: null, automationName: 'Daily check', outcome: 'done', firstMessage: 'Check the funnel' }])
+    })
+
+    it('exposes the kind and the opening time of every conversation in the history', async () => {
+        vi.mocked(resolveAgentTarget).mockRejectedValue(new Error('no box'))
+        vi.mocked(selectMany).mockResolvedValueOnce({ data: [{ ...session('a', 'g', '2026-11-08T10:00:00Z'), kind: 'general' }], error: null } as never)
+        vi.mocked(createClient).mockResolvedValue({ rpc: vi.fn().mockResolvedValue({ data: [], error: null }) } as never)
+
+        const conversations = await listAgentConversations({ ...ctx, userId: 'me' } as WorkspaceContext, 'a')
+
+        expect(conversations.map(c => [c.id, c.kind, c.createdAt])).toEqual([['g', 'general', '2026-11-08T10:00:00Z']])
     })
 })
