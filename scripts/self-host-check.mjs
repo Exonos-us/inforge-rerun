@@ -9,7 +9,7 @@ import { randomBytes } from 'node:crypto'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 
 const FILE = '.env'
-const GENERATED = ['RERUN_ENGINE_API_KEY', 'FOREMAN_HUB_TOKEN_SECRET', 'BOARD_IMAGE_SECRET']
+const GENERATED = ['RERUN_ENGINE_API_KEY', 'FOREMAN_HUB_TOKEN_SECRET', 'BOARD_IMAGE_SECRET', 'MOBILE_OAUTH_TICKET_SECRET', 'PUBLISHED_ACCESS_SECRET']
 const REQUIRED = {
     NEXT_PUBLIC_APP_URL: 'the address people open, e.g. http://localhost:3000',
     NEXT_PUBLIC_SUPABASE_URL: 'Supabase > Project settings > API > Project URL, or `npx supabase status` (API URL)',

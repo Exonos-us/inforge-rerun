@@ -166,6 +166,14 @@ Without the key, the Foreman skips the onboarding and runs on the AI you connect
 
 **An error from Composio when you click Connect**: the service has no auth config of yours yet. The ids shipped in the catalog are empty. Create one in Composio and write its id on the service. See [Composio](/self-host/services#composio).
 
+**"MOBILE_OAUTH_TICKET_SECRET is not configured on this server"**: that secret is empty. Run `node scripts/self-host-check.mjs` to generate it (or put any long random string on its line in `.env`), then `docker compose up -d`.
+
+## A published link does not open
+
+**It answers 404**: `PUBLISH_HOST` is empty. Set it to the host whose subdomains serve published pages (`localhost:3000` on this computer, a wildcard domain on a server) and run `docker compose up -d --build`. See [Configuration](/self-host/configuration#published-pages).
+
+**The access gate loops and never opens the page**, for a member, an invited email or the right password: `PUBLISHED_ACCESS_SECRET` is empty, so the ticket the gate hands over never verifies. Run `node scripts/self-host-check.mjs` to generate it, then `docker compose up -d`.
+
 ## The screen does not show
 
 The browser opens a coworker's screen directly on the server's address, over `ws://` or `wss://`.

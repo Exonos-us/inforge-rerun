@@ -9,22 +9,28 @@ You need Node 22, pnpm 8 (`corepack enable`), Docker (for the local Supabase) an
 
 ```bash
 pnpm install
-npx supabase start                 # Postgres, auth, storage and Mailpit on ports 54420 to 54429
+pnpm db:start                      # Postgres, auth, storage and Mailpit on ports 54420 to 54429
 pnpm --filter @rerun/contracts build
 cp .env.example apps/ui/.env
 cp apps/engine/.env.example apps/engine/.env
 ```
 
-Then fill the two files. Pick any long random string as the engine key and use it in both:
+`pnpm db:start` runs the Supabase CLI version this repository pins. `npx supabase start` grabs the
+latest one, which can refuse our `supabase/config.toml`.
+
+Then fill the two files. Pick any long random string as the engine key and use it in both, and a
+long random string for each secret:
 
 | `apps/ui/.env` | Value |
 |---|---|
 | `NEXT_PUBLIC_APP_URL` | `http://localhost:3050` |
 | `NEXT_PUBLIC_SUPABASE_URL` | `http://localhost:54421` |
-| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY` | the keys `npx supabase status` prints |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY` | the keys `pnpm exec supabase status` prints |
 | `OPENROUTER_API_KEY` | your OpenRouter key |
 | `RERUN_ENGINE_URL` | `http://localhost:3000` |
 | `RERUN_ENGINE_API_KEY` | the engine key |
+| `FOREMAN_HUB_TOKEN_SECRET`, `BOARD_IMAGE_SECRET`, `MOBILE_OAUTH_TICKET_SECRET`, `PUBLISHED_ACCESS_SECRET` | a random string each |
+| `PUBLISH_HOST` | `localhost:3050`, so the pages coworkers publish open at `<slug>.localhost:3050` |
 
 | `apps/engine/.env` | Value |
 |---|---|
