@@ -15,6 +15,9 @@ import {
     createPlanCheckoutSession,
     listInvoices,
     previewPlanChange,
+    removeTaxId,
+    saveBusinessDetails,
+    type BusinessDetails,
     updatePlanCheckoutSession,
     type InvoiceSummary,
     type PlanChangeResult,
@@ -40,6 +43,7 @@ import { readCancelReason } from '@/ee/lib/billing/read-cancel-reason'
 import type { CreditUsage } from '@/ee/lib/billing/credit-usage'
 import { BILLING_INTERVALS } from '@/ee/lib/billing/plans'
 import { stripe } from '@/ee/lib/billing/stripe'
+import type { TaxIdType } from '@/ee/lib/billing/tax-id'
 import { z } from 'zod'
 
 const sessionIdSchema = z.string().trim().min(1).max(200)
@@ -306,5 +310,33 @@ export async function listInvoicesAction(): Promise<{ ok: true; invoices: Invoic
         return { ok: true, invoices: await listInvoices() }
     } catch (err) {
         return failure(err, 'Failed to load your invoices')
+    }
+}
+
+// The type is only shaped here: the service checks it against the billing country.
+const businessDetailsSchema = z.object({
+    name: z.string().trim().min(1, 'Enter the business name').max(256),
+    type: z.string().regex(/^[a-z]{2}_[a-z_]+$/),
+    value: z.string().trim().min(1, 'Enter the number').max(64),
+})
+
+export async function saveBusinessDetailsAction(input: z.input<typeof businessDetailsSchema>): Promise<{ ok: true; business: BusinessDetails } | { ok: false; error: string }> {
+    try {
+        await requireBillingAdmin()
+        const parsed = businessDetailsSchema.safeParse(input)
+        if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid business details' }
+        return { ok: true, business: await saveBusinessDetails({ ...parsed.data, type: parsed.data.type as TaxIdType }) }
+    } catch (err) {
+        return failure(err, 'Failed to save your business details')
+    }
+}
+
+export async function removeTaxIdAction(): Promise<{ ok: true } | { ok: false; error: string }> {
+    try {
+        await requireBillingAdmin()
+        await removeTaxId()
+        return { ok: true }
+    } catch (err) {
+        return failure(err, 'Failed to remove the number')
     }
 }

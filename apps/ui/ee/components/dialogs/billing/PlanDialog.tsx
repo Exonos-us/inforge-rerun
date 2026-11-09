@@ -24,6 +24,7 @@ import { ChevronRightIcon, CoinsIcon, ExternalLinkIcon, MinusIcon, PlusIcon, Rec
 import { useSession } from '@/supabase/session/SessionProvider'
 
 import { BillingDialogShell } from './BillingDialogShell'
+import { BusinessDetailsPane, BusinessDetailsRow } from './BusinessDetailsPane'
 import { AppsSection, appSlotsLabel, appSlotsOf, useAppSlots, withAppSlots, type AppSlots, type AppSlotsState } from './AppsSection'
 import { useEnabledPaidApps } from '@/components/layout/FeatureFlagsProvider'
 import { appInfo } from '@/lib/apps/catalog'
@@ -37,7 +38,7 @@ import { BilledFlow, CardOnFile, CountFlow, IntervalToggle, Notice, PayFooter, P
 import { StripeCheckoutProvider, StripePaymentFields, StripePaymentFieldsSkeleton } from './StripeCheckout'
 import { usePlanQuote } from './usePlanQuote'
 
-type Drill = 'overview' | 'card' | 'invoices' | 'credit' | 'usage'
+type Drill = 'overview' | 'card' | 'invoices' | 'credit' | 'usage' | 'business'
 type Success = { title: string; body: string; rows?: { label: string; value: string }[] }
 
 function billed(cents: number, interval: BillingInterval): string {
@@ -170,8 +171,19 @@ export function PlanDialog({
                     <CreditPane state={state} onBack={() => setDrill('overview')} onDone={next => void done(next)} />
                 ) : drill === 'usage' ? (
                     <UsagePane credit={credit} onBack={() => setDrill('overview')} />
+                ) : drill === 'business' ? (
+                    <BusinessDetailsPane business={state.business} onBack={() => setDrill('overview')} onSaved={onChanged} />
                 ) : (
-                    <OverviewPane state={state} creditLeftMicros={credit.balance?.leftMicros ?? null} onCard={() => setDrill('card')} onInvoices={() => setDrill('invoices')} onUsage={() => setDrill('usage')} onCancel={onCancel} onChanged={onChanged} />
+                    <OverviewPane
+                        state={state}
+                        creditLeftMicros={credit.balance?.leftMicros ?? null}
+                        onCard={() => setDrill('card')}
+                        onInvoices={() => setDrill('invoices')}
+                        onUsage={() => setDrill('usage')}
+                        onBusiness={() => setDrill('business')}
+                        onCancel={onCancel}
+                        onChanged={onChanged}
+                    />
                 )}
             </PanelSteps>
         )
@@ -180,7 +192,25 @@ export function PlanDialog({
     return <BillingDialogShell title="Rerun Pro" left={left} right={right} />
 }
 
-function OverviewPane({ state, creditLeftMicros, onCard, onInvoices, onUsage, onCancel, onChanged }: { state: SubscriptionState; creditLeftMicros: number | null; onCard: () => void; onInvoices: () => void; onUsage: () => void; onCancel: () => void; onChanged: () => Promise<void> }) {
+function OverviewPane({
+    state,
+    creditLeftMicros,
+    onCard,
+    onInvoices,
+    onUsage,
+    onBusiness,
+    onCancel,
+    onChanged,
+}: {
+    state: SubscriptionState
+    creditLeftMicros: number | null
+    onCard: () => void
+    onInvoices: () => void
+    onUsage: () => void
+    onBusiness: () => void
+    onCancel: () => void
+    onChanged: () => Promise<void>
+}) {
     const [keeping, setKeeping] = useState(false)
 
     const keepYearly = async () => {
@@ -212,6 +242,7 @@ function OverviewPane({ state, creditLeftMicros, onCard, onInvoices, onUsage, on
                         </span>
                         <span className="text-muted-foreground underline underline-offset-4">View all</span>
                     </button>
+                    <BusinessDetailsRow business={state.business} onOpen={onBusiness} />
                     <button type="button" onClick={onUsage} className="flex items-center justify-between rounded-xl bg-background/60 px-4 py-3 text-sm ring-1 ring-border hover:bg-background">
                         <span className="flex items-center gap-3">
                             <CoinsIcon className="size-4 text-muted-foreground" />

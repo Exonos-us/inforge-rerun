@@ -44,6 +44,7 @@ import { isTemplateSubscription, stripeTimestampIso, subscriptionPeriodEndIso } 
 import { isSameSubscription, shouldAdoptSubscription } from '@/ee/lib/billing/ownership'
 import { hasPeriodAdvanced, rerunPeriodUpdate } from '@/ee/lib/billing/period'
 import { trialArm } from '@/ee/lib/billing/trial-experiment'
+import { normalizeTaxIdValue, taxIdTypesFor, type TaxIdStatus, type TaxIdType } from '@/ee/lib/billing/tax-id'
 import {
     addonForPriceId,
     basePriceId,
@@ -516,6 +517,7 @@ export type SubscriptionState = {
     cancelPhase: CancelPhase | null
     // A retention offer claimed and still waiting for the invoice it discounts.
     retentionOffer: RetentionOfferKind | null
+    business: BusinessDetails
 }
 
 // Only flat, never-ending coupons count: a percentage or a time-limited promo would make the
@@ -549,7 +551,7 @@ export async function getSubscriptionState(): Promise<SubscriptionState | null> 
     if (!workspace?.stripe_subscription_id) return null
 
     const subscription = await stripe.subscriptions.retrieve(workspace.stripe_subscription_id, {
-        expand: ['discounts.source.coupon', 'customer.invoice_settings.default_payment_method', 'default_payment_method'],
+        expand: ['discounts.source.coupon', 'customer.invoice_settings.default_payment_method', 'customer.tax_ids', 'default_payment_method'],
     })
     const { hasBase, quantities } = quantitiesFromItems(subscription.items.data)
     if (!hasBase) return null
@@ -585,6 +587,7 @@ export async function getSubscriptionState(): Promise<SubscriptionState | null> 
         cancelAtPeriodEnd: subscription.cancel_at_period_end,
         cancelPhase: cancelFlowPhase(subscription.status, hasPaymentMethod),
         retentionOffer: pendingRetentionOffer(subscription),
+        business: businessDetailsOf(customer),
     }
 }
 
@@ -631,6 +634,85 @@ export async function listInvoices(): Promise<InvoiceSummary[]> {
             pdfUrl: invoice.invoice_pdf ?? null,
             hostedUrl: invoice.hosted_invoice_url ?? null,
         }))
+}
+
+// --- Business details: the name and the tax ID the invoices carry ---
+
+export type BusinessTaxId = { type: TaxIdType; value: string; status: TaxIdStatus | null }
+
+// `country` is the billing address's: the tax ID types on offer are read off it, and a customer
+// without one (a trial started without a card) has nothing to check a number against yet.
+export type BusinessDetails = { name: string | null; country: string | null; taxId: BusinessTaxId | null }
+
+function customerTaxIds(customer: Stripe.Customer): Stripe.TaxId[] {
+    return customer.tax_ids?.data ?? []
+}
+
+function businessDetailsOf(customer: Stripe.Customer | null): BusinessDetails {
+    if (!customer) return { name: null, country: null, taxId: null }
+    const taxId = customerTaxIds(customer).find(id => id.type !== 'unknown')
+    return {
+        name: customer.name ?? null,
+        country: customer.address?.country ?? null,
+        taxId: taxId ? { type: taxId.type as TaxIdType, value: taxId.value, status: taxId.verification?.status ?? null } : null,
+    }
+}
+
+async function requireBillingCustomer(): Promise<Stripe.Customer> {
+    const workspaceId = await requireWorkspaceId()
+    const { data: workspace } = await selectSingle(createServiceRoleClient(), 'workspaces', ['stripe_customer_id'] as const, { id: workspaceId })
+    if (!workspace?.stripe_customer_id) throw new Error('Your workspace has no billing account yet.')
+    const customer = await stripe.customers.retrieve(workspace.stripe_customer_id, { expand: ['tax_ids'] })
+    if (customer.deleted) throw new Error('Your billing account was closed.')
+    return customer
+}
+
+function countryName(country: string): string {
+    return new Intl.DisplayNames(['en'], { type: 'region' }).of(country) ?? country
+}
+
+function isInvalidTaxIdError(err: unknown): boolean {
+    return typeof err === 'object' && err !== null && (err as { code?: unknown }).code === 'tax_id_invalid'
+}
+
+export type BusinessDetailsInput = { name: string; type: TaxIdType; value: string }
+
+// One number per customer: the new one is created before the old ones go, so a number Stripe
+// refuses leaves the one already on file in place. Only the invoices finalized from now on carry
+// it; the ones already issued are left as they are.
+export async function saveBusinessDetails(input: BusinessDetailsInput): Promise<BusinessDetails> {
+    const customer = await requireBillingCustomer()
+    const country = customer.address?.country
+    if (!country) throw new Error('Add a card first: the number is checked against its billing address.')
+    if (!taxIdTypesFor(country).includes(input.type)) throw new Error(`This kind of number does not match your billing country, ${countryName(country)}.`)
+
+    const value = normalizeTaxIdValue(input.type, input.value, country)
+    const existing = customerTaxIds(customer)
+    let kept = existing.find(id => id.type === input.type && id.value === value)
+    if (!kept) {
+        try {
+            kept = await stripe.customers.createTaxId(customer.id, { type: input.type, value })
+        } catch (err) {
+            if (isInvalidTaxIdError(err)) throw new Error(`This number is not valid for ${countryName(country)}.`)
+            throw err
+        }
+    }
+    const keptId = kept.id
+    await Promise.all(existing.filter(id => id.id !== keptId).map(id => stripe.customers.deleteTaxId(customer.id, id.id)))
+
+    const name = input.name.trim()
+    if (name !== customer.name) await stripe.customers.update(customer.id, { name })
+
+    return {
+        name,
+        country,
+        taxId: { type: input.type, value: kept.value, status: kept.verification?.status ?? null },
+    }
+}
+
+export async function removeTaxId(): Promise<void> {
+    const customer = await requireBillingCustomer()
+    await Promise.all(customerTaxIds(customer).map(id => stripe.customers.deleteTaxId(customer.id, id.id)))
 }
 
 function pendingRetentionOffer(subscription: Stripe.Subscription): RetentionOfferKind | null {

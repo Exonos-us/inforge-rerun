@@ -32,6 +32,8 @@ import {
     stampFirstPlanPayment,
     startCardlessTrial,
     syncStripeCustomerEmail,
+    removeTaxId,
+    saveBusinessDetails,
 } from './billing.service'
 
 // Hoisted so the portal tests, which reload the service to reset its cached configuration id, still
@@ -879,7 +881,19 @@ describe('getSubscriptionState', () => {
             cancelAtPeriodEnd: false,
             cancelPhase: 'paid',
             retentionOffer: null,
+            business: { name: null, country: null, taxId: null },
         })
+    })
+
+    it('reads the business name, the billing country and the tax ID off the customer', async () => {
+        useDb({ row })
+        const taxId = { id: 'txi_1', type: 'eu_vat', value: 'FR12345678901', verification: { status: 'verified' } }
+        vi.mocked(stripe.subscriptions.retrieve).mockResolvedValue(sub({ customer: { id: 'cus_1', name: 'Acme SAS', address: { country: 'FR' }, tax_ids: { data: [taxId] }, invoice_settings: {} } }) as never)
+        vi.mocked(stripe.invoices.createPreview).mockResolvedValue({ amount_due: 4900, period_end: PERIOD_END } as never)
+
+        const state = await getSubscriptionState()
+        expect(state?.business).toEqual({ name: 'Acme SAS', country: 'FR', taxId: { type: 'eu_vat', value: 'FR12345678901', status: 'verified' } })
+        expect(stripe.subscriptions.retrieve).toHaveBeenCalledWith('sub_1', expect.objectContaining({ expand: expect.arrayContaining(['customer.tax_ids']) }))
     })
 
     it('reports no coworker downgrade for a workspace still holding agent packs, and no pack in its quantities', async () => {
@@ -1564,5 +1578,78 @@ describe('listInvoices', () => {
             ],
         } as never)
         await expect(listInvoices()).resolves.toEqual([{ id: 'in_1', createdAt: iso(PERIOD_END), amountCents: 4900, status: 'paid', pdfUrl: 'https://pdf', hostedUrl: 'https://inv' }])
+    })
+})
+
+describe('business details', () => {
+    const OLD = { id: 'txi_old', type: 'eu_vat', value: 'FR00000000000', verification: { status: 'verified' } }
+
+    function useCustomer(customer: Record<string, unknown>) {
+        useDb({ row: { id: WORKSPACE_ID, stripe_customer_id: 'cus_1' } })
+        vi.mocked(stripe.customers.retrieve).mockResolvedValue({ id: 'cus_1', name: 'Acme', address: { country: 'FR' }, tax_ids: { data: [] }, ...customer } as never)
+    }
+
+    beforeEach(() => {
+        vi.resetAllMocks()
+        m.requireWorkspaceId.mockResolvedValue(WORKSPACE_ID)
+    })
+
+    it('creates the new number before removing the old one, and names the customer', async () => {
+        useCustomer({ tax_ids: { data: [OLD] } })
+        vi.mocked(stripe.customers.createTaxId).mockResolvedValue({ id: 'txi_new', type: 'eu_vat', value: 'FR12345678901', verification: { status: 'pending' } } as never)
+
+        await expect(saveBusinessDetails({ name: ' Acme SAS ', type: 'eu_vat', value: '12 345 678 901' })).resolves.toEqual({
+            name: 'Acme SAS',
+            country: 'FR',
+            taxId: { type: 'eu_vat', value: 'FR12345678901', status: 'pending' },
+        })
+        expect(stripe.customers.retrieve).toHaveBeenCalledWith('cus_1', { expand: ['tax_ids'] })
+        expect(stripe.customers.createTaxId).toHaveBeenCalledWith('cus_1', { type: 'eu_vat', value: 'FR12345678901' })
+        expect(stripe.customers.deleteTaxId).toHaveBeenCalledWith('cus_1', 'txi_old')
+        expect(vi.mocked(stripe.customers.createTaxId).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(stripe.customers.deleteTaxId).mock.invocationCallOrder[0])
+        expect(stripe.customers.update).toHaveBeenCalledWith('cus_1', { name: 'Acme SAS' })
+    })
+
+    it('keeps the number already on file and only renames', async () => {
+        useCustomer({ tax_ids: { data: [OLD] } })
+
+        const saved = await saveBusinessDetails({ name: 'Acme', type: 'eu_vat', value: 'FR00000000000' })
+        expect(saved.taxId).toEqual({ type: 'eu_vat', value: 'FR00000000000', status: 'verified' })
+        expect(stripe.customers.createTaxId).not.toHaveBeenCalled()
+        expect(stripe.customers.deleteTaxId).not.toHaveBeenCalled()
+        expect(stripe.customers.update).not.toHaveBeenCalled()
+    })
+
+    it('words the refusal of an invalid number and leaves the old one in place', async () => {
+        useCustomer({ tax_ids: { data: [OLD] } })
+        vi.mocked(stripe.customers.createTaxId).mockRejectedValue(Object.assign(new Error('Invalid value for eu_vat.'), { code: 'tax_id_invalid' }))
+
+        await expect(saveBusinessDetails({ name: 'Acme', type: 'eu_vat', value: 'FR1' })).rejects.toThrow('This number is not valid for France.')
+        expect(stripe.customers.deleteTaxId).not.toHaveBeenCalled()
+    })
+
+    it('refuses a kind of number that does not belong to the billing country', async () => {
+        useCustomer({})
+        await expect(saveBusinessDetails({ name: 'Acme', type: 'gb_vat', value: 'GB123456789' })).rejects.toThrow('This kind of number does not match your billing country, France.')
+        expect(stripe.customers.createTaxId).not.toHaveBeenCalled()
+    })
+
+    it('asks for a card first when the customer has no billing address', async () => {
+        useCustomer({ address: null })
+        await expect(saveBusinessDetails({ name: 'Acme', type: 'eu_vat', value: 'FR12345678901' })).rejects.toThrow('Add a card first')
+        expect(stripe.customers.createTaxId).not.toHaveBeenCalled()
+    })
+
+    it('refuses a workspace that has no Stripe customer, without creating one', async () => {
+        useDb({ row: { id: WORKSPACE_ID, stripe_customer_id: null } })
+        await expect(saveBusinessDetails({ name: 'Acme', type: 'eu_vat', value: 'FR12345678901' })).rejects.toThrow('Your workspace has no billing account yet.')
+        expect(stripe.customers.create).not.toHaveBeenCalled()
+    })
+
+    it('removes every number on file', async () => {
+        useCustomer({ tax_ids: { data: [OLD, { ...OLD, id: 'txi_2' }] } })
+        await removeTaxId()
+        expect(stripe.customers.deleteTaxId).toHaveBeenCalledWith('cus_1', 'txi_old')
+        expect(stripe.customers.deleteTaxId).toHaveBeenCalledWith('cus_1', 'txi_2')
     })
 })

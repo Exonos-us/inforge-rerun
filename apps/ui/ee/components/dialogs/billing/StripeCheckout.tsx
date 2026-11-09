@@ -1,6 +1,6 @@
 'use client'
 
-import { BillingAddressElement, CheckoutElementsProvider, ExpressCheckoutElement, PaymentElement, useCheckout } from '@stripe/react-stripe-js/checkout'
+import { BillingAddressElement, CheckoutElementsProvider, ExpressCheckoutElement, PaymentElement, TaxIdElement, useCheckout } from '@stripe/react-stripe-js/checkout'
 import type { Appearance, StripeCheckoutExpressCheckoutElementOptions, StripeExpressCheckoutElementConfirmEvent } from '@stripe/stripe-js'
 import { useTheme } from 'next-themes'
 import { useState, type ReactNode } from 'react'
@@ -11,6 +11,10 @@ import { stripeBrowser } from '@/ee/lib/billing/stripe-client'
 import { cn } from '@/lib/utils'
 
 import { Notice, PromoCodeField, usd } from './parts'
+
+// No `verification` option: the element refuses to load with it on an account without Stripe Tax
+// Complete. The number is still checked against VIES once it lands on the customer.
+const TAX_ID_OPTIONS = { visibility: 'auto' } as const
 
 function appearanceFor(theme: string | undefined): Appearance {
     return {
@@ -47,6 +51,7 @@ export function StripePaymentFieldsSkeleton() {
             </div>
             <Skeleton className="h-10 w-full" />
             <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-5 w-48" />
         </div>
     )
 }
@@ -71,7 +76,8 @@ export type WalletPayment = {
 }
 
 // The wallets, the card and the billing address. The address is not optional: the tax is computed from
-// it, and a wallet hands over its own.
+// it, and a wallet hands over its own. The tax ID sits behind Stripe's own "purchasing as a business"
+// box: in this mode `tax_id_collection` on the session draws nothing by itself.
 export function StripePaymentFields({ wallet }: { wallet?: WalletPayment }) {
     const checkout = useCheckout()
     const [walletsShown, setWalletsShown] = useState(false)
@@ -103,6 +109,7 @@ export function StripePaymentFields({ wallet }: { wallet?: WalletPayment }) {
             )}
             <PaymentElement options={{ layout: 'tabs' }} />
             <BillingAddressElement />
+            <TaxIdElement options={TAX_ID_OPTIONS} />
         </div>
     )
 }

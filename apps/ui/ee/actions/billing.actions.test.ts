@@ -14,6 +14,8 @@ import {
     listInvoicesAction,
     previewPlanChangeAction,
     readCheckoutOutcomeAction,
+    removeTaxIdAction,
+    saveBusinessDetailsAction,
     updatePlanCheckoutAction,
 } from './billing.actions'
 
@@ -32,8 +34,12 @@ vi.mock('@/ee/services/billing.service', () => ({
     listInvoices: vi.fn(),
     previewPlanChange: vi.fn(),
     readCheckoutOutcome: vi.fn(),
+    removeTaxId: vi.fn(),
+    saveBusinessDetails: vi.fn(),
     updatePlanCheckoutSession: vi.fn(),
 }))
+
+const BUSINESS = { name: 'Acme SAS', type: 'eu_vat', value: 'FR12345678901' } as const
 
 const SELECTION = { quantities: { credit_pack: 1, linkedin_slot: 0, whatsapp_slot: 0 }, interval: 'yearly' } as const
 
@@ -51,6 +57,8 @@ describe('a member who is not an admin', () => {
         ['createPlanCardSetupAction', () => createPlanCardSetupAction()],
         ['changePlanAction', () => changePlanAction(SELECTION)],
         ['confirmCardSetupAction', () => confirmCardSetupAction('cs_1')],
+        ['saveBusinessDetailsAction', () => saveBusinessDetailsAction(BUSINESS)],
+        ['removeTaxIdAction', () => removeTaxIdAction()],
     ]
 
     it.each(writes)('is refused %s before anything reaches Stripe', async (_name, action) => {
@@ -121,6 +129,13 @@ describe('the thin billing actions', () => {
         ['changePlanAction', () => changePlanAction(SELECTION), () => vi.mocked(billing.changePlan).mockResolvedValue({ trialEnded: false, switchAt: null, paymentClientSecret: null }), { ok: true, trialEnded: false, switchAt: null, paymentClientSecret: null }],
         ['listInvoicesAction', () => listInvoicesAction(), () => vi.mocked(billing.listInvoices).mockResolvedValue([]), { ok: true, invoices: [] }],
         ['getSubscriptionStateAction', () => getSubscriptionStateAction(), () => vi.mocked(billing.getSubscriptionState).mockResolvedValue(null), { ok: true, state: null }],
+        [
+            'saveBusinessDetailsAction',
+            () => saveBusinessDetailsAction(BUSINESS),
+            () => vi.mocked(billing.saveBusinessDetails).mockResolvedValue({ name: 'Acme SAS', country: 'FR', taxId: { type: 'eu_vat', value: 'FR12345678901', status: 'pending' } }),
+            { ok: true, business: { name: 'Acme SAS', country: 'FR', taxId: { type: 'eu_vat', value: 'FR12345678901', status: 'pending' } } },
+        ],
+        ['removeTaxIdAction', () => removeTaxIdAction(), () => vi.mocked(billing.removeTaxId).mockResolvedValue(undefined), { ok: true }],
     ]
 
     it.each(cases)('%s wraps what the service answers', async (_name, action, arrange, expected) => {
@@ -133,6 +148,12 @@ describe('the thin billing actions', () => {
         for (const fn of Object.values(billing)) if (vi.isMockFunction(fn)) fn.mockRejectedValue(failure)
 
         await expect(action()).resolves.toEqual({ ok: false, error: 'service exploded' })
+    })
+
+    it('refuses business details without a name or a number before reaching the service', async () => {
+        await expect(saveBusinessDetailsAction({ ...BUSINESS, name: '  ' })).resolves.toEqual({ ok: false, error: 'Enter the business name' })
+        await expect(saveBusinessDetailsAction({ ...BUSINESS, value: '' })).resolves.toEqual({ ok: false, error: 'Enter the number' })
+        expect(billing.saveBusinessDetails).not.toHaveBeenCalled()
     })
 
     it('falls back to a generic message when something that is not an Error is thrown', async () => {

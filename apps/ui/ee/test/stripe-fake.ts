@@ -17,7 +17,7 @@ export const TEST_WEBHOOK_SECRET = 'whsec_vitest'
 export function fakeStripe() {
     return {
         webhooks: offline.webhooks,
-        customers: { create: vi.fn(), retrieve: vi.fn(), update: vi.fn() },
+        customers: { create: vi.fn(), retrieve: vi.fn(), update: vi.fn(), createTaxId: vi.fn(), deleteTaxId: vi.fn() },
         subscriptions: { create: vi.fn(), retrieve: vi.fn(), update: vi.fn(), list: vi.fn(), cancel: vi.fn() },
         subscriptionSchedules: { create: vi.fn(), retrieve: vi.fn(), update: vi.fn(), release: vi.fn() },
         checkout: { sessions: { create: vi.fn(), retrieve: vi.fn(), update: vi.fn() } },
