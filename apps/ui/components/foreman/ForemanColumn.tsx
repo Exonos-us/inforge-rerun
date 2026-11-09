@@ -68,7 +68,7 @@ export function ForemanColumn({ open, placement }: { open: boolean | null; place
     const { isAnonymous, workspace, phoneStep } = useSession()
     const pendingIntake = useOnboardingStore(state => state.pendingIntake)
     const gated = isAnonymous && pendingIntake !== null && !intakeOpen
-    const { messages, sendMessage, status, error, stop, regenerate, answerWidget, dismissWidget, pendingWidget, restoreDone, composerBackend, backend, contextStats, runError, reconnecting, activeRunId } = useForemanChat()
+    const { messages, sendMessage, status, error, stop, stopping, regenerate, answerWidget, dismissWidget, pendingWidget, restoreDone, composerBackend, backend, contextStats, runError, reconnecting, activeRunId } = useForemanChat()
     const busy = status === 'submitted' || status === 'streaming' || reconnecting
 
     // Ce que le board dessine à gauche pendant tout le tunnel. L'organisation vit dans le transcript
@@ -91,7 +91,6 @@ export function ForemanColumn({ open, placement }: { open: boolean | null; place
         composerRef.current?.focus()
     }, [])
     const [uploading, setUploading] = useState(false)
-    const [stopping, setStopping] = useState(false)
 
     // The kickoff marker goes through here too, and the store turns it away like every message of
     // the funnel: the browser notification permission is only asked once the onboarding is over.
@@ -253,7 +252,8 @@ export function ForemanColumn({ open, placement }: { open: boolean | null; place
         if (status !== 'streaming' && status !== 'submitted') flushingRef.current = null
     }, [status])
 
-    const canFlush = shouldFlush({ queued, busy, uploading, status, hasError: displayedError !== null })
+    // `stopping` holds the message until the stop has answered, whichever button asked for it.
+    const canFlush = shouldFlush({ queued, busy: busy || stopping, uploading, status, hasError: displayedError !== null })
     useEffect(() => {
         if (!canFlush || !queued || flushingRef.current) return
         if (!sendMessage({ text: queued.text }, { queued: true })) return
@@ -285,9 +285,7 @@ export function ForemanColumn({ open, placement }: { open: boolean | null; place
 
     const sendQueuedNow = useCallback(async () => {
         if (!queued) return
-        setStopping(true)
         await stop()
-        setStopping(false)
     }, [queued, stop])
 
     const queue = useMemo(

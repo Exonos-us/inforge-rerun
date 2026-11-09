@@ -254,18 +254,27 @@ export function useForemanChat() {
 
     // Closing the stream alone would leave the engine run going, still answering nobody. The session
     // rides along because a tab reloaded mid-run may not hold the id of the run it is looking at.
+    // `stopping` stays true until the engine has answered, whichever button asked: the stream flips
+    // to ready as soon as it is aborted, and a queued message sent then would start the run the
+    // engine is about to sweep.
+    const [stopping, setStopping] = useState(false)
     const stop = useCallback(async () => {
-        if (!onEngine) {
-            autoResumePending.current = false
-            return hubChat.stop()
+        setStopping(true)
+        try {
+            if (!onEngine) {
+                autoResumePending.current = false
+                return await hubChat.stop()
+            }
+            await stopEngineStream()
+            const params = new URLSearchParams({ sessionId })
+            const runId = useForemanStore.getState().engineRunId
+            if (runId) params.set('runId', runId)
+            holdRun(null)
+            clearEngineError()
+            await fetch(`/api/chat/foreman/engine?${params}`, { method: 'DELETE' }).catch(() => {})
+        } finally {
+            setStopping(false)
         }
-        await stopEngineStream()
-        const params = new URLSearchParams({ sessionId })
-        const runId = useForemanStore.getState().engineRunId
-        if (runId) params.set('runId', runId)
-        holdRun(null)
-        clearEngineError()
-        await fetch(`/api/chat/foreman/engine?${params}`, { method: 'DELETE' }).catch(() => {})
     }, [onEngine, hubChat, stopEngineStream, clearEngineError, holdRun, sessionId])
 
     // Closing a question ends the turn without answering it, the way an agent's chat does. On the
@@ -393,5 +402,5 @@ export function useForemanChat() {
     // A stream being chased is not a failure yet: the error only shows once the chase gave up.
     const error = onEngine && reconnecting ? undefined : chat.error
 
-    return { ...chat, error, stop, sendMessage: send, regenerate, answerWidget, dismissWidget, pendingWidget, restoreDone, composerBackend, backend, contextStats, runError, reconnecting: onEngine && reconnecting, activeRunId: onEngine ? activeRunId : null }
+    return { ...chat, error, stop, stopping, sendMessage: send, regenerate, answerWidget, dismissWidget, pendingWidget, restoreDone, composerBackend, backend, contextStats, runError, reconnecting: onEngine && reconnecting, activeRunId: onEngine ? activeRunId : null }
 }

@@ -45,6 +45,7 @@ const TOOL_SYMBOLS: Record<string, SFSymbol> = {
     brain_decide: 'brain',
 
     vision_analyze: 'eye',
+    image_generation: 'photo',
 
     delegate_tasks: 'person.2',
     call_agent: 'person.2',

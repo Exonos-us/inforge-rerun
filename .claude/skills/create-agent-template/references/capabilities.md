@@ -22,7 +22,7 @@ All of them are **`true` by default** (`packages/contracts/src/agent.ts`, `tools
 
 `selfImprovement` (`enabled`, `allowSoulEdit`, `allowToolInstall`, `autoMemory`) stays at its default: it is what lets the agent adapt to its owner.
 
-**No image generation tool** in the engine. A visual agent produces HTML/CSS rendered as PNG through the browser or a script (`shell`), or goes through an app from the catalog (Canva, an image generator). I check it with `search_connectors` before promising a visual.
+**Image generation comes only with a ChatGPT connection**: a coworker on `codex` has the image tool built into Codex, a coworker on Claude, Rerun or an API key has none. A visual agent on another provider produces HTML/CSS rendered as PNG through the browser or a script (`shell`), or goes through an app from the catalog (Canva, an image generator). I check it with `search_connectors` before promising a visual.
 
 ## Grid: computer use
 

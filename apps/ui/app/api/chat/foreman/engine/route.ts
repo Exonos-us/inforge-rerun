@@ -140,10 +140,12 @@ export async function DELETE(req: Request): Promise<Response> {
     if (!runId && !sessionId) return Response.json({ error: 'Missing run id' }, { status: 400 })
 
     try {
-        // The run this tab streamed is stopped by name, which also works on an engine that cannot
-        // list the foreman's runs yet. The session covers a run the tab never held the id of.
-        if (runId) await cancelRun(await getWorkspaceConnection(ctx.workspace.id), FOREMAN_AGENT_ID, runId)
+        // The session goes first: cancelling a run frees the conversation on the engine, and a message
+        // waiting behind it starts its own run at once. Listed after that, the new run would be swept
+        // away too. The run this tab streamed is then stopped by name, which also works on an engine
+        // that cannot list the foreman's runs yet.
         if (sessionId) await cancelForemanSessionRuns(ctx, sessionId).catch(err => (runId ? undefined : Promise.reject(err)))
+        if (runId) await cancelRun(await getWorkspaceConnection(ctx.workspace.id), FOREMAN_AGENT_ID, runId)
     } catch (err) {
         return Response.json({ error: err instanceof Error ? err.message : 'Failed to stop the run' }, { status: 502 })
     }

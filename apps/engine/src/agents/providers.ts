@@ -27,6 +27,7 @@ import { relayMcpServer, type RunMcpServer } from '../tools/mcp-relay.js'
 import { claudeContextCapture, type ClaudeContextCapture } from './claude-context.js'
 import { claudeScreenshotMiddleware } from './claude-stream.js'
 import { codexMcpCompatibilityMiddleware } from './codex-stream.js'
+import { createCodexImageMiddleware } from './codex-images.js'
 import { googleToolSchemaMiddleware } from './google-tool-schema.js'
 import { createQuickRepliesCapture, type QuickRepliesCapture } from './quick-replies-stream.js'
 import { createFakeToolCallGuard } from './fake-tool-call-stream.js'
@@ -468,7 +469,7 @@ export function resolveModel(agent: LoadedAgent, override?: ModelOverride, tools
     const guard = createFakeToolCallGuard(agent.id)
     if (provider === 'codex') {
         const codex = codexAppServerProvider(agent, tools, mcpServers, { system })
-        return { model: wrapLanguageModel({ model: codex(model), middleware: [codexMcpCompatibilityMiddleware, replies.middleware, cardTags, guard] }), close: () => codex.close(), quickReplies: replies.read }
+        return { model: wrapLanguageModel({ model: codex(model), middleware: [codexMcpCompatibilityMiddleware, createCodexImageMiddleware(agent.id), replies.middleware, cardTags, guard] }), close: () => codex.close(), quickReplies: replies.read }
     }
     if (provider === 'claude') {
         const capture = claudeContextCapture(agent.resolved.connection?.id)

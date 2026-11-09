@@ -87,6 +87,7 @@ const TOOL_LABELS: Record<string, string> = {
 
     card_table: 'Show a table',
     card_file: 'Show a file',
+    image_generation: 'Generate an image',
     table_view_save: 'Save a table view',
     table_view_delete: 'Delete a table view',
 
@@ -208,6 +209,7 @@ const TOOL_ACTIVITIES: Record<string, string> = {
     brain_write: 'Writing to the Brain',
 
     vision_analyze: 'Looking at an image',
+    image_generation: 'Generating an image',
 
     delegate_tasks: 'Delegating tasks',
     call_agent: 'Calling a coworker',

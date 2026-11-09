@@ -16,6 +16,7 @@ import {
     EyeIcon,
     FileEditIcon,
     FileIcon,
+    ImageIcon,
     FilePlusIcon,
     FileSearchIcon,
     FocusCenterIcon,
@@ -146,6 +147,7 @@ const TOOL_ICONS: Record<string, LucideIcon> = {
 
     card_table: DatabaseIcon,
     card_file: FileIcon,
+    image_generation: ImageIcon,
     table_view_save: DatabaseIcon,
     table_view_delete: DatabaseIcon,
 

@@ -570,28 +570,37 @@ export function AgentChat({ uid, active, agentId, agentName, sessionId, onSessio
         }
     }, [])
 
+    // `stopping` is true from the click to the engine's answer, whichever button asked: the queued
+    // message waits behind it.
+    const [stopping, setStopping] = useState(false)
+
     // Reachable whenever the conversation reads as busy, including after a reload where this tab
     // never streamed anything: without that, a run the provider wedged had no way out at all.
     // Awaited rather than fired and forgotten because `abortRun` frees the engine's session claim
     // before it answers, so this return is what says the next message may go out.
     const stopRun = useCallback(async (): Promise<boolean> => {
-        stopStream()
-        const runId = activeRunIdRef.current
-        const sid = sessionIdRef.current
-        activeRunIdRef.current = null
-        clearError()
-        if (sid) {
-            onSessionStatusChange?.(sid, 'idle')
-            finalizeSessionAction(sid, 'idle').catch(() => {})
+        setStopping(true)
+        try {
+            stopStream()
+            const runId = activeRunIdRef.current
+            const sid = sessionIdRef.current
+            activeRunIdRef.current = null
+            clearError()
+            if (sid) {
+                onSessionStatusChange?.(sid, 'idle')
+                finalizeSessionAction(sid, 'idle').catch(() => {})
+            }
+            if (runId) {
+                // Covers a run this tab never held the id of: only the engine knows the full list. Awaited
+                // with the stop itself: left running, it lands after a queued message has started its own
+                // run and cancels that one too, so the message never gets an answer.
+                const [, stopped] = await Promise.all([sid ? cancelSessionRunsAction(sid).catch(() => false) : false, cancelRunAction(agentId, runId)])
+                return stopped
+            }
+            return sid ? cancelSessionRunsAction(sid) : false
+        } finally {
+            setStopping(false)
         }
-        if (runId) {
-            // Covers a run this tab never held the id of: only the engine knows the full list. Awaited
-            // with the stop itself: left running, it lands after a queued message has started its own
-            // run and cancels that one too, so the message never gets an answer.
-            const [, stopped] = await Promise.all([sid ? cancelSessionRunsAction(sid).catch(() => false) : false, cancelRunAction(agentId, runId)])
-            return stopped
-        }
-        return sid ? cancelSessionRunsAction(sid) : false
     }, [stopStream, agentId, onSessionStatusChange, clearError])
 
     const handleStop = useCallback(() => {
@@ -606,21 +615,17 @@ export function AgentChat({ uid, active, agentId, agentName, sessionId, onSessio
         [stopRun]
     )
 
-    const [stopping, setStopping] = useState(false)
-
     // Sending a queued message right away means ending the run holding the conversation. The send
     // itself is left to the flush effect: starting a request in the same tick as `stopStream()`
     // would leave two streams writing into the same transcript.
     const sendQueuedNow = useCallback(async () => {
         if (!queued) return
-        setStopping(true)
         // The banner of a run that already failed would otherwise keep the flush from firing, and
         // this click is the user saying they want the message out regardless.
         setRunError(null)
         const stopped = await stopRun()
-        setStopping(false)
         if (!stopped) toast.error('Could not stop the current run. Your message will be sent when it ends.')
-    }, [queued, stopRun, setRunError, setStopping])
+    }, [queued, stopRun, setRunError])
 
     // The install this tab just asked for already runs in another conversation, started from a tab
     // or a device this one had not heard of yet. Nothing was sent: the tab goes back to blank and
@@ -890,7 +895,10 @@ export function AgentChat({ uid, active, agentId, agentName, sessionId, onSessio
     // its session claim once the run has torn its provider down, well after this stream closed, so
     // the send often lands on a 409 first: the route retries, and the effect above puts the message
     // back in the queue if it never got through.
-    const canFlush = shouldFlush({ queued, busy: showLoader, uploading, status, hasError: displayedError !== null })
+    // `stopping` holds it until the stop has answered, whichever button asked for it: `stopStream()`
+    // frees this tab at once, while the engine is still cancelling the session's runs, the one this
+    // message would start included.
+    const canFlush = shouldFlush({ queued, busy: showLoader || stopping, uploading, status, hasError: displayedError !== null })
     useEffect(() => {
         if (!canFlush || !queued || flushingRef.current) return
         flushingRef.current = queued.id

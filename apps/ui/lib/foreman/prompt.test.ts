@@ -37,6 +37,13 @@ function stateWith(patch: Partial<ForemanState>): ForemanState {
 }
 
 describe('foremanEngineInstructions', () => {
+    it('knows that only a coworker on a ChatGPT connection can generate an image, and says who to hand it to', () => {
+        const prompt = foremanEngineInstructions(stateWith({}))
+        expect(prompt).toContain('runs on a ChatGPT connection (provider codex) generates and edits images')
+        expect(prompt).toContain('hand it the request with send_message')
+        expect(prompt).toContain('Never tell the user that the ChatGPT plan only covers text')
+    })
+
     it('carries the coworker they agreed on and their correction, over what the interview heard first', () => {
         const instructions = foremanEngineInstructions(stateWith({ foreman: { ...stateWith({}).foreman, plan: PLAN } }))
         expect(instructions).toContain('The first coworker they agreed on during onboarding: Hiring Leads, Finds potential apprenticeship hiring managers and delivers leads for review.')

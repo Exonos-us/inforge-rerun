@@ -275,7 +275,8 @@ function MessageViewInner({ message, isActive = false, isLastAssistant = false, 
                     const card = tableCardSchema.safeParse(parseHubOutput(toolPart.output))
                     if (card.success) return { kind: 'standalone', key, node: <TableCard agentId={agentId} card={card.data} rawUrlFor={rawUrlFor} /> }
                 }
-                if (toolName === 'card_file' && toolPart.state === 'output-available') {
+                // A picture Codex generated on a ChatGPT plan comes back shaped like a file card.
+                if ((toolName === 'card_file' || toolName === 'image_generation') && toolPart.state === 'output-available') {
                     const card = fileCardSchema.safeParse(parseHubOutput(toolPart.output))
                     if (card.success) return { kind: 'standalone', key, node: <FileCard agentId={agentId} card={card.data} rawUrlFor={rawUrlFor} readFile={readFile} sharedFiles={sharedFiles} /> }
                 }

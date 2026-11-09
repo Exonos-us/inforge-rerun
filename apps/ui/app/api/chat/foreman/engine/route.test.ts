@@ -2,13 +2,14 @@ import { callableEngineAgentIds } from '@/app/api/_auth/access'
 import { requireWorkspaceContext } from '@/app/api/_auth/ownership'
 import { getWorkspaceConnection } from '@/app/api/_services/workspace-engine.service'
 import { startChat } from '@/lib/chat/start-chat'
+import { cancelRun } from '@/lib/engine/client'
 import { isPhoneStepPending } from '@rerun/cloud/phone.server'
-import { loadForemanConversation } from '@/lib/foreman/conversation'
+import { cancelForemanSessionRuns, loadForemanConversation } from '@/lib/foreman/conversation'
 import { loadForemanState } from '@/lib/foreman/state'
 import { resolveForemanSurface } from '@/lib/foreman/surface.server'
 import { PHONE_REQUIRED_MESSAGE } from '@rerun/cloud/phone'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { GET, POST } from './route'
+import { DELETE, GET, POST } from './route'
 
 vi.mock('@/app/api/_auth/ownership', () => ({ requireWorkspaceContext: vi.fn() }))
 vi.mock('@/app/api/_auth/access', () => ({ actorFromContext: vi.fn(() => ({ kind: 'user', userId: 'user-1', workspaceId: 7, role: 'member', boxScope: 'assigned' })), callableEngineAgentIds: vi.fn() }))
@@ -80,5 +81,27 @@ describe('/api/chat/foreman/engine', () => {
         await POST(post())
 
         expect(vi.mocked(startChat).mock.calls[0][2]).toMatchObject({ callableAgentIds: ['engine-open'] })
+    })
+
+    it('sweeps the session before stopping the run by name, so a message waiting behind it survives', async () => {
+        const order: string[] = []
+        vi.mocked(getWorkspaceConnection).mockResolvedValue({ baseUrl: 'https://engine.test', apiKey: null } as never)
+        vi.mocked(cancelForemanSessionRuns).mockImplementation(async () => void order.push('session'))
+        vi.mocked(cancelRun).mockImplementation(async () => void order.push('run'))
+
+        const response = await DELETE(new Request(`${URL}?runId=run-a&sessionId=session`, { method: 'DELETE' }))
+
+        expect(response.status).toBe(200)
+        expect(order).toEqual(['session', 'run'])
+        expect(cancelRun).toHaveBeenCalledWith(expect.anything(), expect.any(String), 'run-a')
+    })
+
+    it('answers 502 when the sweep fails and no run id is left to stop', async () => {
+        vi.mocked(cancelForemanSessionRuns).mockRejectedValue(new Error('engine down'))
+
+        const response = await DELETE(new Request(`${URL}?sessionId=session`, { method: 'DELETE' }))
+
+        expect(response.status).toBe(502)
+        expect(cancelRun).not.toHaveBeenCalled()
     })
 })

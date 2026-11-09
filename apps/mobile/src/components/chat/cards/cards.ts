@@ -4,7 +4,8 @@ type ToolPart = { type: string; toolName?: string; state?: string; output?: unkn
 
 export type ChatCard = { kind: 'table'; card: TableCard } | { kind: 'file'; card: FileCard }
 
-const CARD_TOOLS = { card_table: tableCardSchema, card_file: fileCardSchema } as const
+// A picture Codex generated on a ChatGPT plan comes back shaped like a file card.
+const CARD_TOOLS = { card_table: tableCardSchema, card_file: fileCardSchema, image_generation: fileCardSchema } as const
 
 // The card a tool call drew, once its output is in and parses; anything else stays a step.
 export function cardOf(part: ToolPart): ChatCard | null {

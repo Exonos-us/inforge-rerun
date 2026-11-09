@@ -1,8 +1,16 @@
 diff --git a/dist/index.cjs b/dist/index.cjs
-index 45ed4bd9287395a0a4e35f2f4a1f66da88341516..9c6461476f8e48f1841fda87075069e20e528df8 100644
+index 45ed4bd9287395a0a4e35f2f4a1f66da88341516..bfd497d4b52e8e73a1ef56fc3b38b1552a49509b 100644
 --- a/dist/index.cjs
 +++ b/dist/index.cjs
-@@ -2349,6 +2349,7 @@ function mapTool(item) {
+@@ -2346,9 +2346,15 @@ function mapTool(item) {
+   if (type === "websearch") {
+     return { toolName: "web_search", dynamic: true };
+   }
++  // rerun patch: the image_gen tool of a ChatGPT plan ends as an imageGeneration item. Named, it
++  // reaches the stream as a tool call; the engine turns its result into a file card.
++  if (type === "imagegeneration") {
++    return { toolName: "image_generation", dynamic: true };
++  }
    return void 0;
  }
  function createNotificationHandlers(context) {
@@ -10,7 +18,7 @@ index 45ed4bd9287395a0a4e35f2f4a1f66da88341516..9c6461476f8e48f1841fda87075069e2
    const handleReasoningDelta = (isSummary) => (params) => {
      if (!context.isSameTurn(params) || typeof params.delta !== "string") return;
      const itemId = typeof params.itemId === "string" ? params.itemId : providerUtils.generateId();
-@@ -2444,17 +2445,34 @@ function createNotificationHandlers(context) {
+@@ -2444,17 +2450,34 @@ function createNotificationHandlers(context) {
        const event = params;
        const last = event.tokenUsage?.last;
        if (!last) return;
@@ -50,7 +58,57 @@ index 45ed4bd9287395a0a4e35f2f4a1f66da88341516..9c6461476f8e48f1841fda87075069e2
          },
          raw: last ?? void 0
        });
-@@ -4270,7 +4288,11 @@ var codexErrorInfoSchema = zod.z.union([
+@@ -4237,20 +4260,35 @@ var contextCompactionItemSchema = zod.z.object({
+   type: zod.z.literal("contextCompaction"),
+   id: zod.z.string()
+ }).passthrough();
+-var threadItemSchema = zod.z.discriminatedUnion("type", [
+-  userMessageItemSchema,
+-  agentMessageItemSchema,
+-  planItemSchema,
+-  reasoningItemSchema,
+-  commandExecutionItemSchema,
+-  fileChangeItemSchema,
+-  mcpToolCallItemSchema,
+-  collabAgentToolCallItemSchema,
+-  webSearchItemSchema,
+-  imageViewItemSchema,
+-  enteredReviewModeItemSchema,
+-  exitedReviewModeItemSchema,
+-  contextCompactionItemSchema
++// rerun patch: Codex 0.166 emits imageGeneration items (image_gen on a ChatGPT plan). An item type
++// the union does not list fails the whole notification, so item/started, item/completed and even
++// turn/completed are dropped and the run hangs: unknown items are kept, mapTool leaves them alone.
++var imageGenerationItemSchema = zod.z.object({
++  type: zod.z.literal("imageGeneration"),
++  id: zod.z.string()
++}).passthrough();
++var unknownItemSchema = zod.z.object({
++  type: zod.z.string(),
++  id: zod.z.string()
++}).passthrough();
++var threadItemSchema = zod.z.union([
++  zod.z.discriminatedUnion("type", [
++    userMessageItemSchema,
++    agentMessageItemSchema,
++    planItemSchema,
++    reasoningItemSchema,
++    commandExecutionItemSchema,
++    fileChangeItemSchema,
++    mcpToolCallItemSchema,
++    collabAgentToolCallItemSchema,
++    webSearchItemSchema,
++    imageViewItemSchema,
++    enteredReviewModeItemSchema,
++    exitedReviewModeItemSchema,
++    contextCompactionItemSchema,
++    imageGenerationItemSchema
++  ]),
++  unknownItemSchema
+ ]);
+ var codexHttpStatusCodeSchema = zod.z.object({
+   httpStatusCode: zod.z.number().nullable()
+@@ -4270,7 +4308,11 @@ var codexErrorInfoSchema = zod.z.union([
    zod.z.object({ httpConnectionFailed: codexHttpStatusCodeSchema }).passthrough(),
    zod.z.object({ responseStreamConnectionFailed: codexHttpStatusCodeSchema }).passthrough(),
    zod.z.object({ responseStreamDisconnected: codexHttpStatusCodeSchema }).passthrough(),
@@ -64,10 +122,18 @@ index 45ed4bd9287395a0a4e35f2f4a1f66da88341516..9c6461476f8e48f1841fda87075069e2
  var turnSchema = zod.z.object({
    id: zod.z.string(),
 diff --git a/dist/index.js b/dist/index.js
-index 0e2c370883354cd782ab878f645170a87081c8a2..acc67ccb7f202f7996bd612db0b65380be265ff4 100644
+index 0e2c370883354cd782ab878f645170a87081c8a2..532e3cf401448c77c6af488325b198ddd2bc0432 100644
 --- a/dist/index.js
 +++ b/dist/index.js
-@@ -2341,6 +2341,7 @@ function mapTool(item) {
+@@ -2338,9 +2338,15 @@ function mapTool(item) {
+   if (type === "websearch") {
+     return { toolName: "web_search", dynamic: true };
+   }
++  // rerun patch: the image_gen tool of a ChatGPT plan ends as an imageGeneration item. Named, it
++  // reaches the stream as a tool call; the engine turns its result into a file card.
++  if (type === "imagegeneration") {
++    return { toolName: "image_generation", dynamic: true };
++  }
    return void 0;
  }
  function createNotificationHandlers(context) {
@@ -75,7 +141,7 @@ index 0e2c370883354cd782ab878f645170a87081c8a2..acc67ccb7f202f7996bd612db0b65380
    const handleReasoningDelta = (isSummary) => (params) => {
      if (!context.isSameTurn(params) || typeof params.delta !== "string") return;
      const itemId = typeof params.itemId === "string" ? params.itemId : generateId();
-@@ -2436,17 +2437,34 @@ function createNotificationHandlers(context) {
+@@ -2436,17 +2442,34 @@ function createNotificationHandlers(context) {
        const event = params;
        const last = event.tokenUsage?.last;
        if (!last) return;
@@ -115,7 +181,57 @@ index 0e2c370883354cd782ab878f645170a87081c8a2..acc67ccb7f202f7996bd612db0b65380
          },
          raw: last ?? void 0
        });
-@@ -4262,7 +4280,11 @@ var codexErrorInfoSchema = z.union([
+@@ -4229,20 +4252,35 @@ var contextCompactionItemSchema = z.object({
+   type: z.literal("contextCompaction"),
+   id: z.string()
+ }).passthrough();
+-var threadItemSchema = z.discriminatedUnion("type", [
+-  userMessageItemSchema,
+-  agentMessageItemSchema,
+-  planItemSchema,
+-  reasoningItemSchema,
+-  commandExecutionItemSchema,
+-  fileChangeItemSchema,
+-  mcpToolCallItemSchema,
+-  collabAgentToolCallItemSchema,
+-  webSearchItemSchema,
+-  imageViewItemSchema,
+-  enteredReviewModeItemSchema,
+-  exitedReviewModeItemSchema,
+-  contextCompactionItemSchema
++// rerun patch: Codex 0.166 emits imageGeneration items (image_gen on a ChatGPT plan). An item type
++// the union does not list fails the whole notification, so item/started, item/completed and even
++// turn/completed are dropped and the run hangs: unknown items are kept, mapTool leaves them alone.
++var imageGenerationItemSchema = z.object({
++  type: z.literal("imageGeneration"),
++  id: z.string()
++}).passthrough();
++var unknownItemSchema = z.object({
++  type: z.string(),
++  id: z.string()
++}).passthrough();
++var threadItemSchema = z.union([
++  z.discriminatedUnion("type", [
++    userMessageItemSchema,
++    agentMessageItemSchema,
++    planItemSchema,
++    reasoningItemSchema,
++    commandExecutionItemSchema,
++    fileChangeItemSchema,
++    mcpToolCallItemSchema,
++    collabAgentToolCallItemSchema,
++    webSearchItemSchema,
++    imageViewItemSchema,
++    enteredReviewModeItemSchema,
++    exitedReviewModeItemSchema,
++    contextCompactionItemSchema,
++    imageGenerationItemSchema
++  ]),
++  unknownItemSchema
+ ]);
+ var codexHttpStatusCodeSchema = z.object({
+   httpStatusCode: z.number().nullable()
+@@ -4262,7 +4300,11 @@ var codexErrorInfoSchema = z.union([
    z.object({ httpConnectionFailed: codexHttpStatusCodeSchema }).passthrough(),
    z.object({ responseStreamConnectionFailed: codexHttpStatusCodeSchema }).passthrough(),
    z.object({ responseStreamDisconnected: codexHttpStatusCodeSchema }).passthrough(),

@@ -20,6 +20,12 @@ describe('cardOf', () => {
         expect(cardOf({ type: 'tool-card_file', state: 'output-available', output: { path: 'out/report.pdf', name: 'report.pdf', size: 2048 } })).toMatchObject({ kind: 'file', card: { files: [{ name: 'report.pdf', scope: 'agent' }] } })
     })
 
+    it('reads the picture Codex generated on a ChatGPT plan as a file card', () => {
+        const generated = { kind: 'file', files: [{ path: 'generated-images/ig_1.png', name: 'ig_1.png', size: 70, scope: 'agent' }] }
+        expect(cardOf({ type: 'dynamic-tool', toolName: 'image_generation', state: 'output-available', output: generated })).toMatchObject({ kind: 'file', card: { files: [{ name: 'ig_1.png' }] } })
+        expect(cardOf({ type: 'dynamic-tool', toolName: 'image_generation', state: 'output-available', output: { error: 'not on this plan' } })).toBeNull()
+    })
+
     it('leaves a call still running, a broken output and any other tool to the steps', () => {
         expect(cardOf({ type: 'tool-card_table', state: 'input-available' })).toBeNull()
         expect(cardOf({ type: 'tool-card_table', state: 'output-available', output: { kind: 'table' } })).toBeNull()
