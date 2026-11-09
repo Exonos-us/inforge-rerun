@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { patchAgent } from '@/lib/engine/client'
 import { createServiceRoleClient } from '@/supabase/serviceRole'
 import { fakeSupabase, writeMethodOf, type FakeSupabase, type SupabaseCall } from '@/test/supabase-fake'
-import { activateAgent, NO_FREE_SLOT_ERROR, reactivateAgentsAfterRestore, reconcileAgentActivation, stopAgentsOnEngine } from './agent-activation.service'
+import { activateAgent, NO_FREE_SLOT_ERROR, reactivateAgentsAfterRestore, reconcileAgentActivation, stopAgentsOnEngine, wakePlanLimitedAgents } from './agent-activation.service'
 import { pauseAgentSchedules, resumeAgentSchedules } from './agent.service'
 import { getSpaceConnection } from './space.service'
 vi.mock('@rerun/cloud/billing', async importOriginal => ({ ...(await importOriginal<object>()), ...(await import('@/test/cloud-fakes')).CLOUD_ENTITLEMENTS }))
@@ -154,7 +154,7 @@ describe('stopAgentsOnEngine', () => {
     })
 })
 
-describe('reactivateAgentsAfterRestore', () => {
+describe('wakePlanLimitedAgents and reactivateAgentsAfterRestore', () => {
     beforeEach(() => {
         db = fakeSupabase((table, calls) => {
             if (table === 'workspaces') return { data: workspace }
@@ -186,6 +186,15 @@ describe('reactivateAgentsAfterRestore', () => {
 
         await expect(reactivateAgentsAfterRestore(1)).resolves.toEqual([])
         expect(db.writes('agents')).toEqual([])
+    })
+
+    it('wakes every capped agent of an unlimited plan without reaching the engine itself', async () => {
+        workspace = { max_agents: null, subscription_status: 'active' }
+        agents = [agent('a1'), agent('a4', { disabled_at: 'x', disabled_reason: 'plan_limit' }), agent('a5', { disabled_at: 'x', disabled_reason: 'plan_limit' })]
+
+        await expect(wakePlanLimitedAgents(1)).resolves.toEqual({ woken: ['a4', 'a5'], active: ['a1'] })
+        expect(db.writes('agents')[0].payload).toEqual({ disabled_at: null, disabled_reason: null })
+        expect(patchAgent).not.toHaveBeenCalled()
     })
 
     it('switches the agents still marked active back on on the engine', async () => {

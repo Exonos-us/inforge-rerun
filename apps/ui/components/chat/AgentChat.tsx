@@ -11,7 +11,7 @@ import { AlertBlock } from '@/components/chat/AlertBlock'
 import { McpSignInBlock } from '@/components/chat/McpSignInBlock'
 import { SecretRequestBlock } from '@/components/chat/SecretRequestBlock'
 import { ChatScreen } from '@/components/chat/ChatScreen'
-import { BudgetExhaustedNotice } from '@rerun/cloud/billing.client'
+import { BudgetExhaustedNotice, usePriceArm } from '@rerun/cloud/billing.client'
 import { ProviderErrorNotice } from '@/components/chat/ProviderErrorNotice'
 import { ComposerSubscriptionCta } from '@/components/chat/ComposerSubscriptionCta'
 import { InstallGate } from '@/components/chat/InstallGate'
@@ -83,6 +83,8 @@ import { scrollFadeMask, useScrollEdges } from '@rerun/ui/primitives'
 import { toast } from 'sonner'
 
 const SCROLL_FADE = 32
+// Stripe's webhook lands in seconds; past this, the notice offers to resume by hand.
+const RESUME_STALL_MS = 30_000
 
 export type AgentChatSessionInsert = {
     id: string
@@ -814,6 +816,40 @@ export function AgentChat({ uid, active, agentId, agentName, sessionId, onSessio
     const handleRegenerate = useCallback((messageId: string) => regenerate({ messageId }), [regenerate])
     const messageFeedback = useMessageFeedback(sessionId)
     const continueInterruptedRun = useCallback(() => sendMessage({ text: 'Continue where you left off.' }), [sendMessage])
+
+    // Paid from the trial's notice. The plan lands through Stripe's webhook, not the payment itself, so
+    // the stopped task waits for the credit to have room before it picks back up.
+    const priceArm = usePriceArm()
+    const [resumeAfterUpgrade, setResumeAfterUpgrade] = useState(false)
+    const [resumeStalled, setResumeStalled] = useState(false)
+    const pickTaskBackUp = useCallback(() => {
+        setResumeAfterUpgrade(false)
+        setRunError(null)
+        clearError()
+        continueInterruptedRun()
+    }, [clearError, continueInterruptedRun])
+    const upgradeLanded = workspace?.subscription_status !== 'trialing' && creditHasRoom
+    useEffect(() => {
+        if (resumeAfterUpgrade && upgradeLanded) pickTaskBackUp()
+    }, [resumeAfterUpgrade, upgradeLanded, pickTaskBackUp])
+    useEffect(() => {
+        if (!resumeAfterUpgrade) return
+        const timer = setTimeout(() => setResumeStalled(true), RESUME_STALL_MS)
+        return () => clearTimeout(timer)
+    }, [resumeAfterUpgrade])
+    useEffect(() => {
+        setResumeAfterUpgrade(false)
+    }, [sessionId])
+    const trialUpgrade = {
+        coworker: agentName,
+        priceArm,
+        onPaid: () => {
+            setResumeStalled(false)
+            setResumeAfterUpgrade(true)
+        },
+        resuming: resumeAfterUpgrade,
+        onResumeNow: resumeStalled ? pickTaskBackUp : undefined,
+    }
     // The failed turn's message is already in the conversation, on screen and on the engine:
     // regenerating sends it again without a second bubble, dropping whatever partial answer followed.
     const retryLastTurn = useCallback(() => {
@@ -990,13 +1026,13 @@ export function AgentChat({ uid, active, agentId, agentName, sessionId, onSessio
                             <Message from="assistant">
                                 {/* Paid data only runs on Rerun credit: connecting a Claude or ChatGPT plan would not buy it. */}
                                 <MessageContent>
-                                    <BudgetExhaustedNotice trialing={workspace?.subscription_status === 'trialing'} paused={!!workspace?.rerun_credit_paused_at} noCredit={rerunCredit.budgetMicros === 0} />
+                                    <BudgetExhaustedNotice trialing={workspace?.subscription_status === 'trialing' || resumeAfterUpgrade} paused={!!workspace?.rerun_credit_paused_at} noCredit={rerunCredit.budgetMicros === 0} {...trialUpgrade} />
                                 </MessageContent>
                             </Message>
                         )}
                         {displayedError !== null && errorKind !== null && (
                             <Message from="assistant">
-                                <MessageContent>{errorKind === 'budget' ? <BudgetExhaustedNotice onConnectProvider={connectProvider} ownConnection={runOnOwnConnection} trialing={workspace?.subscription_status === 'trialing'} paused={!!workspace?.rerun_credit_paused_at} noCredit={rerunCredit.budgetMicros === 0} /> : <ProviderErrorNotice kind={errorKind} message={displayedError} onSwitchModel={switchModel} onReconnect={reconnectProvider} onStopRun={handleStop} onContinue={continueInterruptedRun} onRetry={canRetry ? retryLastTurn : undefined} onNewConversation={onNewConversation} />}</MessageContent>
+                                <MessageContent>{errorKind === 'budget' ? <BudgetExhaustedNotice onConnectProvider={connectProvider} ownConnection={runOnOwnConnection} trialing={workspace?.subscription_status === 'trialing' || resumeAfterUpgrade} paused={!!workspace?.rerun_credit_paused_at} noCredit={rerunCredit.budgetMicros === 0} {...trialUpgrade} /> : <ProviderErrorNotice kind={errorKind} message={displayedError} onSwitchModel={switchModel} onReconnect={reconnectProvider} onStopRun={handleStop} onContinue={continueInterruptedRun} onRetry={canRetry ? retryLastTurn : undefined} onNewConversation={onNewConversation} />}</MessageContent>
                             </Message>
                         )}
                     </ConversationContent>

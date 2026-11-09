@@ -9,7 +9,7 @@ import { Conversation, ConversationContent, ConversationScrollButton, type Conve
 import { Message, MessageContent } from '@/components/ai-elements/message'
 import { ActionApprovalBlock } from '@/components/chat/ActionApprovalBlock'
 import { mentionTokensOf } from '@/components/chat/MentionAutocomplete'
-import { BudgetExhaustedNotice } from '@rerun/cloud/billing.client'
+import { BudgetExhaustedNotice, usePriceArm } from '@rerun/cloud/billing.client'
 import { ChatActivityLoader } from '@/components/chat/ChatActivityLoader'
 import { ProviderErrorNotice } from '@/components/chat/ProviderErrorNotice'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -100,6 +100,7 @@ type ForemanChatLayerProps = {
  */
 export function ForemanChatLayer({ messages, streaming, guided, intake, gated, arrival, restored, error, onWidgetAnswer, onWidgetDismiss, pending = null, nextSteps, onSuggestion, onPrefill, onStop, onStopTask, actions, rawUrlFor, readFile, sharedFiles, onStackElement, className }: ForemanChatLayerProps) {
     const { workspace } = useSession()
+    const priceArm = usePriceArm()
     const entitled = isSubscriptionEntitled(workspace?.subscription_status)
     // `Conversation` possède son conteneur de défilement : on le récupère par son contexte, une
     // fois monté, pour que le fondu sache ce qu'il reste au-dessus et en dessous.
@@ -164,7 +165,7 @@ export function ForemanChatLayer({ messages, streaming, guided, intake, gated, a
                 <MessageContent>
                     {/* Pas de cellule « abonnement » : il n'y a pas de Box derrière le Foreman, donc
                         nulle part où brancher un plan Claude ou ChatGPT. */}
-                    {error.kind === 'budget' ? <BudgetExhaustedNotice preTrial={!entitled} trialing={workspace?.subscription_status === 'trialing'} paused={!!workspace?.rerun_credit_paused_at} /> : <ProviderErrorNotice kind={error.kind} message={error.message} onStopRun={onStop} />}
+                    {error.kind === 'budget' ? <BudgetExhaustedNotice preTrial={!entitled} trialing={workspace?.subscription_status === 'trialing'} paused={!!workspace?.rerun_credit_paused_at} priceArm={priceArm} /> : <ProviderErrorNotice kind={error.kind} message={error.message} onStopRun={onStop} />}
                 </MessageContent>
             </Message>
         )

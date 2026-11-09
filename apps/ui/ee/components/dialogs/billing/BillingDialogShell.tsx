@@ -27,7 +27,7 @@ export function BillingDialogShell({
     return (
         <DialogContent aria-describedby={undefined} className="gap-0 bg-popover sm:max-w-[min(76rem,100%_-_4rem)] sm:overflow-hidden sm:[&>[data-slot=dialog-close]]:top-6 sm:[&>[data-slot=dialog-close]]:right-6">
             <DialogTitle className="sr-only">{title}</DialogTitle>
-            <div className="flex flex-col gap-4 sm:grid sm:h-[min(56rem,calc(100dvh_-_4rem))] sm:grid-cols-[minmax(0,1fr)_minmax(0,20rem)] sm:grid-rows-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_minmax(0,27.5rem)]">
+            <div className="flex min-w-0 flex-col gap-4 sm:grid sm:h-[min(56rem,calc(100dvh_-_4rem))] sm:grid-cols-[minmax(0,1fr)_minmax(0,20rem)] sm:grid-rows-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_minmax(0,27.5rem)]">
                 {/* `contents` below sm hands intro and details to the outer column, so `order` can slot the payment between them. */}
                 <div className="max-sm:contents sm:flex sm:min-h-0 sm:flex-col sm:overflow-y-auto sm:p-2">
                     {intro && <div className="max-sm:order-1 max-sm:px-2 max-sm:pt-2">{intro}</div>}

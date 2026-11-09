@@ -45,6 +45,7 @@ const m = vi.hoisted(() => ({
     getAppOrigin: vi.fn(),
     affiliateReferralMetadata: vi.fn(),
     reconcileAgentActivation: vi.fn(),
+    wakePlanLimitedAgents: vi.fn(),
     requestAgentActivationSync: vi.fn(),
     sendTrialStartedReceipt: vi.fn(),
     sendPaymentFailedNotice: vi.fn(),
@@ -68,7 +69,7 @@ vi.mock('@/app/api/_auth/ownership', () => ({ requireWorkspaceId: m.requireWorks
 vi.mock('@/supabase/session/getServerSession', () => ({ getServerSession: m.getServerSession, getSessionWorkspace: m.getServerSession }))
 vi.mock('@/lib/app-origin', () => ({ getAppOrigin: m.getAppOrigin }))
 vi.mock('@/ee/lib/billing/affiliate', () => ({ affiliateReferralMetadata: m.affiliateReferralMetadata }))
-vi.mock('@/app/api/_services/agent-activation.service', () => ({ reconcileAgentActivation: m.reconcileAgentActivation }))
+vi.mock('@/app/api/_services/agent-activation.service', () => ({ reconcileAgentActivation: m.reconcileAgentActivation, wakePlanLimitedAgents: m.wakePlanLimitedAgents }))
 vi.mock('@/trigger/sync-agent-activation', () => ({ requestAgentActivationSync: m.requestAgentActivationSync }))
 vi.mock('@/ee/lib/lifecycle/trial-receipt', () => ({ sendTrialStartedReceipt: m.sendTrialStartedReceipt }))
 vi.mock('@/ee/lib/lifecycle/payment-failed-notice', () => ({ sendPaymentFailedNotice: m.sendPaymentFailedNotice }))
@@ -133,6 +134,7 @@ beforeEach(() => {
     m.getAppOrigin.mockResolvedValue('https://app.test')
     m.affiliateReferralMetadata.mockResolvedValue({})
     m.resolveEngineWaitlist.mockResolvedValue(false)
+    m.wakePlanLimitedAgents.mockResolvedValue({ woken: [], active: [] })
     vi.mocked(stripe.subscriptions.update).mockResolvedValue({ pending_update: null } as never)
     vi.mocked(stripe.paymentIntents.retrieve).mockResolvedValue({ status: 'requires_action' } as never)
     vi.spyOn(console, 'warn').mockImplementation(() => {})
@@ -316,6 +318,25 @@ describe('applySubscriptionToWorkspace', () => {
         const subscription = sub()
         await applySubscriptionToWorkspace(subscription)
         expect(m.reportSubscriptionTransition).toHaveBeenCalledWith(subscription, WORKSPACE_ID, 'trialing')
+    })
+
+    it('switches back on the coworkers the trial cap had switched off once the trial is paid for', async () => {
+        useDb({ row: { current_period_end: null, subscription_status: 'trialing', rerun_budget_micros: 0 } })
+        m.wakePlanLimitedAgents.mockResolvedValue({ woken: ['a4'], active: ['a1', 'a2', 'a3'] })
+        await applySubscriptionToWorkspace(sub({ status: 'active' }))
+        expect(m.wakePlanLimitedAgents).toHaveBeenCalledWith(WORKSPACE_ID)
+        expect(m.requestAgentActivationSync).toHaveBeenCalledWith(['a4'], { switchOn: true })
+    })
+
+    it.each([
+        ['active', 'active'],
+        ['trialing', 'trialing'],
+        ['trialing', 'past_due'],
+        ['canceled', 'active'],
+    ] as const)('wakes nothing going from %s to %s', async (before, after) => {
+        useDb({ row: { current_period_end: null, subscription_status: before, rerun_budget_micros: 0 } })
+        await applySubscriptionToWorkspace(sub({ status: after }))
+        expect(m.wakePlanLimitedAgents).not.toHaveBeenCalled()
     })
 
     it('fails when the workspace write fails, so the webhook answers 500 and Stripe retries', async () => {

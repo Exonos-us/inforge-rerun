@@ -23,11 +23,11 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useWorkspaceAccess } from '@/hooks/useWorkspaceAccess'
 import type { CheckoutRoute } from '@/ee/lib/billing/checkout-variant'
 import { isSubscriptionEntitled } from '@/ee/lib/billing/entitlement'
-import { PLAN_PRICES_CENTS, TRIAL_DAYS, ZERO_QUANTITIES, planPriceCents, trialEndDate, trialLimitsLabel, type AddonQuantities, type BillingInterval, type PriceArm } from '@/ee/lib/billing/plans'
+import { BASE_PLAN_CREDITS, PLAN_PRICES_CENTS, TRIAL_DAYS, creditsLabel, ZERO_QUANTITIES, planPriceCents, trialEndDate, trialLimitsLabel, type AddonQuantities, type BillingInterval, type PriceArm } from '@/ee/lib/billing/plans'
 import { usePriceArm } from '@/ee/lib/billing/usePriceArm'
 import { TRIAL_ENDING_LEAD_MS } from '@/ee/lib/lifecycle/sequences'
 import { useStartPending } from '@/lib/onboarding/useStartPending'
-import { AGENT_LIMIT_TRIGGER, useBillingStore } from '@/stores/billing.store'
+import { AGENT_LIMIT_TRIGGER, useBillingStore, type BillingUpgrade } from '@/stores/billing.store'
 import { useForemanStore } from '@/stores/foreman.store'
 import { hasPendingStart, useOnboardingStore } from '@/stores/onboarding.store'
 import { useSession } from '@/supabase/session/SessionProvider'
@@ -36,6 +36,7 @@ import { BillingDialogShell } from './BillingDialogShell'
 import { CreditCard } from './credit-usage/CreditCard'
 import { UsagePane } from './credit-usage/UsagePane'
 import { useCreditUsage } from './credit-usage/useCreditUsage'
+import { PerksComparison } from './PerksComparison'
 import { checkoutCopy, longDate, nextInvoiceDate, shortDate, type CheckoutContext } from './checkout-copy'
 import { BilledFlow, CardOnFile, Headline, IntervalToggle, PayFooter, PayHeader, PlanCard, RightTitle, SuccessPanel, SummaryRows, TermsConsent, TestimonialStrip, Timeline, UsdFlow, usd } from './parts'
 import { StripeCheckoutProvider, StripePaymentFields, StripePaymentFieldsSkeleton, StripePromoCode } from './StripeCheckout'
@@ -103,6 +104,9 @@ export function CheckoutDialog({
     // Sent here by the trial's coworker cap: what lifts it is paying now, so the dialog opens on that.
     const [payNow, setPayNow] = useState(() => route.variant === 'trial_card' && useBillingStore.getState().trigger === AGENT_LIMIT_TRIGGER)
     const [usageOpen, setUsageOpen] = useState(false)
+    const [newCard, setNewCard] = useState(false)
+    const upgrade = useBillingStore(s => s.upgrade)
+    const creditLocked = route.variant === 'credit_locked'
     const credit = useCreditUsage({ enabled: workspace?.subscription_status === 'trialing' })
     const [openedAt] = useState(() => Date.now())
 
@@ -123,6 +127,7 @@ export function CheckoutDialog({
         trialCancelled: !!state?.cancelAtPeriodEnd,
         keptUntil: keptUntil ? longDate(keptUntil) : null,
         parked: parkedTemplate ? { title: parkedTemplate.title, agentCount: parkedTemplate.agentCount } : null,
+        coworker: upgrade?.coworker ?? null,
     }
     const copy = checkoutCopy(route.variant === 'trial_card' && payNow ? 'trial_card_pay_now' : route.variant, context)
     const selection = selectionOf(interval, state?.quantities)
@@ -135,6 +140,8 @@ export function CheckoutDialog({
     }
 
     const finish = async (outcome: Done) => {
+        // The stopped task picks back up behind the dialog, whether it is then closed or clicked through.
+        if (outcome === 'paid') upgrade?.onPaid?.()
         await refreshWorkspace()
         onChanged()
         // Arrived on a template or a shared coworker: the column installs it the moment the plan is
@@ -143,14 +150,21 @@ export function CheckoutDialog({
         setDone(outcome)
     }
 
-    const intro = <Headline badge={copy.badge} title={copy.title} subtitle={copy.subtitle} />
+    // Once paid, the trial badge would count down days of a trial that just ended.
+    const intro = <Headline badge={done === 'paid' ? undefined : copy.badge} title={copy.title} subtitle={copy.subtitle} />
     const left = (
         <>
             <Timeline steps={copy.timeline} />
             <div className="mt-6 mb-4 flex flex-col gap-3">
                 {!planFixed && <IntervalToggle value={interval} onChange={setBillingInterval} disabled={!!done} />}
-                <PlanCard interval={planFixed ? 'monthly' : interval} priceArm={priceArm} freeTrial={planFixed} />
-                {credit.trial && <CreditCard credit={credit} onAdd={startProNow} onOpenUsage={done ? undefined : () => setUsageOpen(true)} />}
+                {creditLocked ? (
+                    <PerksComparison />
+                ) : (
+                    <>
+                        <PlanCard interval={planFixed ? 'monthly' : interval} priceArm={priceArm} freeTrial={planFixed} />
+                        {credit.trial && <CreditCard credit={credit} onAdd={startProNow} onOpenUsage={done ? undefined : () => setUsageOpen(true)} />}
+                    </>
+                )}
             </div>
             <TestimonialStrip />
         </>
@@ -169,7 +183,7 @@ export function CheckoutDialog({
                 setPlacing(false)
             }
         }
-        const success = successCopy(done, { interval, priceArm, trialEnds: context.trialEnds, firstCharge: context.firstCharge })
+        const success = creditLocked && done === 'paid' ? creditUnlockedCopy(interval, priceArm, upgrade) : successCopy(done, { interval, priceArm, trialEnds: context.trialEnds, firstCharge: context.firstCharge })
         return (
             <BillingDialogShell
                 title={success.title}
@@ -189,6 +203,7 @@ export function CheckoutDialog({
             case 'card_form':
                 return <CardFormPane selection={selection} priceArm={priceArm} copy={copy} trialEnds={context.trialEnds} onDone={outcome => void finish(outcome)} />
             case 'card_on_file':
+                if (newCard) return <CardFormPane selection={selection} priceArm={priceArm} copy={copy} trialEnds={context.trialEnds} onDone={outcome => void finish(outcome)} />
                 if (trialView) return <TrialPane state={state} copy={copy} trialEnds={context.trialEnds} reminderOn={context.reminderOn} firstCharge={context.firstCharge} onContinue={onClose} onCancelTrial={onCancelTrial} onPayNow={() => setPayNow(true)} onResumed={onChanged} />
                 return (
                     <CardOnFilePane
@@ -198,6 +213,7 @@ export function CheckoutDialog({
                         copy={copy}
                         trialEnds={context.trialEnds}
                         onBack={route.variant === 'trial_card' ? () => setPayNow(false) : undefined}
+                        onChangeCard={creditLocked ? () => setNewCard(true) : undefined}
                         onDone={() => void finish('paid')}
                         onCancelTrial={onCancelTrial}
                         onResumed={onChanged}
@@ -232,7 +248,22 @@ function successCopy(done: Done, { interval, priceArm, trialEnds, firstCharge }:
     }
 }
 
-type PaneCopy = { cta: string; footnote?: string }
+// Paying from a chat that ran out of trial credit: what came with Pro, and the way back to the task.
+function creditUnlockedCopy(interval: BillingInterval, priceArm: PriceArm, upgrade: BillingUpgrade | null) {
+    return {
+        title: "You're on Pro",
+        body: `${upgrade?.coworker ?? 'Your coworker'} is ready to pick the task back up. Your receipt is on its way by email.`,
+        rows: [
+            { label: 'Credits', value: `${creditsLabel(BASE_PLAN_CREDITS)} a month` },
+            { label: 'Models', value: 'Every premium model' },
+            { label: 'Coworkers', value: 'Unlimited' },
+            { label: 'Next invoice', value: `${invoiceDateLabel(interval)} · ${billedLabel(interval, priceArm)}` },
+        ],
+        cta: upgrade?.onPaid ? 'Resume the task' : 'Back to my board',
+    }
+}
+
+type PaneCopy = { cta: string; payCta?: (amount: string) => string; refusal?: (message: string) => string; footnote?: string }
 
 // --- A new subscription: the plan Checkout, the card form in this column ---
 
@@ -467,7 +498,7 @@ function CardForm({ sessionId, selection, priceArm, copy, trialEnds, onDone }: {
             if (when === 'later') return onDone('card_saved')
 
             const changed = await runPlanChange(selection)
-            if (!changed.ok) throw new Error(changed.error)
+            if (!changed.ok) throw new Error(copy.refusal ? copy.refusal(changed.error) : changed.error)
             onDone('paid')
         } catch (err) {
             setError(errorMessage(err))
@@ -514,6 +545,7 @@ function CardOnFilePane({
     copy,
     trialEnds,
     onBack,
+    onChangeCard,
     onDone,
     onCancelTrial,
     onResumed,
@@ -524,6 +556,7 @@ function CardOnFilePane({
     copy: PaneCopy
     trialEnds: string | null
     onBack?: () => void
+    onChangeCard?: () => void
     onDone: () => void
     onCancelTrial: () => void
     onResumed: () => void
@@ -540,12 +573,13 @@ function CardOnFilePane({
         setError(null)
         const result = await runPlanChange(selection)
         setSubmitting(false)
-        if (!result.ok) return setError(result.error)
+        if (!result.ok) return setError(copy.refusal ? copy.refusal(result.error) : result.error)
         onDone()
     }
 
     const listCents = planPriceCents(selection.quantities, interval, priceArm)
-    const amount = quote === 'loading' ? <Skeleton className="inline-block h-7 w-24 align-middle" /> : usd(quote?.dueTodayCents ?? listCents)
+    const dueToday = quote === 'loading' ? null : usd(quote?.dueTodayCents ?? listCents)
+    const amount = dueToday ?? <Skeleton className="inline-block h-7 w-24 align-middle" />
 
     if (state?.cancelAtPeriodEnd) return <TrialCancelledPane trialEnds={trialEnds} onResumed={onResumed} />
 
@@ -571,10 +605,10 @@ function CardOnFilePane({
                         { label: 'Due today', value: amount, strong: true },
                     ]}
                 />
-                <CardOnFile card={state?.card ?? null} />
+                <CardOnFile card={state?.card ?? null} action={onChangeCard && 'Change'} onAction={onChangeCard} />
             </div>
             <PayFooter
-                cta={copy.cta}
+                cta={copy.payCta && dueToday ? copy.payCta(dueToday) : copy.cta}
                 footnote={copy.footnote}
                 onClick={() => void start()}
                 loading={submitting}

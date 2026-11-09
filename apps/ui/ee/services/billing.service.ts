@@ -62,7 +62,7 @@ import {
 import { TRIAL_ACTIVE_AGENTS, TRIAL_DAYS, type ForemanClient } from '@rerun/contracts'
 import { createServiceRoleClient } from '@/supabase/serviceRole'
 import { getServerSession, getSessionWorkspace } from '@/supabase/session/getServerSession'
-import { reconcileAgentActivation } from '@/app/api/_services/agent-activation.service'
+import { reconcileAgentActivation, wakePlanLimitedAgents } from '@/app/api/_services/agent-activation.service'
 import { SLOT_PAUSE_REASONS, subscriberTrialOpen, syncWorkspaceAppSlots } from '@/lib/apps/slots-sync'
 import { APP_ADDON_KEYS, APP_SLUGS, SLOT_HOLDING_STATUSES } from '@/lib/apps/types'
 import { APP_INFO } from '@/lib/apps/catalog'
@@ -1516,6 +1516,13 @@ export async function applySubscriptionToWorkspace(subscription: Stripe.Subscrip
     // The held-limits merge means max_agents only ever falls when the period advances, so this is
     // exactly where a downgrade lands: whatever no longer fits is switched off, never deleted.
     await requestAgentActivationSync(await reconcileAgentActivation(workspaceId))
+
+    // The other way round: a trial turning into a plan lifts its cap on active coworkers, and the
+    // ones the cap had switched off come back on with it rather than waiting for a click each.
+    if (existing?.subscription_status === 'trialing' && subscription.status === 'active') {
+        const { woken } = await wakePlanLimitedAgents(workspaceId)
+        await requestAgentActivationSync(woken, { switchOn: true })
+    }
 
     // Starting a trial locks the premium models on the box, converting it unlocks them. Not awaited:
     // the box may be asleep, and a webhook that waits for it times out.

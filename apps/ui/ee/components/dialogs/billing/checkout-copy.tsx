@@ -30,6 +30,8 @@ export type CheckoutContext = {
     trialCancelled: boolean
     keptUntil: string | null
     parked: { title: string; agentCount: number } | null
+    // The coworker that stopped on its trial credit, when the paywall was opened from its chat.
+    coworker: string | null
 }
 
 export type CheckoutCopy = {
@@ -38,6 +40,10 @@ export type CheckoutCopy = {
     subtitle: string
     timeline: TimelineStep[]
     cta: string
+    // The pay button once the amount due today is known, so it reads exactly what is charged.
+    payCta?: (amount: string) => string
+    // How a refused payment reads, for a screen where the customer must hear their trial is safe.
+    refusal?: (message: string) => string
     footnote?: string
 }
 
@@ -64,6 +70,11 @@ function endTrialTimeline(context: CheckoutContext): TimelineStep[] {
 
 function endTrialFootnote(trialEnds: string): string {
     return `This ends your free trial today. To pay nothing today, keep your trial: Pro starts on ${trialEnds} on its own.`
+}
+
+// A failed end of trial leaves everything as it was: Stripe holds the change until the bank says yes.
+function trialUnchanged(message: string): string {
+    return /nothing was charged/i.test(message) ? `${message} Your trial is unchanged.` : `${message} Nothing was charged and your trial is unchanged.`
 }
 
 function parkedLabel(parked: CheckoutContext['parked']): string {
@@ -129,11 +140,15 @@ export function checkoutCopy(variant: CheckoutCopyKey, context: CheckoutContext)
         case 'credit_locked':
             return {
                 badge: trialBadge(context),
-                title: 'Rerun credits come with Pro',
-                subtitle: `Your ${TRIAL_CREDITS.toLocaleString('en-US')} trial credits are used up. Pro includes ${creditsLabel(BASE_PLAN_CREDITS)} every month, and you can add more anytime.`,
+                title: context.coworker ? 'Keep going with Pro' : 'Rerun credits come with Pro',
+                subtitle: context.coworker
+                    ? `${context.coworker} picks up where it stopped.`
+                    : `Your ${TRIAL_CREDITS.toLocaleString('en-US')} trial credits are used up. Pro includes ${creditsLabel(BASE_PLAN_CREDITS)} every month, and you can add more anytime.`,
                 timeline: endTrialTimeline(context),
-                cta: 'End trial & subscribe',
-                footnote: endTrialFootnote(trialEnds),
+                cta: context.coworker ? 'Pay & resume' : 'End trial & subscribe',
+                payCta: context.coworker ? amount => `Pay ${amount} & resume` : undefined,
+                refusal: trialUnchanged,
+                footnote: 'Close this and nothing is charged. Your trial stays as it is.',
             }
         case 'no_plan':
             return {

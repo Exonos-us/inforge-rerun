@@ -16,8 +16,9 @@ import { getSpaceConnection } from './space.service'
 type AgentUpdate = Database['public']['Tables']['agents']['Update']
 
 // Switch off whatever exceeds the workspace's current allowance, oldest agents first: the ones the
-// user built their setup around stay up, the newest go quiet. Never switches anything back on —
-// regaining capacity frees slots, and filling them is an explicit choice (activateAgent).
+// user built their setup around stay up, the newest go quiet. Never switches anything back on:
+// regaining capacity frees slots, and filling them is an explicit choice (activateAgent), a trial
+// turning into a plan, or an archive coming back (wakePlanLimitedAgents).
 // Returns the ids that were switched off, for the caller to hand to the engine.
 export async function reconcileAgentActivation(workspaceId: number): Promise<string[]> {
     const limit = await activeAgentLimit(workspaceId)
@@ -37,13 +38,13 @@ export async function reconcileAgentActivation(workspaceId: number): Promise<str
     return excess
 }
 
-// The one exception to "never switches anything back on". A workspace that lost its plan was
-// archived with every agent off, and paying again restores it: the customer was promised it comes
-// back as they left it, so the agents the plan has room for wake up with it, oldest first, as
-// reconcileAgentActivation would have kept them. Runs once the restored engine passed its canary.
-export async function reactivateAgentsAfterRestore(workspaceId: number): Promise<string[]> {
+// The DB half of switching back on what the plan's limit had switched off, oldest first, as many as
+// the plan now has room for. Two moments call it: a trial turning into a plan, whose limit of
+// active coworkers is gone, and an archive coming back (reactivateAgentsAfterRestore). Returns the
+// ids it woke, for the caller to reach their engine.
+export async function wakePlanLimitedAgents(workspaceId: number): Promise<{ woken: string[]; active: string[] }> {
     const limit = await activeAgentLimit(workspaceId)
-    if (limit === 0) return []
+    if (limit === 0) return { woken: [], active: [] }
 
     const supabase = createServiceRoleClient()
     const [{ data: active }, { data: switchedOff }] = await Promise.all([
@@ -51,15 +52,24 @@ export async function reactivateAgentsAfterRestore(workspaceId: number): Promise
         selectAll(supabase, 'agents', ['id'] as const, { workspace_id: workspaceId, disabled_reason: PLAN_LIMIT_REASON }, { column: 'created_at', ascending: true }),
     ])
     const freeSlots = limit === null ? Infinity : Math.max(0, limit - (active ?? []).length)
-    const waking = (switchedOff ?? []).slice(0, freeSlots).map(agent => agent.id)
+    const woken = (switchedOff ?? []).slice(0, freeSlots).map(agent => agent.id)
 
-    if (waking.length > 0) await supabase.from('agents').update<AgentUpdate>({ disabled_at: null, disabled_reason: null }).in('id', waking)
+    if (woken.length > 0) await supabase.from('agents').update<AgentUpdate>({ disabled_at: null, disabled_reason: null }).in('id', woken)
+    return { woken, active: (active ?? []).map(agent => agent.id) }
+}
+
+// A workspace that lost its plan was archived with every agent off, and paying again restores it:
+// the customer was promised it comes back as they left it, so the agents the plan has room for wake
+// up with it, oldest first, as reconcileAgentActivation would have kept them. Runs once the restored
+// engine passed its canary.
+export async function reactivateAgentsAfterRestore(workspaceId: number): Promise<string[]> {
+    const { woken, active } = await wakePlanLimitedAgents(workspaceId)
 
     // Every agent the plan runs, not only the ones just woken: the archive was taken with all of
     // them switched off on the engine.
-    for (const agent of active ?? []) await startAgentOnEngine(agent.id)
-    for (const agentId of waking) await startAgentOnEngine(agentId)
-    return waking
+    for (const agentId of active) await startAgentOnEngine(agentId)
+    for (const agentId of woken) await startAgentOnEngine(agentId)
+    return woken
 }
 
 export const NO_FREE_SLOT_ERROR = 'No free coworker slot on your plan. Start Pro for unlimited coworkers, or delete a coworker to make room.'

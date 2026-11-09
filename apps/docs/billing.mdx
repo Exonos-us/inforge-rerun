@@ -39,6 +39,8 @@ Starting the trial asks for a card: \$0 is charged today, and the card is charge
 
 Subscribing during the trial ends it on the spot: the plan is billed that day, monthly unless you pick yearly. To pay nothing before day 5, keep the trial and let the plan start on its own.
 
+If the trial credits run out before day 5, the coworker that stopped offers to start the plan now. The amount and the next billing date are shown before you confirm, nothing is charged until you do, and a refused card leaves the trial as it was. Once paid, the coworker picks the task back up where it stopped.
+
 <Note>
   The [Rerun API](/api/introduction) is not part of the trial. It requires a started subscription.
 </Note>
@@ -53,7 +55,7 @@ Every run records what its model cost, in dollars, so you can see where the cred
 
 Only the trial has a coworker limit. Going over it does not delete anything. The coworkers past the third are switched off and stay exactly as they were: their prompt, their skills, their memory and their data are untouched.
 
-Start your plan from **Billing** and every coworker can run: switch them back on from their panel.
+Start your plan and the coworkers the trial had switched off come back on with it.
 
 The same applies through the API: [`create_agent`](/api/tools/agents#create-agent) succeeds and returns `active: false` with the reason, rather than failing halfway.
 

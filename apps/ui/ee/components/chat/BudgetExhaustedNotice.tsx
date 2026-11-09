@@ -9,8 +9,10 @@ import { Icon } from '@/components/ui/icon'
 import { ProviderIcon } from '@/lib/engine/provider-icons'
 import { useBillingStore } from '@/stores/billing.store'
 import { BorderBeam } from '@rerun/ui'
-import { CoinsIcon, CreditCardIcon, PauseIcon, Play, ZapOffIcon } from '@/lib/icons'
-import { BASE_PLAN_CREDITS, TRIAL_CREDITS, creditsLabel } from '@/ee/lib/billing/plans'
+import { ArrowRightIcon, CheckIcon, CoinsIcon, CreditCardIcon, PauseIcon, Play, ZapOffIcon } from '@/lib/icons'
+import { usd } from '@/ee/components/dialogs/billing/parts'
+import { BASE_PLAN_CREDITS, DEFAULT_PRICE_ARM, TRIAL_CREDITS, ZERO_QUANTITIES, creditsLabel, planPriceCents, type PriceArm } from '@/ee/lib/billing/plans'
+import { NOTICE_PERKS } from '@/ee/lib/billing/pro-perks'
 
 type SubscriptionProvider = 'claude' | 'codex'
 
@@ -34,9 +36,23 @@ type SubscriptionProvider = 'claude' | 'codex'
 //
 // `noCredit` is a workspace that never had any Rerun credit, such as a workspace added before its
 // plan: nothing was used up, so the notice does not say it was.
+//
+// On a trial, `coworker` names who stopped, `onPaid` hands the checkout a way to pick the task back
+// up, and `resuming` is the moment between paying and the plan landing, when the notice turns into
+// the receipt. `onResumeNow` is the hand-held way back if that moment drags on.
 export type BudgetNoticeOwnConnection = { label: string; provider: string; onUse: () => void }
 
-export function BudgetExhaustedNotice({ onConnectProvider, ownConnection, preTrial, trialing, paused, noCredit }: { onConnectProvider?: (provider: SubscriptionProvider) => void; ownConnection?: BudgetNoticeOwnConnection; preTrial?: boolean; trialing?: boolean; paused?: boolean; noCredit?: boolean }) {
+type TrialUpgrade = { coworker?: string; priceArm?: PriceArm; onPaid?: () => void; resuming?: boolean; onResumeNow?: () => void }
+
+export function BudgetExhaustedNotice({
+    onConnectProvider,
+    ownConnection,
+    preTrial,
+    trialing,
+    paused,
+    noCredit,
+    ...upgrade
+}: { onConnectProvider?: (provider: SubscriptionProvider) => void; ownConnection?: BudgetNoticeOwnConnection; preTrial?: boolean; trialing?: boolean; paused?: boolean; noCredit?: boolean } & TrialUpgrade) {
     const openBilling = useBillingStore(s => s.openBilling)
 
     if (paused) {
@@ -70,6 +86,8 @@ export function BudgetExhaustedNotice({ onConnectProvider, ownConnection, preTri
             </div>
         )
     }
+
+    if (trialing && !noCredit) return <TrialUpgradeNotice {...upgrade} onConnectProvider={onConnectProvider} ownConnection={ownConnection} />
 
     // A workspace with no credit at all has no month that will refill it: what opens credit is the plan.
     const paidWayOut: NoticeAction = trialing || noCredit
@@ -139,6 +157,76 @@ export function BudgetExhaustedNotice({ onConnectProvider, ownConnection, preTri
                     <p className="text-sm">{trialing || noCredit ? `${usedUp} Subscribe to keep your coworkers working.` : `${usedUp} It resets next month.`}</p>
                     <NoticeActions actions={[paidWayOut]} />
                 </>
+            )}
+        </div>
+    )
+}
+
+function TrialUpgradeNotice({ coworker, priceArm = DEFAULT_PRICE_ARM, onPaid, resuming, onResumeNow, onConnectProvider, ownConnection }: TrialUpgrade & { onConnectProvider?: (provider: SubscriptionProvider) => void; ownConnection?: BudgetNoticeOwnConnection }) {
+    const openBilling = useBillingStore(s => s.openBilling)
+
+    if (resuming) {
+        return (
+            <div className="mb-2 flex flex-wrap items-center gap-x-2.5 gap-y-2 px-1 text-sm">
+                <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-green-500/15 text-green-500 ring-1 ring-green-500/30">
+                    <CheckIcon className="size-3" />
+                </span>
+                <span className="min-w-0 flex-1">
+                    <span className="font-medium">You&apos;re on Pro.</span> <span className="text-muted-foreground">{coworker ?? 'Your coworker'} picks the task back up.</span>
+                </span>
+                {onResumeNow && (
+                    <Button size="xs" variant="outline" onClick={onResumeNow}>
+                        Resume
+                    </Button>
+                )}
+            </div>
+        )
+    }
+
+    const monthly = usd(planPriceCents(ZERO_QUANTITIES, 'monthly', priceArm))
+    return (
+        <div className="relative mb-2 space-y-3 overflow-hidden rounded-lg px-4 pt-3 pb-4">
+            <BorderBeam animated pattern="arcs" tone="red" glow width={1} duration={7} />
+            <div className="flex items-start gap-2.5">
+                <Icon size="sm" tone="red" icon={ZapOffIcon} className="bg-red-500/10 text-foreground" />
+                <div className="min-w-0 text-sm">
+                    <p className="font-medium">Trial credits used up</p>
+                    {coworker && <p className="text-muted-foreground">{coworker} stopped.</p>}
+                </div>
+            </div>
+            <Button size="lg" className="w-full" onClick={() => openBilling(undefined, 'budget_exhausted_trial', { coworker, onPaid })}>
+                <span className="truncate">Continue with Pro · {monthly}/mo</span>
+                <ArrowRightIcon className="size-3.5" />
+            </Button>
+            <ul className="flex flex-wrap justify-center gap-x-4 gap-y-1">
+                {NOTICE_PERKS.map(perk => (
+                    <li key={perk.id} className="flex items-center gap-1.5 text-xs">
+                        <CheckIcon className="size-3.5 shrink-0 text-green-500" />
+                        {perk.headline}
+                    </li>
+                ))}
+            </ul>
+            {ownConnection ? (
+                <div className="flex justify-center">
+                    <Button size="xs" variant="ghost" className="max-w-full text-muted-foreground" onClick={ownConnection.onUse}>
+                        <ProviderIcon provider={ownConnection.provider} className="size-3" />
+                        <span className="truncate">Run on {ownConnection.label}</span>
+                    </Button>
+                </div>
+            ) : (
+                onConnectProvider && (
+                    <div className="flex flex-wrap items-center justify-center gap-x-1 gap-y-1 text-xs text-muted-foreground">
+                        <span>Or use my plan:</span>
+                        <Button size="xs" variant="ghost" className="text-muted-foreground" onClick={() => onConnectProvider('claude')}>
+                            <ProviderIcon provider="claude" className="size-3" />
+                            Claude
+                        </Button>
+                        <Button size="xs" variant="ghost" className="text-muted-foreground" onClick={() => onConnectProvider('codex')}>
+                            <ProviderIcon provider="openai" className="size-3" />
+                            ChatGPT
+                        </Button>
+                    </div>
+                )
             )}
         </div>
     )
