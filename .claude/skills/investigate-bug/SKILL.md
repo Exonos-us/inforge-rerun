@@ -14,7 +14,25 @@ Reply in the user's language. Notes and captures go in `.context/bugs/<slug>/`.
   (web, mobile, engine, email…), when (date and time), how often (once, always, since a release).
 - What is missing from the report, ask for it now rather than guessing.
 
-## 2. Gather the evidence
+## 2. Check it was not fixed already
+
+Before digging, make sure the bug is not already known or fixed:
+
+- Search the history for the symptom and the area: `git log -i --grep=<keyword>`,
+  `git log -S<symbol> -- <path>`, and the PRs, merged and open
+  (`gh pr list --state all --search "<keyword>"`). History before 2026-10-29 lives in the private
+  `rerun-build/rerun-monorepo-archive`; what Rerun Cloud runs differently lives in `cloud/`
+  (`git -C cloud log`, repo `rerun-build/rerun-cloud`).
+- Search Notion for a card with the same symptom (done or in progress).
+- A fix found: check it reached where the bug was seen. Is the commit on `master`? Is the app's
+  `/api/version` (staging or prod) at or after it? Does the customer's engine box run a version
+  that includes it? On mobile, does the build in the customer's hands include it?
+  - Not shipped yet: the answer is "fixed in <PR>, not deployed to <env>". Stop there.
+  - Shipped and the bug is back: a regression or an incomplete fix. Find what reopened it
+    (`git log` on the fixed lines since the fix) and start from the old fix and its test.
+- An open PR or another workspace already on it: say so instead of starting a second fix.
+
+## 3. Gather the evidence
 
 Production and staging are **read-only** here: read, never write, restart or redeploy.
 
@@ -38,7 +56,7 @@ Investigating on the real account is allowed, still read-only:
 - Never paste the engine API key, tokens or the customer's private content in a message, a commit
   or a Notion card. Quote only what proves the cause.
 
-## 3. Reproduce
+## 4. Reproduce
 
 - On the local stack only (`pnpm db:start`, `pnpm cloud env:local`): a `pnpm verify:ui` scenario in
   `.context/verify/` that clicks the reported path, or a failing test.
@@ -46,7 +64,7 @@ Investigating on the real account is allowed, still read-only:
 - Not reproducible: say so, list what was tried, and keep going from the evidence. Never present a
   guessed cause as a found one.
 
-## 4. Find the root cause
+## 5. Find the root cause
 
 - Trace the code path from the symptom back to the line that is wrong (`file:line`).
 - The cause must explain **every** symptom of the report. If one is left over, keep digging.
@@ -54,11 +72,12 @@ Investigating on the real account is allowed, still read-only:
 - Other places with the same flaw: list them, do not fix them.
 - The cause is a vulnerability: stop and switch to the `security-fix` skill.
 
-## 5. Report, then wait
+## 6. Report, then wait
 
 Unless the user already asked for the fix, stop here and give:
 
 - **Symptom**: one sentence.
+- **Already fixed?**: the earlier fix or card found (and whether it shipped), or "nothing found".
 - **Reproduction**: the steps, or "not reproduced" with what was tried.
 - **Root cause**: `file:line` and why, with the evidence (log line, row, capture).
 - **Proposed fix**: the smallest diff that removes the cause. A wider refactor is mentioned in one
