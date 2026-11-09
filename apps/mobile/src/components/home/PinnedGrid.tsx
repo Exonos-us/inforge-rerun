@@ -1,26 +1,32 @@
 import { Button, ContextMenu, Host, RNHostView } from '@expo/ui/swift-ui'
 import { accessibilityLabel, buttonStyle } from '@expo/ui/swift-ui/modifiers'
-import { useWindowDimensions, View } from 'react-native'
+import { View } from 'react-native'
 
 import { AgentBuddy } from '@/components/buddy/AgentBuddy'
 import { moodStatus, type HomeCoworker } from '@/components/home/board'
+import { usePaneSize } from '@/components/layout/PaneSize'
+import { columnsFor } from '@/components/layout/split'
 import { AppText } from '@/components/ui/AppText'
 import { moodOf } from '@/components/ui/CoworkerAvatar'
 import { UnreadDot } from '@/components/ui/UnreadDot'
 import { useTheme } from '@/theme/theme'
 import { spacing } from '@/theme/tokens'
 
-export const PINNED_COLUMNS = 3
+const FEWEST_COLUMNS = 3
+const MIN_CELL = 108
 const DISC_MAX = 84
 const UNREAD_DOT = 14
 
-export type PinnedCell = { width: number; disc: number }
+export type PinnedCell = { width: number; disc: number; columns: number }
 
-// The size of a cell of the grid on this screen: three across, the disc capped on a wide one.
+// The size of a cell of the grid in this pane: three across on an iPhone, more on a wider pane, the disc
+// capped on a wide one.
 export function usePinnedCell(): PinnedCell {
-    const { width } = useWindowDimensions()
-    const cellWidth = Math.floor((width - 2 * spacing.xl) / PINNED_COLUMNS)
-    return { width: cellWidth, disc: Math.min(DISC_MAX, cellWidth - 2 * spacing.md) }
+    const { width } = usePaneSize()
+    const inner = width - 2 * spacing.xl
+    const columns = columnsFor(inner, MIN_CELL, FEWEST_COLUMNS)
+    const cellWidth = Math.floor(inner / columns)
+    return { width: cellWidth, disc: Math.min(DISC_MAX, cellWidth - 2 * spacing.md), columns }
 }
 
 // A pinned coworker as iMessage draws a pinned contact: a round disc, the name under it.

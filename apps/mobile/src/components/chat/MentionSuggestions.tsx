@@ -1,7 +1,8 @@
 import { GlassView } from 'expo-glass-effect'
-import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native'
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native'
 import Animated, { FadeInDown, FadeOutDown } from 'react-native-reanimated'
 
+import { usePaneSize } from '@/components/layout/PaneSize'
 import { useGlassStyle } from '@/components/ui/GlassButton'
 import { AppText } from '@/components/ui/AppText'
 import { useTheme } from '@/theme/theme'
@@ -17,7 +18,7 @@ const MAX_ROWS = 5
 export function MentionSuggestions({ trigger, items, onPick }: { trigger: '@' | '/'; items: MentionItem[]; onPick: (item: MentionItem) => void }) {
     const theme = useTheme()
     const glass = useGlassStyle()
-    const { height } = useWindowDimensions()
+    const { height } = usePaneSize()
     // A short screen with the keyboard up keeps the conversation's header in sight.
     const maxHeight = Math.min(ROW * MAX_ROWS, height * 0.3)
     return (

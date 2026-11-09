@@ -11,6 +11,7 @@ import { fetchAgentModels } from '@/api/models'
 import { useAuth } from '@/auth/AuthProvider'
 import { supabase } from '@/auth/supabase'
 import { coworkerEndpoints } from '@/chat/endpoints'
+import { useChatBack } from '@/components/layout/useChatBack'
 import { environment } from '@/config/environment'
 import { readCoworkerScreen, saveCoworkerScreen } from '@/data/local-cache'
 import { useTheme } from '@/theme/theme'
@@ -38,6 +39,7 @@ function startedByOf(conversation: Conversation | undefined): StartedBy | null {
 
 export function CoworkerChat({ agentId, sessionId }: { agentId: string; sessionId: string | null }) {
     const theme = useTheme()
+    const back = useChatBack()
     const { session, me } = useAuth()
     // The header opens on what the last visit read: name, tabs and model are there before the hub answers.
     const [kept] = useState(() => (me ? readCoworkerScreen(me.workspace.id, agentId) : null))
@@ -166,7 +168,7 @@ export function CoworkerChat({ agentId, sessionId }: { agentId: string; sessionI
     return (
         <View style={{ flex: 1, backgroundColor: theme.background }}>
             <ConversationPager pages={pages} activeIndex={activeIndex} progress={progress} onSettle={settleOn} renderPage={(page: ConversationPage, onScreen) => <ConversationPane coworker={coworker} makeEndpoints={() => coworkerEndpoints(agentId)} initialSessionId={page.sessionId} onSessionCreated={onSessionCreated} models={models} status={(page.sessionId && byId.get(page.sessionId)?.status) || null} onStatusChange={loadConversations} webUrl={`${environment.apiUrl}/?agent=${encodeURIComponent(agentId)}`} onScreen={onScreen} startedBy={startedByOf(page.sessionId ? byId.get(page.sessionId) : undefined)} />} />
-            <ChatHeader coworker={coworker} tabs={tabs} activeId={activeId ?? undefined} progress={progress} allSessions={allTabs} onBack={() => router.back()} onSelect={select} onNewSession={startNew} onOpenDetails={() => router.push({ pathname: '/coworker/[id]', params: { id: agentId, name: coworker.name } })} />
+            <ChatHeader coworker={coworker} tabs={tabs} activeId={activeId ?? undefined} progress={progress} allSessions={allTabs} onBack={back} onSelect={select} onNewSession={startNew} onOpenDetails={() => router.push({ pathname: '/coworker/[id]', params: { id: agentId, name: coworker.name } })} />
         </View>
     )
 }

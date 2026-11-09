@@ -1,6 +1,6 @@
 import type { UIMessage } from 'ai'
 import { useRef, useState } from 'react'
-import { ScrollView, StyleSheet, View } from 'react-native'
+import { ScrollView, StyleSheet, View, type ScrollViewInstance } from 'react-native'
 import Animated, { FadeInDown, FadeOutDown, useAnimatedKeyboard, useAnimatedStyle } from 'react-native-reanimated'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
@@ -81,7 +81,7 @@ function Answered({ widget }: { widget: WidgetPart }) {
 // composer only while no card waits on an answer.
 export function OnboardingConversation({ messages, busy, failed, onRetry, teamStart, leadStarting, onAnswer, onSend, onStop, onRetryStart, onRetryBuild, onStartLead }: OnboardingConversationProps) {
     const insets = useSafeAreaInsets()
-    const scroll = useRef<ScrollView>(null)
+    const scroll = useRef<ScrollViewInstance>(null)
     const [draft, setDraft] = useState('')
     const [footerHeight, setFooterHeight] = useState(0)
     const keyboard = useAnimatedKeyboard()

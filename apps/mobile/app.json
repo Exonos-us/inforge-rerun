@@ -12,7 +12,7 @@
     },
     "ios": {
       "bundleIdentifier": "build.rerun.app",
-      "supportsTablet": false,
+      "supportsTablet": true,
       "usesAppleSignIn": true,
       "deploymentTarget": "26.0",
       "infoPlist": {
@@ -20,7 +20,13 @@
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
         },
-        "NSLocalNetworkUsageDescription": "Rerun connects to a Rerun server on your local network when you choose one."
+        "NSLocalNetworkUsageDescription": "Rerun connects to a Rerun server on your local network when you choose one.",
+        "UISupportedInterfaceOrientations~ipad": [
+          "UIInterfaceOrientationPortrait",
+          "UIInterfaceOrientationPortraitUpsideDown",
+          "UIInterfaceOrientationLandscapeLeft",
+          "UIInterfaceOrientationLandscapeRight"
+        ]
       }
     },
     "plugins": [

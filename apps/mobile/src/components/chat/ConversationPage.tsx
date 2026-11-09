@@ -1,5 +1,5 @@
 import { useRef } from 'react'
-import { ScrollView, View } from 'react-native'
+import { ScrollView, View, type ScrollViewInstance } from 'react-native'
 import { LayoutAnimationConfig } from 'react-native-reanimated'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
@@ -12,7 +12,7 @@ import { RunStatus } from './RunStatus'
 
 export function ConversationPage({ coworker, session }: { coworker: Coworker; session: Session | undefined }) {
     const insets = useSafeAreaInsets()
-    const scroll = useRef<ScrollView>(null)
+    const scroll = useRef<ScrollViewInstance>(null)
     const messages = session?.messages ?? []
     const run = session?.run
     const empty = messages.length === 0 && !run

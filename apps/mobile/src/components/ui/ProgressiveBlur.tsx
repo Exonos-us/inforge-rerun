@@ -1,10 +1,14 @@
-import MaskedView from '@react-native-masked-view/masked-view'
+import MaskedViewNative from '@react-native-masked-view/masked-view'
 import { BlurView } from 'expo-blur'
-import { useId } from 'react'
-import { StyleSheet, View } from 'react-native'
+import { useId, type ComponentType, type ReactElement } from 'react'
+import { StyleSheet, View, type ViewProps } from 'react-native'
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg'
 
 import { useTheme } from '@/theme/theme'
+
+// The package types its class through React Native's NativeMethods mixin, which the strict types of
+// React Native 0.88 no longer export: the component itself is unchanged.
+const MaskedView = MaskedViewNative as unknown as ComponentType<ViewProps & { maskElement: ReactElement }>
 
 const BLUR_INTENSITY = 24
 

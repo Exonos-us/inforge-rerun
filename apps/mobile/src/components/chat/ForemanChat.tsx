@@ -11,6 +11,7 @@ import { fetchAgentModels } from '@/api/models'
 import { useAuth } from '@/auth/AuthProvider'
 import { takePendingAsk } from '@/chat/pending-ask'
 import { foremanEndpoints } from '@/chat/endpoints'
+import { useChatBack } from '@/components/layout/useChatBack'
 import { ForemanOrb } from '@/components/orb/ForemanOrb'
 import { AppText } from '@/components/ui/AppText'
 import { PillButton } from '@/components/ui/PillButton'
@@ -80,6 +81,7 @@ function Notice({ title, body, onRetry }: { title: string; body: string; onRetry
 // the search left for it.
 export function ForemanChat({ sessionId }: { sessionId: string | null }) {
     const theme = useTheme()
+    const back = useChatBack()
     const { session, me } = useAuth()
     const [ask] = useState(() => (sessionId === null ? takePendingAsk() : undefined))
     const [wantsLast] = useState(sessionId === LAST_CONVERSATION)
@@ -246,7 +248,7 @@ export function ForemanChat({ sessionId }: { sessionId: string | null }) {
                     }}
                 />
             )}
-            <ChatHeader coworker={FOREMAN} tabs={surface === 'engine' ? tabs : []} activeId={activeId ?? undefined} progress={progress} allSessions={surface === 'engine' ? tabs : []} onBack={() => router.back()} onSelect={select} onNewSession={startNew} />
+            <ChatHeader coworker={FOREMAN} tabs={surface === 'engine' ? tabs : []} activeId={activeId ?? undefined} progress={progress} allSessions={surface === 'engine' ? tabs : []} onBack={back} onSelect={select} onNewSession={startNew} />
         </View>
     )
 }

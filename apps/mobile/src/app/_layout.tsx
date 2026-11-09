@@ -8,6 +8,7 @@ import { AuthProvider, useAuth } from '@/auth/AuthProvider'
 import { BuddyClock } from '@/components/buddy/motion'
 import { AiConsent } from '@/components/consent/AiConsent'
 import { NoPlan } from '@/components/home/NoPlan'
+import { SplitShell } from '@/components/layout/SplitShell'
 import { Onboarding, type LeadStarted } from '@/components/onboarding/Onboarding'
 import { OnboardingShell } from '@/components/onboarding/OnboardingShell'
 import { useOnboardingRoute } from '@/components/onboarding/useOnboardingRoute'
@@ -102,50 +103,52 @@ function App() {
                     <MockStore>
                         <InboxProvider>
                             {signedIn && <PushRouting />}
-                            <Stack screenOptions={{ headerShown: false }}>
-                                <Stack.Protected guard={signedIn}>
-                                    <Stack.Screen name="index" />
-                                    <Stack.Screen name="chat/[id]" />
-                                    <Stack.Screen name="search" options={{ animation: 'fade' }} />
-                                    <Stack.Screen name="coworker/[id]/index" />
-                                    <Stack.Screen name="coworker/[id]/files" />
-                                    <Stack.Screen name="coworker/[id]/apps" />
-                                    <Stack.Screen name="coworker/[id]/routines" />
-                                    <Stack.Screen name="coworker/[id]/notifications" />
-                                    <Stack.Screen name="inbox" options={{ presentation: 'formSheet', sheetAllowedDetents: [0.6, 1], sheetGrabberVisible: true, contentStyle: { backgroundColor: palette[scheme].background } }} />
-                                    <Stack.Screen name="model" options={{ presentation: 'formSheet', sheetAllowedDetents: [0.6, 1], sheetGrabberVisible: true, contentStyle: { backgroundColor: palette[scheme].background } }} />
-                                    <Stack.Screen name="desktop" options={{ presentation: 'fullScreenModal' }} />
-                                    <Stack.Screen name="settings" options={{ presentation: 'formSheet', sheetAllowedDetents: [1], sheetGrabberVisible: true, contentStyle: { backgroundColor: palette[scheme].background } }} />
-                                    <Stack.Screen name="new-coworker" options={{ presentation: 'formSheet', sheetAllowedDetents: [1], sheetGrabberVisible: true, contentStyle: { backgroundColor: palette[scheme].background } }} />
-                                    <Stack.Screen name="providers" options={{ presentation: 'formSheet', sheetAllowedDetents: [1], sheetGrabberVisible: true, contentStyle: { backgroundColor: palette[scheme].background } }} />
-                                </Stack.Protected>
-                                <Stack.Protected guard={!signedIn}>
-                                    <Stack.Screen name="sign-in" />
-                                </Stack.Protected>
-                                <Stack.Protected guard={__DEV__}>
-                                    <Stack.Screen name="lab" />
-                                    <Stack.Screen name="lab-chat" />
-                                    <Stack.Screen name="lab-message-times" />
-                                    <Stack.Screen name="lab-sign-in" />
-                                    <Stack.Screen name="lab-hitl" />
-                                    <Stack.Screen name="lab-screen" />
-                                    <Stack.Screen name="lab-delegate" />
-                                    <Stack.Screen name="lab-steps" />
-                                    <Stack.Screen name="lab-skill" />
-                                    <Stack.Screen name="lab-composer" />
-                                    <Stack.Screen name="lab-foreman" />
-                                    <Stack.Screen name="lab-home" />
-                                    <Stack.Screen name="lab-markdown" />
-                                    <Stack.Screen name="lab-onboarding" />
-                                    <Stack.Screen name="lab-consent" />
-                                    <Stack.Screen name="lab-splash" options={{ animation: 'none', gestureEnabled: true }} />
-                                    <Stack.Screen name="lab-coworker" />
-                                    <Stack.Screen name="lab-notifications" />
-                                    <Stack.Screen name="lab-conversations" />
-                                    <Stack.Screen name="lab-conversations-sheet" options={{ presentation: 'formSheet', sheetAllowedDetents: [0.6, 1], sheetGrabberVisible: true, contentStyle: { backgroundColor: palette[scheme].background } }} />
-                                    <Stack.Screen name="lab-providers" options={{ presentation: 'formSheet', sheetAllowedDetents: [1], sheetGrabberVisible: true, contentStyle: { backgroundColor: palette[scheme].background } }} />
-                                </Stack.Protected>
-                            </Stack>
+                            <SplitShell enabled={signedIn}>
+                                <Stack screenOptions={{ headerShown: false }}>
+                                    <Stack.Protected guard={signedIn} redirectTo="/sign-in">
+                                        <Stack.Screen name="index" />
+                                        <Stack.Screen name="chat/[id]" />
+                                        <Stack.Screen name="search" options={{ animation: 'fade' }} />
+                                        <Stack.Screen name="coworker/[id]/index" />
+                                        <Stack.Screen name="coworker/[id]/files" />
+                                        <Stack.Screen name="coworker/[id]/apps" />
+                                        <Stack.Screen name="coworker/[id]/routines" />
+                                        <Stack.Screen name="coworker/[id]/notifications" />
+                                        <Stack.Screen name="inbox" options={{ presentation: 'formSheet', sheetAllowedDetents: [0.6, 1], sheetGrabberVisible: true, contentStyle: { backgroundColor: palette[scheme].background } }} />
+                                        <Stack.Screen name="model" options={{ presentation: 'formSheet', sheetAllowedDetents: [0.6, 1], sheetGrabberVisible: true, contentStyle: { backgroundColor: palette[scheme].background } }} />
+                                        <Stack.Screen name="desktop" options={{ presentation: 'fullScreenModal' }} />
+                                        <Stack.Screen name="settings" options={{ presentation: 'formSheet', sheetAllowedDetents: [1], sheetGrabberVisible: true, contentStyle: { backgroundColor: palette[scheme].background } }} />
+                                        <Stack.Screen name="new-coworker" options={{ presentation: 'formSheet', sheetAllowedDetents: [1], sheetGrabberVisible: true, contentStyle: { backgroundColor: palette[scheme].background } }} />
+                                        <Stack.Screen name="providers" options={{ presentation: 'formSheet', sheetAllowedDetents: [1], sheetGrabberVisible: true, contentStyle: { backgroundColor: palette[scheme].background } }} />
+                                    </Stack.Protected>
+                                    <Stack.Protected guard={!signedIn} redirectTo="/">
+                                        <Stack.Screen name="sign-in" />
+                                    </Stack.Protected>
+                                    <Stack.Protected guard={__DEV__}>
+                                        <Stack.Screen name="lab" />
+                                        <Stack.Screen name="lab-chat" />
+                                        <Stack.Screen name="lab-message-times" />
+                                        <Stack.Screen name="lab-sign-in" />
+                                        <Stack.Screen name="lab-hitl" />
+                                        <Stack.Screen name="lab-screen" />
+                                        <Stack.Screen name="lab-delegate" />
+                                        <Stack.Screen name="lab-steps" />
+                                        <Stack.Screen name="lab-skill" />
+                                        <Stack.Screen name="lab-composer" />
+                                        <Stack.Screen name="lab-foreman" />
+                                        <Stack.Screen name="lab-home" />
+                                        <Stack.Screen name="lab-markdown" />
+                                        <Stack.Screen name="lab-onboarding" />
+                                        <Stack.Screen name="lab-consent" />
+                                        <Stack.Screen name="lab-splash" options={{ animation: 'none', gestureEnabled: true }} />
+                                        <Stack.Screen name="lab-coworker" />
+                                        <Stack.Screen name="lab-notifications" />
+                                        <Stack.Screen name="lab-conversations" />
+                                        <Stack.Screen name="lab-conversations-sheet" options={{ presentation: 'formSheet', sheetAllowedDetents: [0.6, 1], sheetGrabberVisible: true, contentStyle: { backgroundColor: palette[scheme].background } }} />
+                                        <Stack.Screen name="lab-providers" options={{ presentation: 'formSheet', sheetAllowedDetents: [1], sheetGrabberVisible: true, contentStyle: { backgroundColor: palette[scheme].background } }} />
+                                    </Stack.Protected>
+                                </Stack>
+                            </SplitShell>
                             <MediaViewerHost />
                         </InboxProvider>
                     </MockStore>

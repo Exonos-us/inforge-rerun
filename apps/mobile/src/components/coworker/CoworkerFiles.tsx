@@ -2,10 +2,12 @@ import { Host, Picker, Text } from '@expo/ui/swift-ui'
 import { pickerStyle, tag } from '@expo/ui/swift-ui/modifiers'
 import type { CoworkerFile, CoworkerFileKind, CoworkerFiles as CoworkerFilesView } from '@rerun/contracts'
 import { Fragment, useState } from 'react'
-import { Pressable, View, useWindowDimensions } from 'react-native'
+import { Pressable, View } from 'react-native'
 
 import { AuthedImage } from '@/components/chat/cards/CardParts'
 import { formatBytes } from '@/components/chat/cards/cards'
+import { usePaneSize } from '@/components/layout/PaneSize'
+import { columnsFor } from '@/components/layout/split'
 import { AppText } from '@/components/ui/AppText'
 import { Card, GROUPED_ROW_HEIGHT, Separator } from '@/components/ui/GroupedList'
 import { Skeleton } from '@/components/ui/Skeleton'
@@ -14,7 +16,8 @@ import { radius, spacing } from '@/theme/tokens'
 
 import { CoworkerPage, LoadFailed } from './CoworkerPage'
 
-const COLUMNS = 3
+const FEWEST_COLUMNS = 3
+const MIN_TILE = 120
 const GRID_GAP = 2
 const DOC_TILE = 36
 const DOC_INSET = spacing.lg + DOC_TILE + spacing.md
@@ -137,9 +140,11 @@ type CoworkerFilesProps = {
 // contact sent: pictures in a grid, everything else as a list.
 export function CoworkerFiles({ name, view, urlOf, onOpen, failed, onBack }: CoworkerFilesProps) {
     const theme = useTheme()
-    const { width } = useWindowDimensions()
+    const { width } = usePaneSize()
     const [kind, setKind] = useState<CoworkerFileKind>('media')
-    const tile = Math.floor((width - spacing.lg * 2 - GRID_GAP * (COLUMNS - 1)) / COLUMNS)
+    const inner = width - spacing.lg * 2
+    const columns = columnsFor(inner, MIN_TILE, FEWEST_COLUMNS)
+    const tile = Math.floor((inner - GRID_GAP * (columns - 1)) / columns)
     const shown = view?.files.filter(file => file.kind === kind) ?? null
 
     return (

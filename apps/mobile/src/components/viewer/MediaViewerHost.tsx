@@ -1,6 +1,6 @@
 import * as Sharing from 'expo-sharing'
 import { useEffect, useRef, useState } from 'react'
-import { Alert, Modal, StatusBar, useWindowDimensions, View } from 'react-native'
+import { Alert, Modal, StatusBar, useWindowDimensions, View, type ScrollViewInstance } from 'react-native'
 import { GestureHandlerRootView, ScrollView } from 'react-native-gesture-handler'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
@@ -30,7 +30,7 @@ export function MediaViewerHost() {
     const [index, setIndex] = useState(0)
     const [zoomed, setZoomed] = useState(false)
     const [drag, setDrag] = useState(0)
-    const pager = useRef<ScrollView>(null)
+    const pager = useRef<ScrollViewInstance>(null)
     const items = state?.items ?? []
 
     useEffect(() => {
@@ -38,8 +38,13 @@ export function MediaViewerHost() {
         setIndex(state.index)
         setZoomed(false)
         setDrag(0)
-        requestAnimationFrame(() => pager.current?.scrollTo({ x: state.index * width, animated: false }))
-    }, [state, width])
+    }, [state])
+
+    // A window that resizes (an iPad in Split View, an iPhone Duo folding) keeps the item on screen.
+    useEffect(() => {
+        if (!state) return
+        requestAnimationFrame(() => pager.current?.scrollTo({ x: index * width, animated: false }))
+    }, [state, index, width])
 
     const headersFor = (url: string) => fileHeadersFor(caller, url)
 

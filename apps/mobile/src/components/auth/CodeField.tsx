@@ -1,5 +1,5 @@
 import { useRef } from 'react'
-import { Pressable, TextInput, View } from 'react-native'
+import { Pressable, TextInput, View, type TextInputInstance } from 'react-native'
 
 import { AppText } from '@/components/ui/AppText'
 import { fieldOutline } from '@/theme/field'
@@ -18,7 +18,7 @@ type CodeFieldProps = {
 // One hidden input behind the boxes, so iOS can fill the code from the message it just received.
 export function CodeField({ length, value, onChangeText, onComplete, disabled, invalid }: CodeFieldProps) {
     const theme = useTheme()
-    const input = useRef<TextInput>(null)
+    const input = useRef<TextInputInstance>(null)
 
     const change = (text: string) => {
         const digits = text.replace(/\D/g, '').slice(0, length)

@@ -43,7 +43,7 @@ export type AgentScreen = {
     status: ScreenStatus
     // The viewer page to load, once the hub gave a socket; the screen is live once it painted.
     uri: string | null
-    attachWebView: (view: WebView | null) => void
+    attachWebView: (view: WebView<object> | null) => void
     onMessage: (event: WebViewMessageEvent) => void
     frames: ScreenFrames
     // Copies of the screen for the floating thumbnail, only while it shows.
@@ -70,7 +70,7 @@ export function useAgentScreen(agentId: string, enabled: boolean): AgentScreen {
     const key = enabled && signedIn ? `${agentId}#${attempt}` : null
     const [connection, setConnection] = useState<Connection>({ key: null, status: 'loading', uri: null })
     const current = connection.key === key ? connection : { key, status: 'loading' as const, uri: null }
-    const webRef = useRef<WebView | null>(null)
+    const webRef = useRef<WebView<object> | null>(null)
     const reconnects = useRef(0)
     const mirroring = useRef(false)
     const [frames] = useState(createFrames)
@@ -117,7 +117,7 @@ export function useAgentScreen(agentId: string, enabled: boolean): AgentScreen {
         [frames]
     )
 
-    const attachWebView = useCallback((view: WebView | null) => {
+    const attachWebView = useCallback((view: WebView<object> | null) => {
         webRef.current = view
     }, [])
 

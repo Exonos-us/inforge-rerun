@@ -2,7 +2,7 @@ import { appendVoiceMarker, buildVoiceMarker, teamEmptyStateOf } from '@rerun/co
 import type { UIMessage } from 'ai'
 import { router, useLocalSearchParams } from 'expo-router'
 import { useEffect, useRef, useState } from 'react'
-import { ScrollView, StyleSheet, View } from 'react-native'
+import { ScrollView, StyleSheet, View, type ScrollViewInstance } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { Composer } from '@/components/chat/Composer'
@@ -99,7 +99,7 @@ export function MockPane({ state, topInset = spacing.lg, seeThrough = true, cowo
     const insets = useSafeAreaInsets()
     const [draft, setDraft] = useState('')
     const [footerHeight, setFooterHeight] = useState(0)
-    const scroll = useRef<ScrollView>(null)
+    const scroll = useRef<ScrollViewInstance>(null)
     const streamed = useStreamedReply(state === 'streaming')
     const loading = state === 'loading'
     const messages = state === 'empty' || loading ? [] : state === 'approval' ? BEFORE_APPROVAL : state === 'conversation' ? CONVERSATION : state === 'long' ? LONG : state === 'streaming' ? [...RUNNING, ...(streamed.text ? [text('a3', 'assistant', streamed.text)] : [])] : RUNNING

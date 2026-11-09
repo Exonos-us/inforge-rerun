@@ -11,6 +11,7 @@ import { EmailStep } from '@/components/auth/steps/EmailStep'
 import { PhoneStep } from '@/components/auth/steps/PhoneStep'
 import { ServerStep } from '@/components/auth/steps/ServerStep'
 import { StartStep, type StartLayout } from '@/components/auth/steps/StartStep'
+import { FORM_COLUMN_MAX_WIDTH } from '@/components/layout/split'
 import { ForemanOrb } from '@/components/orb/ForemanOrb'
 import { GlassButton } from '@/components/ui/GlassButton'
 import { EASE_OUT, MOTION } from '@/theme/motion'
@@ -18,7 +19,6 @@ import { useTheme } from '@/theme/theme'
 import { radius, spacing } from '@/theme/tokens'
 
 const FOREMAN_SIZE = 72
-const CONTENT_MAX_WIDTH = 440
 // The sheet runs this far below the screen, so lifting it over the keyboard never uncovers a gap
 // under its bottom edge.
 const SHEET_RUNOFF = 400
@@ -108,7 +108,7 @@ export function SignInSheet({ startLayout = 'phone-first' }: { startLayout?: Sta
                                 key={stepKey}
                                 entering={(direction === 'forward' ? FadeInRight : FadeInLeft).duration(STEP_ENTER_MS)}
                                 exiting={FadeOut.duration(STEP_EXIT_MS)}
-                                style={{ width: '100%', maxWidth: CONTENT_MAX_WIDTH, alignSelf: 'center', gap: spacing.lg, paddingTop: step.name === 'start' ? 0 : spacing.xl }}
+                                style={{ width: '100%', maxWidth: FORM_COLUMN_MAX_WIDTH, alignSelf: 'center', gap: spacing.lg, paddingTop: step.name === 'start' ? 0 : spacing.xl }}
                             >
                                 {step.name === 'start' && <StartStep layout={startLayout} />}
                                 {step.name === 'phone' && <PhoneStep />}

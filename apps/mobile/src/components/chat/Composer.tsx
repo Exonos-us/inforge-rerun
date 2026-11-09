@@ -4,7 +4,7 @@ import * as Haptics from 'expo-haptics'
 import { GlassView } from 'expo-glass-effect'
 import * as ImagePicker from 'expo-image-picker'
 import { type Ref, useEffect, useEffectEvent, useImperativeHandle, useRef, useState } from 'react'
-import { Alert, Text, TextInput, View } from 'react-native'
+import { Alert, Text, TextInput, View, type TextInputInstance } from 'react-native'
 
 import { addPasteImagesListener } from '@/chat/composer-paste'
 import { useGlassStyle } from '@/components/ui/GlassButton'
@@ -52,7 +52,7 @@ export function Composer({ value, onChangeText, attachments = [], onAttachmentsC
     const theme = useTheme()
     const glass = useGlassStyle()
     const [focused, setFocused] = useState(Boolean(autoFocus))
-    const input = useRef<TextInput>(null)
+    const input = useRef<TextInputInstance>(null)
     useImperativeHandle(ref, () => ({ focus: () => input.current?.focus() }), [])
     const [caret, setCaret] = useState(value.length)
     // Where the caret goes once the text a menu just wrote is on screen.

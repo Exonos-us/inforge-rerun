@@ -1,5 +1,5 @@
 import type { Box } from '@rerun/contracts'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { AppState } from 'react-native'
 
 import { fetchBoard, type BoardRead } from '@/api/board'
@@ -61,10 +61,13 @@ export function useBoard(): Board & { reload: () => void } {
         return () => foreground.remove()
     }, [reload])
 
+    // The coworker list can be mounted twice for a moment (the Home leaving the stack as the sidebar of a
+    // wide window takes over): supabase.channel() hands back the instance of a topic already taken.
+    const channelId = useId()
     useEffect(() => {
         if (!workspaceId) return
         const channel = supabase
-            .channel(`home:${workspaceId}`)
+            .channel(`home:${workspaceId}:${channelId}`)
             .on('postgres_changes', { event: '*', schema: 'public', table: 'agents', filter: `workspace_id=eq.${workspaceId}` }, reloadSoon)
             // A delete only carries the primary key, so the workspace filter above never lets one through.
             .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'agents' }, reloadSoon)
@@ -77,7 +80,7 @@ export function useBoard(): Board & { reload: () => void } {
             supabase.removeChannel(channel)
             if (timer.current) clearTimeout(timer.current)
         }
-    }, [workspaceId, userId, reloadSoon])
+    }, [workspaceId, userId, reloadSoon, channelId])
 
     // A workspace already read opens on its rows, the hub's copy replaces them when it lands.
     const kept = useMemo(() => {

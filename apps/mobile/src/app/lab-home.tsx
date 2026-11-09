@@ -8,7 +8,7 @@ import { CoworkerRow } from '@/components/home/CoworkerRow'
 import { ForemanRow } from '@/components/home/ForemanRow'
 import { HomeBottomBar } from '@/components/home/HomeBottomBar'
 import { HomeHeader } from '@/components/home/HomeHeader'
-import { PinnedAvatar, PinnedGrid, PINNED_COLUMNS, usePinnedCell } from '@/components/home/PinnedGrid'
+import { PinnedAvatar, PinnedGrid, usePinnedCell } from '@/components/home/PinnedGrid'
 import { SortableGrid } from '@/components/home/SortableGrid'
 import { AppText } from '@/components/ui/AppText'
 import { EdgeFade } from '@/components/ui/EdgeFade'
@@ -71,7 +71,7 @@ function MockHome({ pinCount }: { pinCount: number }) {
                         )}
                         {reordering ? (
                             <View style={{ paddingHorizontal: spacing.xl }}>
-                                <SortableGrid items={pinned} columns={PINNED_COLUMNS} cellWidth={cell.width} renderCell={coworker => <PinnedAvatar coworker={coworker} cell={cell} animated={false} />} onReorder={setPinnedIds} />
+                                <SortableGrid items={pinned} columns={cell.columns} cellWidth={cell.width} renderCell={coworker => <PinnedAvatar coworker={coworker} cell={cell} animated={false} />} onReorder={setPinnedIds} />
                             </View>
                         ) : (
                             <PinnedGrid coworkers={pinned} onOpen={noop} onUnpin={coworker => togglePin(coworker.id)} onDetails={noop} onEdit={pinned.length > 1 ? () => setReordering(true) : undefined} />

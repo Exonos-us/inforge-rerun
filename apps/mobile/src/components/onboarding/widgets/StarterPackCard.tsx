@@ -3,9 +3,10 @@ import * as Haptics from 'expo-haptics'
 import { Image } from 'expo-image'
 import { SymbolView } from 'expo-symbols'
 import { useState } from 'react'
-import { Pressable, ScrollView, useWindowDimensions, View } from 'react-native'
+import { Pressable, ScrollView, View } from 'react-native'
 
 import { AnswerInput } from '@/components/chat/hitl/QuestionWidget'
+import { usePaneSize } from '@/components/layout/PaneSize'
 import { AppText } from '@/components/ui/AppText'
 import { Button } from '@/components/ui/Button'
 import { useTheme } from '@/theme/theme'
@@ -14,6 +15,7 @@ import { radius, spacing } from '@/theme/tokens'
 import { readStarterPack, type StarterCard, type StarterPackOutput } from '../parts'
 
 const CARD_SHARE = 0.72
+const CARD_MAX_WIDTH = 340
 const IMAGE_RATIO = 1200 / 630
 
 function PackCard({ card, width, picked, onToggle }: { card: StarterCard; width: number; picked: boolean; onToggle: () => void }) {
@@ -47,12 +49,12 @@ function PackCard({ card, width, picked, onToggle }: { card: StarterCard; width:
 // coworkers to pick from, or a line saying what they need instead.
 export function StarterPackCard({ input, onAnswer }: { input: unknown; onAnswer: (output: StarterPackOutput) => void }) {
     const cards = readStarterPack(input)
-    const { width } = useWindowDimensions()
+    const { width } = usePaneSize()
     const [picked, setPicked] = useState<string[]>([])
     const [full, setFull] = useState(false)
     const [writing, setWriting] = useState(false)
     const [asked, setAsked] = useState('')
-    const cardWidth = Math.round(width * CARD_SHARE)
+    const cardWidth = Math.min(CARD_MAX_WIDTH, Math.round(width * CARD_SHARE))
 
     const toggle = (slug: string) => {
         Haptics.selectionAsync()

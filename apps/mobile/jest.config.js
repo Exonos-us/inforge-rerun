@@ -8,7 +8,9 @@ const CLOUD_MOBILE = existsSync(CLOUD_SOURCE) ? CLOUD_SOURCE : path.resolve(__di
 
 module.exports = {
     "preset": "jest-expo",
+    "resolver": "./jest.resolver.js",
     "setupFiles": [
+        "react-native-gesture-handler/jestSetup.js",
         "./jest.setup.js"
     ],
     "transformIgnorePatterns": [

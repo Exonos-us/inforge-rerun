@@ -1,5 +1,6 @@
 import { AVATAR, COWORKER_ROW_HEIGHT } from '@/components/home/CoworkerRow'
 import { SKELETON, SKELETON_ROWS, skeletonBarWidths } from '@/components/home/HomeSkeleton'
+import { SIDEBAR } from '@/components/layout/split'
 import { GLASS_BUTTON_SIZE } from '@/components/ui/GlassButton'
 import { palette, radius, spacing } from '@/theme/tokens'
 
@@ -12,6 +13,10 @@ describe('native launch screen', () => {
         const titleTop = spacing.sm + GLASS_BUTTON_SIZE + spacing.lg
         expect(LAUNCH_LAYOUT.title).toMatchObject({ left: spacing.xl, top: titleTop, height: 36 })
         expect(LAUNCH_LAYOUT.listTop).toBe(titleTop + 36 + spacing.md)
+    })
+
+    it('narrows the rows to the sidebar of a regular-width screen', () => {
+        expect(LAUNCH_LAYOUT.sidebar).toEqual(SIDEBAR)
     })
 
     it('paints the background expo-splash-screen is given', () => {

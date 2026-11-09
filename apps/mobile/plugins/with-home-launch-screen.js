@@ -14,8 +14,8 @@ const zlib = require('zlib')
 const { Buffer } = require('buffer')
 const { withDangerousMod, withMod } = require('expo/config-plugins')
 
-// Mirrors src/theme/tokens.ts, src/components/home/HomeSkeleton.tsx and the Home's header: Node
-// cannot import them. launch-layout.test.ts keeps both sides equal.
+// Mirrors src/theme/tokens.ts, src/components/home/HomeSkeleton.tsx, the Home's header and the sidebar
+// of src/components/layout/split.ts: Node cannot import them. launch-layout.test.ts keeps both sides equal.
 const LAUNCH_LAYOUT = {
     background: { light: '#f8f8f8', dark: '#0a0a0a' },
     muted: { light: '#efefef', dark: '#232323' },
@@ -29,6 +29,8 @@ const LAUNCH_LAYOUT = {
     status: { top: 40, height: 12 },
     barRadius: 8,
     barWidths: index => ({ name: 40 + ((index * 17) % 30), status: 60 + ((index * 23) % 30) }),
+    // A regular-width screen (an iPad, an unfolded iPhone Duo) opens on the Home as a sidebar.
+    sidebar: { share: 0.32, min: 260, max: 340 },
 }
 
 const TITLE_IMAGES = [
@@ -59,18 +61,28 @@ function frame(width = 10, height = 10) {
     return [{ $: { key: 'frame', x: '0.0', y: '0.0', width: String(width), height: String(height) } }]
 }
 
-function constraint(id, first, second, { constant = 0, multiplier } = {}) {
+function constraint(id, first, second, { constant = 0, multiplier, priority } = {}) {
     const [firstItem, firstAttribute] = first
     const attributes = { firstItem, firstAttribute }
     if (second) Object.assign(attributes, { secondItem: second[0], secondAttribute: second[1] })
     if (multiplier !== undefined) attributes.multiplier = String(multiplier)
     if (constant) attributes.constant = String(constant)
+    if (priority !== undefined) attributes.priority = String(priority)
     attributes.id = id
     return { $: attributes }
 }
 
-function size(id, attribute, constant) {
-    return { $: { firstAttribute: attribute, constant: String(constant), id } }
+function size(id, attribute, constant, relation) {
+    return { $: { firstAttribute: attribute, ...(relation ? { relation } : {}), constant: String(constant), id } }
+}
+
+// Constraints installed on one width class only: the rest of the storyboard holds for both.
+function widthClassVariations({ compactOnly, regularOnly }) {
+    const mask = (include, exclude) => [{ $: { key: 'constraints' }, ...(include.length ? { include: include.map(reference => ({ $: { reference } })) } : {}), ...(exclude.length ? { exclude: exclude.map(reference => ({ $: { reference } })) } : {}) }]
+    return [
+        { $: { key: 'default' }, mask: mask([], regularOnly) },
+        { $: { key: 'widthClass=regular' }, mask: mask(regularOnly, compactOnly) },
+    ]
 }
 
 function imageView(id, image, { width, height, constraints = [] }) {
@@ -87,9 +99,26 @@ function launchScreen(xml) {
     const containerId = container.$.id
     const safeArea = container.viewLayoutGuide.find(guide => guide.$.key === 'safeArea').$.id
 
+    // An invisible view as wide as the sidebar the app draws on a regular-width screen.
+    const sidebar = 'RR-sidebar'
+    const sidebarView = {
+        $: { contentMode: 'scaleToFill', translatesAutoresizingMaskIntoConstraints: 'NO', id: sidebar, userLabel: sidebar },
+        rect: frame(layout.sidebar.min, 1),
+        color: [{ $: { key: 'backgroundColor', white: '0.0', alpha: '0.0', colorSpace: 'custom', customColorSpace: 'genericGamma22GrayColorSpace' } }],
+        constraints: [{ constraint: [size(`${sidebar}-h`, 'height', 1), size(`${sidebar}-min`, 'width', layout.sidebar.min, 'greaterThanOrEqual'), size(`${sidebar}-max`, 'width', layout.sidebar.max, 'lessThanOrEqual')] }],
+    }
+    const compactOnly = []
+    const regularOnly = []
+
     const images = [imageView('RR-title', layout.title.image, { ...layout.title, constraints: [size('RR-title-w', 'width', layout.title.width), size('RR-title-h', 'height', layout.title.height)] })]
     const columns = []
-    const constraints = [constraint('RR-title-left', ['RR-title', 'leading'], [containerId, 'leading'], { constant: layout.title.left }), constraint('RR-title-top', ['RR-title', 'top'], [safeArea, 'top'], { constant: layout.title.top })]
+    const constraints = [
+        constraint('RR-title-left', ['RR-title', 'leading'], [containerId, 'leading'], { constant: layout.title.left }),
+        constraint('RR-title-top', ['RR-title', 'top'], [safeArea, 'top'], { constant: layout.title.top }),
+        constraint(`${sidebar}-left`, [sidebar, 'leading'], [containerId, 'leading']),
+        constraint(`${sidebar}-top`, [sidebar, 'top'], [containerId, 'top']),
+        constraint(`${sidebar}-share`, [sidebar, 'width'], [containerId, 'width'], { multiplier: layout.sidebar.share, priority: 750 }),
+    ]
 
     for (let index = 0; index < layout.rows; index++) {
         const rowTop = layout.listTop + index * layout.rowHeight
@@ -132,12 +161,16 @@ function launchScreen(xml) {
         constraints.push(
             constraint(`${column}-left`, [column, 'leading'], [containerId, 'leading'], { constant: layout.column.left }),
             constraint(`${column}-right`, [containerId, 'trailing'], [column, 'trailing'], { constant: layout.column.right }),
+            constraint(`${column}-right-split`, [sidebar, 'trailing'], [column, 'trailing'], { constant: layout.column.right }),
             constraint(`${column}-top`, [column, 'top'], [safeArea, 'top'], { constant: rowTop })
         )
+        compactOnly.push(`${column}-right`)
+        regularOnly.push(`${column}-right-split`)
     }
 
-    container.subviews = [{ imageView: images, view: columns }]
+    container.subviews = [{ imageView: images, view: [sidebarView, ...columns] }]
     container.constraints = [{ constraint: constraints }]
+    container.variation = widthClassVariations({ compactOnly, regularOnly })
     container.color = [{ $: { key: 'backgroundColor', name: BACKGROUND_COLOR } }]
 
     const resources = xml.document.resources[0]

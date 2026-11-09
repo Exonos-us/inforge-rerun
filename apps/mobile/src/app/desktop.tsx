@@ -58,7 +58,7 @@ export default function Desktop() {
     const [connection, setConnection] = useState<Connection>({ state: 'connecting' })
     const [text, setText] = useState('')
     const [finishing, setFinishing] = useState(false)
-    const web = useRef<WebView>(null)
+    const web = useRef<WebView<object>>(null)
     const reconnects = useRef(0)
     const started = useRef(false)
     const accessToken = session?.access_token

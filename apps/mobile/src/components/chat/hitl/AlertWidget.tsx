@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { ScrollView, useWindowDimensions, View } from 'react-native'
+import { ScrollView, View } from 'react-native'
 
+import { usePaneSize } from '@/components/layout/PaneSize'
 import { AppText } from '@/components/ui/AppText'
 
 import { Markdown } from '../Markdown'
@@ -9,7 +10,7 @@ import { HitlAction, HitlCard } from './HitlCard'
 // A notification the coworker raised and the conversation waits on until it is read. Pinned above the
 // composer as on the web, so a long one scrolls inside rather than pushing the composer away.
 export function AlertWidget({ message, onAcknowledge }: { message: string; onAcknowledge: () => Promise<void> }) {
-    const { height } = useWindowDimensions()
+    const { height } = usePaneSize()
     const [pending, setPending] = useState(false)
     const [failed, setFailed] = useState(false)
     const acknowledge = async () => {

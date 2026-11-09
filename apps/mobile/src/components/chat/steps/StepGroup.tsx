@@ -1,7 +1,7 @@
 import { agentIdOf, argsOf, readableToolError, toolHeadline, toolLabelOf } from '@rerun/contracts'
 import { SymbolView, type SFSymbol } from 'expo-symbols'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Pressable, ScrollView, StyleSheet, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native'
+import { Pressable, ScrollView, StyleSheet, Text, View, type NativeScrollEvent, type NativeSyntheticEvent, type ScrollViewInstance } from 'react-native'
 import Animated, { Easing, FadeIn, FadeInUp, FadeOut, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated'
 
 import { AgentBuddy } from '@/components/buddy/AgentBuddy'
@@ -82,7 +82,7 @@ function Activity({ label }: { label: string }) {
 
 // Glides to each new step while the reader sits at the bottom; once they scroll up to read, it leaves them there.
 function StepList({ items }: { items: StepItem[] }) {
-    const scroll = useRef<ScrollView>(null)
+    const scroll = useRef<ScrollViewInstance>(null)
     const placedCount = useRef(0)
     const pinned = useRef(true)
     // Only a finger moves the pin: the glide's own scroll events would unpin it halfway down.
