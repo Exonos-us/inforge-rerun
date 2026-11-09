@@ -5,7 +5,7 @@ import { createIdGenerator, type UIMessage, type UIMessageStreamWriter } from 'a
 import type { WorkspaceContext } from '@/app/api/_auth/ownership'
 import type { SubRunTask } from '@/lib/chat/sub-run-progress'
 import { buildTeamOnce } from './build-once'
-import { isKickoffText } from './kickoff-marker'
+import { isKickoffText, readOwnAsk } from './kickoff-marker'
 import { writePlan, type WrittenPlan } from './onboarding-tools'
 import { foremanPhase, isNamedReadyMade, type ForemanPhase, type ForemanState } from './phase'
 import { pinnedPlanBoxes, planKinds } from './phases'
@@ -93,9 +93,10 @@ function arrivedReadyMadePlan(state: ForemanState, messages: UIMessage[]): Arriv
 // What the starter pack step does with this request. Someone who came in with nothing in hand is
 // offered the pack of their industry the moment the welcome card hands over, and never interviewed:
 // the cards they pick are the plan, and the line they write instead of picking is the one coworker
-// built for them. Typing over the cards is that same line. A link they arrived on is left to its own
-// card, and a conversation the pack never opened (the welcome card failed, the model asked the
-// profile itself) to the model.
+// built for them. Typing over the cards is that same line, and so is a line written under the
+// welcome card before the pack ever went up: the kickoff carries it, and the cards are skipped. A
+// link they arrived on is left to its own card, and a conversation the pack never opened (the
+// welcome card failed, the model asked the profile itself) to the model.
 type StarterPackStep = { kind: 'offer' } | { kind: 'picked'; input: unknown; chosen: string[] } | { kind: 'custom'; asked: string }
 
 function lastStarterPackPart(messages: UIMessage[]): LoosePart | null {
@@ -118,7 +119,10 @@ function typedText(message: UIMessage): string {
 function starterPackStep(state: ForemanState, messages: UIMessage[]): StarterPackStep | null {
     const last = messages.at(-1)
     if (state.phase !== 'plan' || state.intent || !last) return null
-    if (isKickoff(last)) return { kind: 'offer' }
+    if (isKickoff(last)) {
+        const asked = readOwnAsk(typedText(last))
+        return asked ? { kind: 'custom', asked } : { kind: 'offer' }
+    }
 
     const card = lastStarterPackPart(messages)
     if (!card || card.state !== 'output-available') return null

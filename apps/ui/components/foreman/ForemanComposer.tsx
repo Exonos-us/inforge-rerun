@@ -10,6 +10,7 @@ import { ForemanModelPill } from '@/components/foreman/ForemanModelPill'
 import type { ContextStats } from '@/lib/chat/context-stats'
 import { modelContextWindow } from '@/lib/engine/models'
 import type { ForemanBackend } from '@/lib/foreman/phase'
+import { OWN_ENTRY } from '@/components/foreman/intake/copy'
 import { FOREMAN_MAX_UPLOAD_BYTES } from '@/lib/foreman/upload-limit'
 
 export type ForemanComposerProps = {
@@ -25,11 +26,16 @@ export type ForemanComposerProps = {
     /** The engine takes the foreman's files in its own workspace. Without it they stay on the hub. */
     filesOnEngine: boolean
     contextStats: ContextStats | null
+    /**
+     * Stands under the welcome card or the starter pack, where what is written answers the card: it
+     * reads as that way out, and takes no file, which the card would have nowhere to put.
+     */
+    ownEntry?: boolean
 } & ForemanComposerMentionProps
 
 export type ForemanComposerMentionProps = Pick<ComponentProps<typeof ChatComposer>, 'textareaRef' | 'textareaProps' | 'mentionTokens'>
 
-export function ForemanComposer({ sessionId, backend, status, busy, queue, onSend, onStop, onUploadingChange, composerRef, filesOnEngine, contextStats, textareaRef, textareaProps, mentionTokens }: ForemanComposerProps) {
+export function ForemanComposer({ sessionId, backend, status, busy, queue, onSend, onStop, onUploadingChange, composerRef, filesOnEngine, contextStats, ownEntry = false, textareaRef, textareaProps, mentionTokens }: ForemanComposerProps) {
     // On the engine a file lands in the foreman's own workspace, where its tools can open the path
     // the message names. The hub foreman reads its files from the hub's bucket.
     const onEngineFiles = backend === 'engine' && filesOnEngine
@@ -52,7 +58,8 @@ export function ForemanComposer({ sessionId, backend, status, busy, queue, onSen
             mentionTokens={mentionTokens}
             // An engine that predates the foreman's file routes would be handed a path it cannot
             // open.
-            attachmentsEnabled={backend === 'hub' || filesOnEngine}
+            attachmentsEnabled={!ownEntry && (backend === 'hub' || filesOnEngine)}
+            {...(ownEntry ? { placeholder: `${OWN_ENTRY}…` } : {})}
             modelSlot={<ForemanModelPill backend={backend} />}
             contextSlot={contextStats && <Context usedTokens={contextStats.used} maxTokens={contextStats.max ?? modelContextWindow(contextStats.model, contextStats.provider)} usage={contextStats.usage} modelId={contextStats.model} />}
         />

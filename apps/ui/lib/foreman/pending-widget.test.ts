@@ -60,9 +60,10 @@ describe('isEngineHitl', () => {
 })
 
 describe('keepsComposer', () => {
-    it('keeps the composer under the hand-off to the team only', () => {
+    it('keeps the composer under the hand-off to the team and the starter pack only', () => {
         expect(keepsComposer({ toolName: 'open_checkout', toolCallId: 'c1', input: {} })).toBe(false)
         expect(keepsComposer({ toolName: 'contact_team', toolCallId: 'c1', input: {} })).toBe(true)
+        expect(keepsComposer({ toolName: 'show_starter_pack', toolCallId: 'c1', input: {} })).toBe(true)
         expect(keepsComposer({ toolName: 'ask_choice', toolCallId: 'c1', input: {} })).toBe(false)
         expect(keepsComposer({ toolName: 'ask_user', toolCallId: 'c1', input: {} })).toBe(false)
     })

@@ -26,6 +26,9 @@ import { useSession } from '@/supabase/session/SessionProvider'
  *
  * La carte d'accueil tient le pied, et devant tout le reste : elle se joue avant qu'aucun message
  * n'ait été envoyé, donc il ne peut rien y avoir d'autre en attente derrière elle.
+ *
+ * `ownEntry` : le composer reste sous la carte d'accueil, et sous le starter pack, pour qui sait déjà
+ * ce qu'il veut. Ce qui s'y écrit répond à la carte (ForemanColumn choisit où ça part).
  */
 
 // Le repli de hauteur de l'agent sheet, au chiffre près : les deux pieds de panneau doivent se lire
@@ -49,7 +52,7 @@ type ForemanComposerSlotProps = Omit<ForemanComposerProps, keyof ForemanComposer
     ref?: Ref<HTMLDivElement>
 }
 
-export function ForemanComposerSlot({ aside, intake, gated, trialGate, ref, ...composer }: ForemanComposerSlotProps) {
+export function ForemanComposerSlot({ aside, intake, gated, trialGate, ref, ownEntry = false, ...composer }: ForemanComposerSlotProps) {
     const { isAnonymous } = useSession()
     const bare = aside && !intake && !gated && !trialGate
 
@@ -58,6 +61,7 @@ export function ForemanComposerSlot({ aside, intake, gated, trialGate, ref, ...c
     // Picking a mention writes `el.value` directly, which fires no React change event.
     const syncComposer = useCallback((text: string) => composerRef.current?.sync(text), [composerRef])
     const { inputRef, menu: mentionMenu, tokens: mentionTokens, textareaProps: mentionTextareaProps } = useMentionAutocomplete(mentionAgents, [], syncComposer)
+    const composerShown = intake ? ownEntry : !gated && !trialGate && !aside
 
     // The composer folds inside an `overflow-hidden` box that would clip the menu, so the menu is
     // placed against the slot itself and sits on the field.
@@ -82,7 +86,8 @@ export function ForemanComposerSlot({ aside, intake, gated, trialGate, ref, ...c
             <AnimatePresence initial={false} mode="popLayout">
                 {intake ? (
                     <motion.div key="intake" {...SLOT_MOTION} className="overflow-hidden">
-                        <div className="max-h-[70svh] overflow-y-auto overscroll-contain">
+                        {/* Le composer dessous garde sa place : seule la carte défile sur un écran court. */}
+                        <div className={cn('overflow-y-auto overscroll-contain', composerShown ? 'max-h-[calc(70svh-7.5rem)]' : 'max-h-[70svh]')}>
                             <ForemanIntakeCard intake={intake} />
                             {isAnonymous && (
                                 <div className="pb-2">
@@ -99,9 +104,15 @@ export function ForemanComposerSlot({ aside, intake, gated, trialGate, ref, ...c
                     <motion.div key="trial-gate" {...SLOT_MOTION} className="overflow-hidden">
                         <ForemanTrialGate step={trialGate} />
                     </motion.div>
-                ) : aside ? null : (
+                ) : null}
+            </AnimatePresence>
+            {/* Une seule instance, hors de la bascule ci-dessus : passer de la carte d'accueil au chat
+                ne la remonte pas. Deux composers montés le temps d'une sortie se disputaient la ref du
+                champ, et celui qui partait la remettait à null sous celui qui arrivait. */}
+            <AnimatePresence initial={false} mode="popLayout">
+                {composerShown && (
                     <motion.div key="composer" {...SLOT_MOTION} className="overflow-hidden pb-px">
-                        <ForemanComposer {...composer} textareaRef={inputRef} textareaProps={mentionTextareaProps} mentionTokens={mentionTokens} />
+                        <ForemanComposer {...composer} ownEntry={ownEntry} textareaRef={inputRef} textareaProps={mentionTextareaProps} mentionTokens={mentionTokens} />
                     </motion.div>
                 )}
             </AnimatePresence>

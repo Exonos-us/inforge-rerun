@@ -244,7 +244,7 @@ export interface AnalyticsEventMap {
     // Every answer to the plan card, a "Change something" included: the confirmed ones against the
     // others is how many rounds a plan takes. The starter pack answers it once, with `via` and the
     // slugs of the templates `picked` off its cards.
-    onboarding_plan_answered: { confirmed: boolean; agents: number; via?: 'starter_pack' | 'custom'; picked?: string[] }
+    onboarding_plan_answered: { confirmed: boolean; agents: number; via?: 'starter_pack' | 'custom'; picked?: string[]; from?: 'intake' | 'pack' }
     // The answer to the trial card, for a workspace whose plan was not already on when the plan
     // closed. `reason` is why it did not start: a card that already spent a trial, or the form closed.
     onboarding_checkout_answered: { ok: boolean; reason?: 'trial_refused' | 'dismissed' | 'pending' }

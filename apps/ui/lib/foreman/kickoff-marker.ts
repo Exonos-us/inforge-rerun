@@ -22,6 +22,11 @@ const CLOSE = ']]'
 
 const PROMPT_FIELD = ':prompt'
 
+// The line written in the composer under the welcome card, by someone who already knows the coworker
+// they want. It is not an arriving intent: they came in with nothing, and the starter pack step reads
+// the line as the one coworker it builds instead of the cards it would have offered (scripted.ts).
+const OWN_FIELD = ':own'
+
 // The name is free text too, so it rides the head line as a query string, which escapes the brackets,
 // the colons and the newlines a bracketed field cannot hold.
 function promptExtras(intent: PromptIntent): string {
@@ -71,16 +76,27 @@ export function parseKickoff(text: string): { intent: KickoffIntent | null } | n
     return { intent: null }
 }
 
+export function buildOwnKickoff(asked: string): string {
+    return `${OPEN}${OWN_FIELD}${CLOSE}\n${asked.trim()}`
+}
+
+export function readOwnAsk(text: string): string | null {
+    const [head, ...rest] = text.trim().split('\n')
+    if (head.trim() !== `${OPEN}${OWN_FIELD}${CLOSE}`) return null
+    return rest.join('\n').trim() || null
+}
+
 export function isKickoffText(text: string): boolean {
     return parseKickoff(text) !== null
 }
 
 // What is left of a kickoff message once the marker is taken out: empty for a bare start, and the
-// user's own words for a prompt arriving from the landing, which must stay readable in the stack.
+// user's own words for a prompt arriving from the landing or a line written under the welcome card,
+// which must stay readable in the stack.
 export function stripKickoff(text: string): string {
     const parsed = parseKickoff(text)
     if (!parsed) return text
-    return parsed.intent?.kind === 'prompt' ? parsed.intent.text : ''
+    return parsed.intent?.kind === 'prompt' ? parsed.intent.text : (readOwnAsk(text) ?? '')
 }
 
 // The wire form of an intent, for the one place that cannot carry a transcript: the phase probe the

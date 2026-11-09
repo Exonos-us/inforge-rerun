@@ -15,11 +15,13 @@ export function isEngineHitl(toolName: string): toolName is EngineHitlToolName {
     return toolName === 'ask_user' || toolName === 'request_approval'
 }
 
-// A pending widget is the only thing left to answer, so the composer steps aside for it. The hand-off
-// to the team is the exception: someone already stuck is not left with one button between them and
-// the chat. The trial card is not: past it the composer is gone for good (`trialStep`).
+// A pending widget is the only thing left to answer, so the composer steps aside for it. Two
+// exceptions. The hand-off to the team: someone already stuck is not left with one button between
+// them and the chat. The starter pack: whoever already knows the coworker they want writes it there,
+// and the line answers the pack (ForemanColumn). The trial card is not one: past it the composer is
+// gone for good (`trialStep`).
 export function keepsComposer(pending: PendingWidget): boolean {
-    return pending.toolName === 'contact_team'
+    return pending.toolName === 'contact_team' || pending.toolName === 'show_starter_pack'
 }
 
 type ToolPart = { type: string; toolCallId?: string; toolName?: string; state?: string; input?: unknown; rawInput?: unknown; output?: unknown }

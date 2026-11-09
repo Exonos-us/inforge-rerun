@@ -22,7 +22,8 @@ export type ForemanIntakeHandlers = {
     onDecideIndustry: (input: string) => Promise<TemplateCategory | null>
     /** Reads the site and lays what it finds on the board, started early and awaited by nobody. */
     onAnalyzeSite: (url: string) => void
-    onSubmit: (intake: ForemanIntake) => Promise<void>
+    /** `ownAsk`: the line written in the composer under the card, which cuts the questions short. */
+    onSubmit: (intake: ForemanIntake, ownAsk?: string) => Promise<void>
 }
 
 export type ForemanIntakeController = {
@@ -53,6 +54,11 @@ export type ForemanIntakeController = {
     goTo: (index: number) => void
     back: () => void
     next: () => void
+    /**
+     * Sends what is answered so far with the line written in the composer, the rest left unasked.
+     * `false`: nothing left, the line is the caller's to give back.
+     */
+    sendOwn: (ownAsk: string) => boolean
 }
 
 export function useForemanIntake({ firstName, handlers }: { firstName: string | null; handlers: ForemanIntakeHandlers }): ForemanIntakeController {
@@ -159,11 +165,11 @@ export function useForemanIntake({ firstName, handlers }: { firstName: string | 
     )
 
     const submit = useCallback(
-        (value: IntakeDraft, decidedIndustry: TemplateCategory | null) => {
+        (value: IntakeDraft, decidedIndustry: TemplateCategory | null, ownAsk?: string) => {
             setSubmitting(true)
             setError(null)
             void handlersRef.current
-                .onSubmit(toIntake(value, firstName, decidedIndustry))
+                .onSubmit(toIntake(value, firstName, decidedIndustry), ownAsk)
                 .catch(() => setError('We could not save that. Try again.'))
                 .finally(() => setSubmitting(false))
         },
@@ -211,6 +217,23 @@ export function useForemanIntake({ firstName, handlers }: { firstName: string | 
         submit(draft, decided)
     }, [canAdvance, decide, decided, draft, index, steps, submit, submitting])
 
+    // Le site déjà tapé est gardé : c'est lui qui décrit l'entreprise au coworker écrit d'après la
+    // phrase. Il part ici s'il n'était pas encore parti, comme au Next.
+    const sendOwn = useCallback(
+        (ownAsk: string) => {
+            const asked = ownAsk.trim()
+            if (submitting || !asked) return false
+            const hint = draft.industry ? null : industryHint(draft)
+            if (hint && looksLikeSite(hint) && sent.current !== hint) {
+                handlersRef.current.onAnalyzeSite(hint)
+                decide(hint)
+            }
+            submit(draft, decided, asked)
+            return true
+        },
+        [decide, decided, draft, submit, submitting]
+    )
+
     return {
         steps,
         step: steps[index],
@@ -232,5 +255,6 @@ export function useForemanIntake({ firstName, handlers }: { firstName: string | 
         goTo,
         back: () => goTo(index - 1),
         next,
+        sendOwn,
     }
 }

@@ -266,6 +266,15 @@ describe('the starter pack', () => {
         expect(writePlan).toHaveBeenCalledWith(CTX, expect.objectContaining({ items: [expect.objectContaining({ kind: 'agent', name: 'Invoices' })] }), ['agent'], 'chase my unpaid invoices')
     })
 
+    it('builds one coworker out of a line written under the welcome card, without putting the pack up', async () => {
+        nameCustomCoworker.mockResolvedValue({ name: 'Invoices', role: 'Chases unpaid invoices' })
+        const prepared = await prepareScript(CTX, fresh(), [user('[[foreman:start:own]]\nChase my unpaid invoices')])
+        expect(loadStarterPack).not.toHaveBeenCalled()
+        expect(nameCustomCoworker).toHaveBeenCalledWith('Chase my unpaid invoices')
+        expect(writePlan).toHaveBeenCalledWith(CTX, expect.objectContaining({ title: 'Accuro', items: [expect.objectContaining({ kind: 'agent', name: 'Invoices' })] }), ['agent'], 'Chase my unpaid invoices')
+        expect(prepared).toEqual({ script: { kind: 'offer_trial' } })
+    })
+
     it('puts the pack back up when it was left unanswered', async () => {
         expect(await prepareScript(CTX, fresh(), [KICKOFF, assistant(packCard({ answered: false, reason: 'abandoned' }))])).toEqual({ script: { kind: 'offer_pack', pack: PACK } })
     })

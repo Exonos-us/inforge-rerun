@@ -1,13 +1,10 @@
 'use client'
 
-import { useId, useState } from 'react'
-
+import { OWN_ENTRY } from '@/components/foreman/intake/copy'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Field } from '@/components/ui/field'
 import { Gauge } from '@/components/ui/gauge'
 import { Icon } from '@/components/ui/icon'
-import { Textarea } from '@/components/ui/textarea'
 import { readStarterPack, readStarterPackAnswer, type StarterPackAnswer, type StarterPackCard } from '@/lib/foreman/starter-pack'
 import { MAX_STARTER_PICKS } from '@/lib/onboarding/starter-packs'
 import { ArrowRight, CircleCheckIcon, LockIcon } from '@/lib/icons'
@@ -17,7 +14,8 @@ import { useStarterPicks } from './useStarterPicks'
 
 // The starter pack of their industry, put up by the app right after the welcome card: the coworkers
 // a company like theirs starts with, up to three of them picked off their cards, or one line saying
-// what they need instead. Picking is the plan: nothing is asked after it but the trial.
+// what they need instead, written in the composer that stays under the cards (ForemanColumn).
+// Picking is the plan: nothing is asked after it but the trial.
 
 type StarterPackWidgetProps = {
     input: unknown
@@ -35,7 +33,6 @@ export function StarterPackWidget({ input, output, onAnswer }: StarterPackWidget
 
 function StarterPackPicker({ cards, onAnswer }: { cards: StarterPackCard[]; onAnswer: (answer: StarterPackAnswer) => void }) {
     const picks = useStarterPicks()
-    const [writing, setWriting] = useState(false)
     const count = picks.picked.length
 
     return (
@@ -58,48 +55,13 @@ function StarterPackPicker({ cards, onAnswer }: { cards: StarterPackCard[]; onAn
                 </Alert>
             )}
 
-            {writing ? (
-                <CustomAsk onBack={() => setWriting(false)} onSend={asked => onAnswer({ answered: true, custom: asked })} />
-            ) : (
-                <div className="flex flex-wrap-reverse items-center justify-between gap-2">
-                    <Button size="sm" variant="ghost" className="-ml-2 text-muted-foreground max-sm:w-full" onClick={() => setWriting(true)}>
-                        None of these, tell me what you need
-                    </Button>
-                    <Button size="sm" disabled={!count} onClick={() => onAnswer({ answered: true, chosen: picks.picked })} className="max-sm:w-full">
-                        {count === 0 ? 'Pick at least one' : count === 1 ? 'Hire this one' : `Hire these ${count}`}
-                        {count > 0 && <ArrowRight data-icon="inline-end" className="size-3.5" />}
-                    </Button>
-                </div>
-            )}
-        </div>
-    )
-}
-
-function CustomAsk({ onBack, onSend }: { onBack: () => void; onSend: (asked: string) => void }) {
-    const id = useId()
-    const [asked, setAsked] = useState('')
-    const ready = asked.trim().length > 0
-
-    return (
-        <form
-            className="flex flex-col gap-2 rounded-lg border border-border bg-muted/30 p-3"
-            onSubmit={event => {
-                event.preventDefault()
-                if (ready) onSend(asked.trim())
-            }}
-        >
-            <Field label="What should your coworker do?" htmlFor={id}>
-                <Textarea id={id} autoFocus rows={3} value={asked} onChange={event => setAsked(event.target.value)} placeholder="Answer every enquiry from the website within the hour and book the viewing" />
-            </Field>
-            <div className="flex flex-wrap items-center justify-end gap-2">
-                <Button type="button" size="sm" variant="ghost" className="text-muted-foreground" onClick={onBack}>
-                    Back to the cards
-                </Button>
-                <Button type="submit" size="sm" disabled={!ready}>
-                    Build it
+            <div className="flex justify-end">
+                <Button size="sm" disabled={!count} onClick={() => onAnswer({ answered: true, chosen: picks.picked })} className="max-sm:w-full">
+                    {count === 0 ? 'Pick at least one' : count === 1 ? 'Hire this one' : `Hire these ${count}`}
+                    {count > 0 && <ArrowRight data-icon="inline-end" className="size-3.5" />}
                 </Button>
             </div>
-        </form>
+        </div>
     )
 }
 
@@ -119,7 +81,7 @@ function PickProgress({ count }: { count: number }) {
 // invitation to choose again.
 function StarterPackVerdict({ cards, answer }: { cards: StarterPackCard[]; answer: StarterPackAnswer }) {
     if (!answer.answered) return null
-    const rows = 'custom' in answer ? [{ key: 'custom', title: 'Something of your own', line: answer.custom }] : cards.filter(card => answer.chosen.includes(card.slug)).map(card => ({ key: card.slug, title: card.promise, line: card.agent }))
+    const rows = 'custom' in answer ? [{ key: 'custom', title: OWN_ENTRY, line: answer.custom }] : cards.filter(card => answer.chosen.includes(card.slug)).map(card => ({ key: card.slug, title: card.promise, line: card.agent }))
 
     return (
         <div className="mb-2 flex flex-col gap-1.5 rounded-lg border border-border bg-muted/20 px-3 py-2">

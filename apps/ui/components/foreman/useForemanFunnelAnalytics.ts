@@ -6,18 +6,21 @@ import { useEffect, useRef } from 'react'
 import { track } from '@rerun/analytics/client'
 
 import { readQuestionOutput } from '@/components/foreman/widgets/question-answer'
+import { readOwnAsk } from '@/lib/foreman/kickoff-marker'
 import { readStarterPackAnswer } from '@/lib/foreman/starter-pack'
 
 // The funnel, read off the conversation. The survey emitted its steps from its own stepper; there is
 // no stepper here, and the phase lives on the server, so the honest client-side signal is the tool
 // the foreman just finished: each one is the act that closes a step, which is what the funnel was
-// ever counting.
+// ever counting. One user message counts too: the kickoff that carries the line written under the
+// welcome card, which is the plan without any card having gone up.
 //
-// Keyed on toolCallId, so a re-render, a reload replaying the transcript, or a stream that lands the
-// same part twice all count once. Nothing is read before the saved conversation is restored: seeded
-// on an empty stack, every tool of a previous visit would be counted again the moment it arrives.
+// Keyed on toolCallId (and on the id of that message), so a re-render, a reload replaying the
+// transcript, or a stream that lands the same part twice all count once. Nothing is read before the
+// saved conversation is restored: seeded on an empty stack, every tool of a previous visit would be
+// counted again the moment it arrives.
 
-type ToolPart = { type: string; toolCallId?: string; state?: string; input?: unknown; output?: unknown }
+type ToolPart = { type: string; toolCallId?: string; state?: string; input?: unknown; output?: unknown; text?: unknown }
 
 // The step a tool closes, and the one it opens. `once` keeps a phase from being counted twice. A plan
 // only opens the build for a workspace whose plan is already on: for the others the trial card stands
@@ -43,6 +46,17 @@ export function viewTrialStep(once: (key: string) => boolean): void {
 
 function strings(value: unknown): string[] {
     return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : []
+}
+
+// The line written under the welcome card is the plan, as a line written over the starter pack is:
+// one coworker, no card answered.
+export function emitOwnAsk(once: (key: string) => boolean, entitled: boolean): void {
+    track('onboarding_plan_answered', { confirmed: true, agents: 1, via: 'custom', from: 'intake' })
+    step('plan', once, { via: 'custom', opensNext: entitled })
+}
+
+function carriesOwnAsk(message: UIMessage): boolean {
+    return message.role === 'user' && message.parts.some(part => part.type === 'text' && typeof (part as ToolPart).text === 'string' && readOwnAsk((part as ToolPart).text as string) !== null)
 }
 
 export function emit(name: string, input: unknown, output: unknown, once: (key: string) => boolean, entitled: boolean): void {
@@ -89,7 +103,7 @@ export function emit(name: string, input: unknown, output: unknown, once: (key: 
             const answer = readStarterPackAnswer(output)
             if (!answer?.answered) return
             const custom = 'custom' in answer
-            track('onboarding_plan_answered', { confirmed: true, agents: custom ? 1 : answer.chosen.length, via: custom ? 'custom' : 'starter_pack', ...(custom ? {} : { picked: answer.chosen }) })
+            track('onboarding_plan_answered', { confirmed: true, agents: custom ? 1 : answer.chosen.length, via: custom ? 'custom' : 'starter_pack', ...(custom ? { from: 'pack' } : { picked: answer.chosen }) })
             return step('plan', once, { via: custom ? 'custom' : 'starter_pack', opensNext: entitled })
         }
         case 'open_checkout': {
@@ -128,6 +142,7 @@ export function useForemanFunnelAnalytics({ messages, guided, restoreDone, entit
         if (!seeded.current) {
             seeded.current = true
             for (const message of messages) {
+                if (message.role === 'user') counted.current.add(message.id)
                 for (const part of message.parts) {
                     const id = (part as ToolPart).toolCallId
                     if (id) counted.current.add(id)
@@ -136,6 +151,10 @@ export function useForemanFunnelAnalytics({ messages, guided, restoreDone, entit
             return
         }
         for (const message of messages) {
+            if (message.role === 'user' && !counted.current.has(message.id)) {
+                counted.current.add(message.id)
+                if (carriesOwnAsk(message)) emitOwnAsk(once, entitled)
+            }
             for (const part of message.parts) {
                 const tool = part as ToolPart
                 if (!tool.type.startsWith('tool-') || !tool.toolCallId || counted.current.has(tool.toolCallId)) continue

@@ -40,6 +40,7 @@ import { cn } from '@/lib/utils'
 import { shouldFlush } from '@/lib/chat/queued-message'
 import { foremanNextSteps, trialStep } from '@/lib/foreman/next-steps'
 import { keepsComposer } from '@/lib/foreman/pending-widget'
+import { SHOW_STARTER_PACK_TOOL } from '@/lib/foreman/starter-pack'
 import { lastShownPlan, lastShownStarterPlan, lastShownTemplatePlan } from '@/lib/foreman/shown-plan'
 import { agentFileRawUrl, foremanFileRawUrl, sharedFileRawUrl } from '@/lib/files/raw-url'
 import { type ForemanPlacement, dockedForemanSide } from '@/lib/foreman-layout'
@@ -123,7 +124,7 @@ export function ForemanColumn({ open, placement }: { open: boolean | null; place
     // Un nouvel arrivant n'a rien à taper : le Foreman ouvre sa colonne et parle le premier. Sauf en
     // découverte, où c'est la carte d'accueil qui tient l'écran et `start` qui attend qu'elle ait
     // fini.
-    const { start, firstName, arrival } = useForemanKickoff({ send, messageCount: messages.length, restoreDone })
+    const { start, firstName, arrival, prompted } = useForemanKickoff({ send, messageCount: messages.length, restoreDone })
 
     // La carte écrit le profil elle-même, donc quand elle rend la main la phase est déjà `plan` : le
     // kickoff fait monter le starter pack de leur industrie, sans un tour de modèle. Arrivé sur un
@@ -135,27 +136,52 @@ export function ForemanColumn({ open, placement }: { open: boolean | null; place
         () => ({
             onDecideIndustry: (input: string) => decideIndustryAction(input),
             onAnalyzeSite: (url: string) => void streamLiveDiscoveries(url).then(ok => track('onboarding_company_analyzed', { ok })),
-            onSubmit: async (intake: ForemanIntake) => {
+            onSubmit: async (intake: ForemanIntake, ownAsk?: string) => {
                 const industry = intake.industry ?? intake.decidedIndustry
                 track('onboarding_website_submitted', industry ? { provided: !!intake.companyUrl, industry } : { provided: !!intake.companyUrl })
                 track('onboarding_step_completed', { step: 'discover' })
                 if (isAnonymous) {
-                    useOnboardingStore.getState().setPendingIntake(intake)
+                    useOnboardingStore.getState().setPendingIntake(intake, ownAsk)
                     useForemanStore.getState().closeIntake()
                     return
                 }
                 // The full read of the site can file them under another industry than the one the
                 // board has been drawing, and the plan lays out the Boxes of the stored one.
-                const saved = await saveForemanIntakeAction(intake)
+                const saved = await saveForemanIntakeAction(intake).catch(err => {
+                    // The composer already let go of the line: it goes back where they wrote it.
+                    if (ownAsk) composerRef.current?.restore(ownAsk)
+                    throw err
+                })
                 useForemanStore.getState().setIntakePreview(intakePreviewPlan(saved.industry))
                 useForemanStore.getState().closeIntake()
                 track('onboarding_step_viewed', { step: 'plan' })
-                start()
+                // A line written under the card is the plan: the funnel counts it off the kickoff that
+                // carries it (useForemanFunnelAnalytics), as it counts a line written over the pack.
+                start(ownAsk)
             },
         }),
         [isAnonymous, start]
     )
     const intake = useForemanIntake({ firstName, handlers: intakeHandlers })
+
+    // Le composer reste sous la carte d'accueil et sous le starter pack : ce qui s'y écrit est le
+    // coworker qu'ils veulent. Sous la carte il coupe court aux questions, sous le pack il y répond
+    // comme une carte choisie. Pas sous la carte d'un lien : ils sont venus pour ce qu'il installe.
+    // Ni sous celle d'un prompt écrit sur la landing : ils l'ont déjà dit, la ligne l'écraserait.
+    const packPending = pendingWidget?.toolName === SHOW_STARTER_PACK_TOOL ? pendingWidget : null
+    const ownEntry = (intakeOpen && !arrival && !prompted) || !!packPending
+    const sendFromComposer = useCallback(
+        (text: string) => {
+            if (intakeOpen) {
+                // The field is already empty when a line is refused (a first one still saving).
+                if (!intake.sendOwn(text)) composerRef.current?.restore(text)
+                return
+            }
+            if (packPending) return answerWidget(packPending.toolName, packPending.toolCallId, { answered: true, custom: text.trim() })
+            sendOrQueue(text)
+        },
+        [intakeOpen, intake, packPending, answerWidget, sendOrQueue]
+    )
 
     // Arrived on a template or a shared coworker: until it is installed the column is its tunnel.
     // The account and the phone code take the whole of it, the rest is the conversation itself,
@@ -448,13 +474,14 @@ export function ForemanColumn({ open, placement }: { open: boolean | null; place
                         gated={gated}
                         trialGate={trialGate}
                         aside={!!pendingWidget && !keepsComposer(pendingWidget)}
+                        ownEntry={ownEntry}
                         composerRef={composerRef}
                         sessionId={sessionId}
                         backend={composerBackend}
                         status={status}
                         busy={busy}
                         queue={queue}
-                        onSend={sendOrQueue}
+                        onSend={sendFromComposer}
                         onStop={handleStop}
                         onUploadingChange={setUploading}
                         filesOnEngine={filesOnEngine}

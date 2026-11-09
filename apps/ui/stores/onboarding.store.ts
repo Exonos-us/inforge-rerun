@@ -78,6 +78,10 @@ export type OnboardingState = {
     // answers wait here, through the account wall and the Google round-trip, and are saved on
     // whichever workspace the visitor ends up signed into.
     pendingIntake: ForemanIntake | null
+    // The line they wrote in the composer under the welcome card instead of finishing it. Parked with
+    // the answers it cut short and dropped with them: it is what the foreman opens on once the
+    // account exists.
+    pendingOwnAsk: string | null
     // One-shot flag set right before an anonymous user converts (email link, existing account, or
     // Google). It survives the account switch / OAuth redirect so the board can replay the parked
     // draft once the real session is in place.
@@ -98,7 +102,7 @@ export type OnboardingState = {
     clearPendingTemplateLink: () => void
     setPendingShareLink: (token: string) => void
     clearPendingShareLink: () => void
-    setPendingIntake: (intake: ForemanIntake) => void
+    setPendingIntake: (intake: ForemanIntake, ownAsk?: string | null) => void
     clearPendingIntake: () => void
     markResume: () => void
     consumeResume: () => boolean
@@ -107,7 +111,7 @@ export type OnboardingState = {
 
 type PersistedOnboarding = Pick<
     OnboardingState,
-    'pendingFirstAgent' | 'pendingTemplate' | 'pendingTemplateLink' | 'pendingShareLink' | 'pendingIntake' | 'resumeRequested' | 'firstAgentFromPrompt' | 'parkedAt'
+    'pendingFirstAgent' | 'pendingTemplate' | 'pendingTemplateLink' | 'pendingShareLink' | 'pendingIntake' | 'pendingOwnAsk' | 'resumeRequested' | 'firstAgentFromPrompt' | 'parkedAt'
 >
 
 // Validate each entry on its own, dropping a corrupted one rather than tripping on it or taking the
@@ -126,12 +130,15 @@ export function parsePersistedOnboarding(raw: unknown, now = Date.now()): Persis
         return parsed.data
     }
     const pendingFirstAgent = fresh('pendingFirstAgent', pendingFirstAgentSchema)
+    const pendingIntake = fresh('pendingIntake', pendingIntakeSchema)
+    const ownAsk = typeof p.pendingOwnAsk === 'string' ? p.pendingOwnAsk.trim() : ''
     return {
         pendingFirstAgent,
         pendingTemplate: fresh('pendingTemplate', pendingTemplateSchema),
         pendingTemplateLink: fresh('pendingTemplateLink', pendingTemplateLinkSchema),
         pendingShareLink: fresh('pendingShareLink', pendingShareLinkSchema),
-        pendingIntake: fresh('pendingIntake', pendingIntakeSchema),
+        pendingIntake,
+        pendingOwnAsk: pendingIntake && ownAsk ? ownAsk : null,
         resumeRequested: fresh('resumeRequested', z.literal(true)) === true,
         // Adossé au brouillon qu'il qualifie : un brouillon tombé au parse laisserait sinon un
         // marqueur qui ne désigne plus rien.
@@ -155,6 +162,7 @@ export const useOnboardingStore = create<OnboardingState>()(
             pendingTemplateLink: null,
             pendingShareLink: null,
             pendingIntake: null,
+            pendingOwnAsk: null,
             resumeRequested: false,
             firstAgentFromPrompt: false,
             parkedAt: {},
@@ -169,8 +177,8 @@ export const useOnboardingStore = create<OnboardingState>()(
             clearPendingTemplateLink: () => set({ pendingTemplateLink: null }),
             setPendingShareLink: token => set(s => ({ pendingShareLink: token, parkedAt: { ...s.parkedAt, pendingShareLink: Date.now() } })),
             clearPendingShareLink: () => set({ pendingShareLink: null }),
-            setPendingIntake: intake => set(s => ({ pendingIntake: intake, parkedAt: { ...s.parkedAt, pendingIntake: Date.now() } })),
-            clearPendingIntake: () => set({ pendingIntake: null }),
+            setPendingIntake: (intake, ownAsk = null) => set(s => ({ pendingIntake: intake, pendingOwnAsk: ownAsk?.trim() || null, parkedAt: { ...s.parkedAt, pendingIntake: Date.now() } })),
+            clearPendingIntake: () => set({ pendingIntake: null, pendingOwnAsk: null }),
             markResume: () => set(s => ({ resumeRequested: true, parkedAt: { ...s.parkedAt, resumeRequested: Date.now() } })),
             consumeResume: () => {
                 if (!get().resumeRequested) return false
@@ -187,6 +195,7 @@ export const useOnboardingStore = create<OnboardingState>()(
                 pendingTemplateLink: state.pendingTemplateLink,
                 pendingShareLink: state.pendingShareLink,
                 pendingIntake: state.pendingIntake,
+                pendingOwnAsk: state.pendingOwnAsk,
                 resumeRequested: state.resumeRequested,
                 firstAgentFromPrompt: state.firstAgentFromPrompt,
                 parkedAt: state.parkedAt,

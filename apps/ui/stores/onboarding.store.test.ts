@@ -66,6 +66,13 @@ describe('onboarding store rehydration', () => {
         expect(useOnboardingStore.getState().firstAgentFromPrompt).toBe(false)
     })
 
+    it('keeps the line written under the welcome card only beside the answers it cut short', async () => {
+        const kept = await loadStore({ pendingIntake: INTAKE, pendingOwnAsk: ' Chase my invoices ', parkedAt: FRESH })
+        expect(kept.useOnboardingStore.getState()).toMatchObject({ pendingIntake: INTAKE, pendingOwnAsk: 'Chase my invoices' })
+        const orphan = await loadStore({ pendingIntake: { ...INTAKE, industry: 'mining' }, pendingOwnAsk: 'Chase my invoices', parkedAt: FRESH })
+        expect(orphan.useOnboardingStore.getState().pendingOwnAsk).toBeNull()
+    })
+
     it('drops an entry parked without a date', async () => {
         const { useOnboardingStore, hasPendingStart } = await loadStore({ pendingFirstAgent: DRAFT, resumeRequested: true })
         expect(hasPendingStart(useOnboardingStore.getState())).toBe(false)
@@ -116,6 +123,14 @@ describe('onboarding store actions', () => {
         expect(useOnboardingStore.getState()).toMatchObject({ pendingFirstAgent: null, pendingTemplate: TEMPLATE, firstAgentFromPrompt: false })
     })
 
+    it('clears the line written under the welcome card with the answers', async () => {
+        const { useOnboardingStore } = await loadStore({})
+        useOnboardingStore.getState().setPendingIntake(INTAKE, 'Chase my invoices')
+        expect(useOnboardingStore.getState().pendingOwnAsk).toBe('Chase my invoices')
+        useOnboardingStore.getState().clearPendingIntake()
+        expect(useOnboardingStore.getState()).toMatchObject({ pendingIntake: null, pendingOwnAsk: null })
+    })
+
     it('clears the prompt marker with the draft', async () => {
         const { useOnboardingStore } = await loadStore({ pendingFirstAgent: DRAFT, firstAgentFromPrompt: true })
         useOnboardingStore.getState().clearPendingFirstAgent()
@@ -142,6 +157,6 @@ describe('onboarding store actions', () => {
         useOnboardingStore.getState().setPendingTemplateLink('kit')
         const saved = JSON.parse(storage.read(STORAGE_KEY)!).state
         expect(saved.pendingTemplateLink).toBe('kit')
-        expect(Object.keys(saved).sort()).toEqual(['firstAgentFromPrompt', 'parkedAt', 'pendingFirstAgent', 'pendingIntake', 'pendingShareLink', 'pendingTemplate', 'pendingTemplateLink', 'resumeRequested'])
+        expect(Object.keys(saved).sort()).toEqual(['firstAgentFromPrompt', 'parkedAt', 'pendingFirstAgent', 'pendingIntake', 'pendingOwnAsk', 'pendingShareLink', 'pendingTemplate', 'pendingTemplateLink', 'resumeRequested'])
     })
 })

@@ -1,7 +1,7 @@
 import { track } from '@rerun/analytics/client'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { emit, viewTrialStep } from './useForemanFunnelAnalytics'
+import { emit, emitOwnAsk, viewTrialStep } from './useForemanFunnelAnalytics'
 
 vi.mock('@rerun/analytics/client', () => ({ track: vi.fn() }))
 
@@ -91,7 +91,7 @@ describe('the plan step', () => {
         run('show_starter_pack', {}, { answered: true, custom: 'Answer every enquiry within the hour' }, true)
 
         expect(events()).toEqual([
-            ['onboarding_plan_answered', { confirmed: true, agents: 1, via: 'custom' }],
+            ['onboarding_plan_answered', { confirmed: true, agents: 1, via: 'custom', from: 'pack' }],
             ['onboarding_step_completed', { step: 'plan', via: 'custom' }],
             ['onboarding_step_viewed', { step: 'build' }],
         ])
@@ -101,6 +101,17 @@ describe('the plan step', () => {
         run('show_starter_pack', {}, { answered: false, reason: 'abandoned' }, true)
 
         expect(events()).toEqual([])
+    })
+
+    // No card went up: the kickoff carries the line written under the welcome card.
+    it('counts the line written under the welcome card as the plan', () => {
+        emitOwnAsk(once, true)
+
+        expect(events()).toEqual([
+            ['onboarding_plan_answered', { confirmed: true, agents: 1, via: 'custom', from: 'intake' }],
+            ['onboarding_step_completed', { step: 'plan', via: 'custom' }],
+            ['onboarding_step_viewed', { step: 'build' }],
+        ])
     })
 })
 

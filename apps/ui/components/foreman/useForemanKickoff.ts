@@ -7,7 +7,7 @@ import { track } from '@rerun/analytics/client'
 
 import { saveForemanIntakeAction, waiveForemanProfileAction } from '@/app/api/_actions/foreman-intake.actions'
 import { readArrivingIntent } from '@/lib/foreman/arriving-intent'
-import { buildKickoffMarker, encodeIntent, type KickoffIntent } from '@/lib/foreman/kickoff-marker'
+import { buildKickoffMarker, buildOwnKickoff, encodeIntent, type KickoffIntent } from '@/lib/foreman/kickoff-marker'
 import { type ForemanArrival, type ForemanPhase } from '@/lib/foreman/phase'
 import type { ForemanSurface } from '@/lib/foreman/surface'
 import { arrivalPreviewPlan, intakePreviewPlan } from '@/lib/onboarding/intake'
@@ -97,12 +97,20 @@ export function useForemanKickoff({ send, messageCount, restoreDone }: { send: (
     const [settled, setSettled] = useState<string | null>(null)
     const greeted = useRef(false)
     const intent = useRef<KickoffIntent | null>(null)
+    // Arrived with a prompt written on the landing: they already said what they want, so the column
+    // does not offer them the line under the welcome card, which would replace that prompt.
+    const [prompted, setPrompted] = useState(false)
+    // The line an anonymous visitor wrote under the welcome card, taken off the parked answers before
+    // they are cleared, for `start` to open on once the account exists. Kept even when the answers
+    // could not be written: the card is asked again, and the line still holds when it hands over.
+    const parkedOwnAsk = useRef<string | null>(null)
 
     useEffect(() => {
         if (!identity || asked.current === identity) return
         asked.current = identity
 
         intent.current = readArrivingIntent(searchParams, useOnboardingStore.getState())
+        setPrompted(intent.current?.kind === 'prompt')
         const query = intent.current ? `?intent=${encodeURIComponent(encodeIntent(intent.current))}` : ''
 
         void fetchForemanState(query)
@@ -153,6 +161,7 @@ export function useForemanKickoff({ send, messageCount, restoreDone }: { send: (
                         () => true,
                         () => false
                     )
+                    parkedOwnAsk.current = onboarding.pendingOwnAsk
                     onboarding.clearPendingIntake()
                     // Des réponses qui n'ont pas pu être écrites se redemandent, plutôt que de laisser
                     // le Foreman écrire un plan sans le profil qu'il relit.
@@ -194,7 +203,9 @@ export function useForemanKickoff({ send, messageCount, restoreDone }: { send: (
             .catch(() => useForemanStore.getState().setFunnel('companion'))
     }, [identity, isAnonymous, searchParams])
 
-    const start = useCallback(() => {
+    // `ownAsk`: the line written in the composer under the welcome card. The foreman then opens on
+    // the one coworker it describes rather than on the starter pack.
+    const start = useCallback((ownAsk?: string) => {
         if (greeted.current) return
         greeted.current = true
 
@@ -204,7 +215,9 @@ export function useForemanKickoff({ send, messageCount, restoreDone }: { send: (
         // partage restent parqués, eux : c'est ce qui tient les autres chemins d'installation.
         if (intent.current?.kind === 'prompt') useOnboardingStore.getState().clearPendingFirstAgent()
 
-        send(buildKickoffMarker(intent.current))
+        const asked = ownAsk?.trim() || parkedOwnAsk.current
+        parkedOwnAsk.current = null
+        send(asked ? buildOwnKickoff(asked) : buildKickoffMarker(intent.current))
     }, [send])
 
     // Only once the column knows what it is holding: a setup picked up mid-way resumes on its own
@@ -218,5 +231,5 @@ export function useForemanKickoff({ send, messageCount, restoreDone }: { send: (
         start()
     }, [funnel, intake, restoreDone, messageCount, isAnonymous, phoneStep, identity, settled, start])
 
-    return { start, firstName, arrival }
+    return { start, firstName, arrival, prompted }
 }

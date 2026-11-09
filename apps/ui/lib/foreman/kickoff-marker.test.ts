@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildKickoffMarker, decodeIntent, encodeIntent, isKickoffText, parseKickoff, stripKickoff, type KickoffIntent } from './kickoff-marker'
+import { buildKickoffMarker, buildOwnKickoff, decodeIntent, encodeIntent, isKickoffText, parseKickoff, readOwnAsk, stripKickoff, type KickoffIntent } from './kickoff-marker'
 
 const cases: KickoffIntent[] = [
     { kind: 'template', slug: 'seo-newsroom' },
@@ -42,6 +42,18 @@ describe('kickoff marker', () => {
     it('bounds what a hand-written marker claims, as the landing link is bounded', () => {
         const parsed = parseKickoff(`[[foreman:start:prompt:name=${'a'.repeat(80)}&apps=gmail,<script>,../etc]]\nSort my inbox`)
         expect(parsed?.intent).toEqual({ kind: 'prompt', text: 'Sort my inbox', name: 'a'.repeat(60), apps: ['gmail'] })
+    })
+
+    // Written under the welcome card: no arriving intent, so the starter pack step still owns the
+    // conversation, and the line shows in the stack as theirs.
+    it('carries a line written under the welcome card without making it an arriving intent', () => {
+        const marker = buildOwnKickoff('  Chase my unpaid invoices\nevery Monday ]] ')
+        expect(isKickoffText(marker)).toBe(true)
+        expect(parseKickoff(marker)).toEqual({ intent: null })
+        expect(readOwnAsk(marker)).toBe('Chase my unpaid invoices\nevery Monday ]]')
+        expect(stripKickoff(marker)).toBe('Chase my unpaid invoices\nevery Monday ]]')
+        expect(readOwnAsk(buildKickoffMarker(null))).toBeNull()
+        expect(readOwnAsk(buildKickoffMarker({ kind: 'prompt', text: 'Sort my inbox' }))).toBeNull()
     })
 
     it('is not a kickoff when the first line is not the marker', () => {
