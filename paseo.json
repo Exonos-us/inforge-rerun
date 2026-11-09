@@ -1,0 +1,86 @@
+{
+  "worktree": {
+    "setup": [
+      "mkdir -p .context",
+      "base_port=$(bash scripts/paseo/workspace-port.sh) && mkdir -p .claude && { [ -e .claude/settings.local.json ] || printf '{\\n  \"env\": { \"CONDUCTOR_PORT\": \"%s\" }\\n}\\n' \"$base_port\" > .claude/settings.local.json; }",
+      "[ -e cloud/.git ] || git clone -q --branch dev \"$(git remote get-url origin | sed -E 's#/rerun(\\.git)?$#/rerun-cloud.git#')\" cloud || echo '[setup] cloud/ not cloned: open source build only'",
+      "for source in \"$PASEO_SOURCE_CHECKOUT_PATH\"/apps/*/.env \"$PASEO_SOURCE_CHECKOUT_PATH\"/apps/*/.env.local \"$PASEO_SOURCE_CHECKOUT_PATH\"/apps/*/.env.profile.* \"$PASEO_SOURCE_CHECKOUT_PATH\"/cloud/apps/*/.env \"$PASEO_SOURCE_CHECKOUT_PATH\"/cloud/apps/*/.env.local \"$PASEO_SOURCE_CHECKOUT_PATH\"/cloud/apps/*/.env.profile.*; do [ -f \"$source\" ] || continue; target=\"${source#\"$PASEO_SOURCE_CHECKOUT_PATH\"/}\"; [ -d \"$(dirname \"$target\")\" ] || continue; [ -e \"$target\" ] || cp \"$source\" \"$target\"; done",
+      "pnpm install --force --ignore-scripts && pnpm rebuild esbuild sharp && pnpm --filter @rerun/contracts build",
+      "[ ! -d cloud ] || node scripts/install-cloud.mjs",
+      "[ ! -d cloud ] || pnpm cloud db:link || true",
+      "[ ! -d cloud ] || pnpm cloud env:prod || true"
+    ],
+    "servicePorts": {
+      "portScript": "scripts/paseo/workspace-port.sh"
+    }
+  },
+  "scripts": {
+    "ui": {
+      "type": "service",
+      "command": "pnpm --filter rerun exec next dev -p $PASEO_PORT"
+    },
+    "landing": {
+      "type": "service",
+      "command": "pnpm --dir cloud/apps/landing exec next dev -p $PASEO_PORT"
+    },
+    "admin": {
+      "type": "service",
+      "command": "pnpm --dir cloud/apps/admin exec next dev -p $PASEO_PORT"
+    },
+    "emails": {
+      "type": "service",
+      "command": "EMAIL_ASSET_ORIGIN=http://localhost:$(bash scripts/paseo/workspace-port.sh) pnpm --filter @rerun/emails exec email dev --dir emails --port $PASEO_PORT"
+    },
+    "engine": {
+      "command": "pnpm dev:engine"
+    },
+    "everything": {
+      "type": "service",
+      "command": "PATH=/opt/homebrew/bin:$PATH pnpm exec concurrently -k -n ui,landing,engine,emails,stripe,trigger -c cyan,blue,green,gray,magenta,yellow \"pnpm --filter rerun exec next dev -p $PASEO_PORT\" \"pnpm --dir cloud/apps/landing exec next dev -p $((PASEO_PORT + 1))\" \"pnpm dev:engine\" \"EMAIL_ASSET_ORIGIN=http://localhost:$PASEO_PORT pnpm --filter @rerun/emails exec email dev --dir emails --port $((PASEO_PORT + 3))\" \"stripe listen --forward-to localhost:$PASEO_PORT/api/webhooks/stripe --forward-connect-to localhost:$PASEO_PORT/api/webhooks/stripe/connect\" \"pnpm cloud trigger:dev\""
+    },
+    "ui-full-env": {
+      "command": "pnpm cloud dev:full"
+    },
+    "mobile": {
+      "command": "CONDUCTOR_PORT=$(bash scripts/paseo/workspace-port.sh) pnpm dev:mobile"
+    },
+    "mobile-device": {
+      "command": "CONDUCTOR_PORT=$(bash scripts/paseo/workspace-port.sh) pnpm dev:mobile --device"
+    },
+    "docs": {
+      "command": "pnpm dev:docs"
+    },
+    "docs-check": {
+      "command": "pnpm check:docs"
+    },
+    "env": {
+      "command": "pnpm cloud pick env"
+    },
+    "db-clone": {
+      "command": "pnpm cloud pick db-clone"
+    },
+    "trigger": {
+      "command": "pnpm cloud trigger:dev"
+    },
+    "trigger-deploy": {
+      "command": "pnpm cloud pick trigger-deploy"
+    },
+    "cloud-diff": {
+      "command": "[ -e cloud/.git ] || { echo 'No cloud/ in this workspace'; exit 0; }; git -C cloud fetch -q origin dev; base=$(git -C cloud merge-base origin/dev HEAD); git -C cloud log --oneline \"$base\"..HEAD; git -C cloud status -sb; git -C cloud -c color.ui=always diff --stat \"$base\"; git -C cloud -c color.ui=always diff \"$base\""
+    }
+  },
+  "metadataGeneration": {
+    "title": {
+      "instructions": "A few words in French, no leading verb."
+    },
+    "branchName": {
+      "instructions": "ClementJanssens/<short-kebab-case-slug-in-english>."
+    },
+    "commitMessage": {
+      "instructions": "In English, Conventional Commits with a scope, lowercase subject, no final period: `fix(engine): free root's node caches after each update`."
+    },
+    "pullRequest": {
+      "instructions": "In English, the repository is public. Title in Conventional Commits with a scope, like `feat(phone): the signup wall takes the number without a code`. The body says what changes and why in a few short paragraphs, then ends with a \"Tested\" section saying what was checked in the running app and how."
+    }
+  }
+}
