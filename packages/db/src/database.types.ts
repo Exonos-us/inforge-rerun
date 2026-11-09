@@ -171,42 +171,58 @@ export type Database = {
       }
       api_keys: {
         Row: {
+          bound_agent_id: string | null
           created_at: string
           created_by: string | null
           created_by_user_id: string | null
+          expires_at: string | null
           id: string
           key_hash: string
           key_prefix: string
           last_used_at: string | null
           name: string
           revoked_at: string | null
+          scope: string
           workspace_id: number
         }
         Insert: {
+          bound_agent_id?: string | null
           created_at?: string
           created_by?: string | null
           created_by_user_id?: string | null
+          expires_at?: string | null
           id?: string
           key_hash: string
           key_prefix: string
           last_used_at?: string | null
           name: string
           revoked_at?: string | null
+          scope?: string
           workspace_id: number
         }
         Update: {
+          bound_agent_id?: string | null
           created_at?: string
           created_by?: string | null
           created_by_user_id?: string | null
+          expires_at?: string | null
           id?: string
           key_hash?: string
           key_prefix?: string
           last_used_at?: string | null
           name?: string
           revoked_at?: string | null
+          scope?: string
           workspace_id?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "api_keys_bound_agent_id_fkey"
+            columns: ["bound_agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "api_keys_workspace_id_fkey"
             columns: ["workspace_id"]

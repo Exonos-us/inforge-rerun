@@ -339,6 +339,8 @@ export async function listAgentTools(conn: EngineConnection, agentId: string): P
 // be turned into a write by a crafted statement. `base` picks which database is addressed,
 // exactly like the files router: an agent's private one, or the one shared by the whole Box.
 export const agentDataBase = (agentId: string) => `/agents/${encodeURIComponent(agentId)}/data`
+
+export const agentFilesBase = (agentId: string) => `/agents/${encodeURIComponent(agentId)}/files`
 export const SPACE_DATA_BASE = '/shared/data'
 
 export async function listDbTables(conn: EngineConnection, base: string): Promise<EngineDbTable[]> {

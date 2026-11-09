@@ -1,7 +1,8 @@
 import { workspaceActor } from '@/app/api/_auth/access'
+import { MAX_TEXT_WRITE_CHARS } from '@rerun/contracts'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { chat as engineChat, createSchedule, createTrigger, getAgent, importSkill, listConnections, listSchedules, listSkills, listTriggers, patchAgent, updateSchedule, updateTrigger } from '@/lib/engine/client'
+import { agentFilesBase, chat as engineChat, createMemory, createSchedule, createTrigger, getAgent, importSkill, listConnections, listSchedules, listSkills, listTriggers, patchAgent, updateSchedule, updateTrigger, uploadFile, writeFileText } from '@/lib/engine/client'
 import { createServiceRoleClient } from '@/supabase/serviceRole'
 import { fakeSupabase, type FakeSupabase, type SupabaseCall } from '@/test/supabase-fake'
 
@@ -340,6 +341,83 @@ describe('dispatchAccountTool', () => {
             await expect(dispatchAccountTool(workspaceActor(WORKSPACE_ID), 'upsert_trigger', { agentId: 'agent-sealed', slug: 'inbound', enabled: false })).resolves.toMatchObject({ slug: 'inbound', enabled: false })
 
             expect(updateTrigger).toHaveBeenCalledWith(expect.anything(), 'engine-sealed', 'inbound', expect.objectContaining({ enabled: false, body: undefined }))
+        })
+    })
+    describe('write_memory and upload_workspace_file', () => {
+        const CONN = { baseUrl: 'https://engine.test', apiKey: 'key' }
+        const actor = workspaceActor(WORKSPACE_ID)
+
+        beforeEach(() => {
+            vi.mocked(resolveAgentTarget).mockResolvedValue({ conn: CONN, engineAgentId: 'engine-own', contentLocked: false } as never)
+            vi.mocked(agentFilesBase).mockImplementation(id => `/agents/${id}/files`)
+        })
+
+        it('writes each memory in order, keeps the ones that worked and reports the ones that failed', async () => {
+            vi.mocked(createMemory).mockResolvedValueOnce({ id: 'm1' }).mockRejectedValueOnce(new Error('hub down')).mockResolvedValueOnce({ id: 'm3' })
+
+            const out = await dispatchAccountTool(actor, 'write_memory', {
+                agentId: 'agent-own',
+                memories: [{ content: 'Prefers tea', kind: 'preference', tags: ['food', 3] }, { content: 'Lives in Lyon' }, { content: 'Runs a bakery', kind: 'fact' }],
+            })
+
+            expect(resolveAgentTarget).toHaveBeenCalledWith('agent-own', actor, 'manage')
+            expect(vi.mocked(createMemory).mock.calls.map(call => call[2])).toEqual([{ content: 'Prefers tea', kind: 'preference', tags: ['food'] }, { content: 'Lives in Lyon' }, { content: 'Runs a bakery', kind: 'fact' }])
+            expect(out).toEqual({ written: 2, ids: ['m1', 'm3'], failed: [{ index: 1, error: 'hub down' }] })
+        })
+
+        it('refuses an empty batch, an oversized batch and an oversized memory before writing anything', async () => {
+            await expect(dispatchAccountTool(actor, 'write_memory', { agentId: 'agent-own', memories: [] })).rejects.toThrow('non-empty array')
+            await expect(dispatchAccountTool(actor, 'write_memory', { agentId: 'agent-own', memories: Array.from({ length: 101 }, () => ({ content: 'x' })) })).rejects.toThrow('At most 100 memories')
+            await expect(dispatchAccountTool(actor, 'write_memory', { agentId: 'agent-own', memories: [{ content: 'ok' }, { content: 'x'.repeat(20_001) }] })).rejects.toThrow('memories[1] is over 20000 characters')
+            expect(createMemory).not.toHaveBeenCalled()
+        })
+
+        it('writes a text file into the coworker workspace', async () => {
+            const out = await dispatchAccountTool(actor, 'upload_workspace_file', { agentId: 'agent-own', path: '/notes/clients.md', content: '# Clients' })
+
+            expect(writeFileText).toHaveBeenCalledWith(CONN, '/agents/engine-own/files', 'notes/clients.md', '# Clients')
+            expect(out).toEqual({ path: 'notes/clients.md', bytes: 9 })
+        })
+
+        it('decodes a base64 file and uploads it under its folder', async () => {
+            const out = await dispatchAccountTool(actor, 'upload_workspace_file', { agentId: 'agent-own', path: 'assets/logo.png', content: Buffer.from('png-bytes').toString('base64'), encoding: 'base64' })
+
+            const [conn, base, file, dir] = vi.mocked(uploadFile).mock.calls[0]
+            expect([conn, base, dir]).toEqual([CONN, '/agents/engine-own/files', 'assets'])
+            expect(file.name).toBe('logo.png')
+            expect(Buffer.from(await file.arrayBuffer()).toString()).toBe('png-bytes')
+            expect(out).toEqual({ path: 'assets/logo.png', bytes: 9 })
+        })
+
+        it('sends a text longer than the JSON write allows through the raw upload', async () => {
+            const content = 'x'.repeat(MAX_TEXT_WRITE_CHARS + 1)
+            const out = await dispatchAccountTool(actor, 'upload_workspace_file', { agentId: 'agent-own', path: 'notes/long.md', content })
+
+            expect(writeFileText).not.toHaveBeenCalled()
+            const [conn, base, file, dir] = vi.mocked(uploadFile).mock.calls[0]
+            expect([conn, base, dir, file.name]).toEqual([CONN, '/agents/engine-own/files', 'notes', 'long.md'])
+            expect(Buffer.from(await file.arrayBuffer()).toString()).toBe(content)
+            expect(out).toEqual({ path: 'notes/long.md', bytes: MAX_TEXT_WRITE_CHARS + 1 })
+        })
+
+        it('refuses a file over 5 MB, decoded or as text, before writing anything', async () => {
+            const base64 = Buffer.alloc(5 * 1024 * 1024 + 1).toString('base64')
+            await expect(dispatchAccountTool(actor, 'upload_workspace_file', { agentId: 'agent-own', path: 'big.bin', content: base64, encoding: 'base64' })).rejects.toThrow('over 5 MB once decoded')
+
+            const text = 'x'.repeat(5 * 1024 * 1024 + 1)
+            await expect(dispatchAccountTool(actor, 'upload_workspace_file', { agentId: 'agent-own', path: 'big.md', content: text })).rejects.toThrow('over 5 MB')
+
+            expect(uploadFile).not.toHaveBeenCalled()
+            expect(writeFileText).not.toHaveBeenCalled()
+        })
+
+        it('refuses both writes on a coworker whose content a template locks', async () => {
+            vi.mocked(resolveAgentTarget).mockResolvedValue({ conn: CONN, engineAgentId: 'engine-sealed', contentLocked: true } as never)
+
+            await expect(dispatchAccountTool(actor, 'write_memory', { agentId: 'agent-sealed', memories: [{ content: 'x' }] })).rejects.toThrow(LOCKED_WRITE_ERROR)
+            await expect(dispatchAccountTool(actor, 'upload_workspace_file', { agentId: 'agent-sealed', path: 'a.md', content: 'x' })).rejects.toThrow(LOCKED_WRITE_ERROR)
+            expect(createMemory).not.toHaveBeenCalled()
+            expect(writeFileText).not.toHaveBeenCalled()
         })
     })
 })

@@ -1,4 +1,4 @@
-import { connectorSkillReadOnlyError, isSetupAnswered, providerSchema, triggerMethodSchema, verbositySchema } from '@rerun/contracts'
+import { connectorSkillReadOnlyError, isSetupAnswered, MAX_TEXT_WRITE_CHARS, providerSchema, triggerMethodSchema, verbositySchema } from '@rerun/contracts'
 import { AccessDeniedError, assertAgentInWorkspace, callableEngineAgentIds, isAdminActor, keepVisible, manageableSpaceIds, spaceAccessMap, visibleAgentIds, visibleSpaceIds, type Actor } from '@/app/api/_auth/access'
 import type { Database } from '@/app/api/database.types'
 import {
@@ -10,6 +10,8 @@ import {
     deleteTrigger as engineDeleteTrigger,
     SPACE_DATA_BASE,
     agentDataBase,
+    agentFilesBase,
+    createMemory as engineCreateMemory,
     executeDb as engineExecuteDb,
     fireTrigger as engineFireTrigger,
     getAgent as engineGetAgent,
@@ -31,9 +33,12 @@ import {
     setBoxDefault as engineSetBoxDefault,
     updateSchedule as engineUpdateSchedule,
     updateTrigger as engineUpdateTrigger,
+    uploadFile as engineUploadFile,
+    writeFileText as engineWriteFileText,
 } from '@/lib/engine/client'
 import type { InstalledService } from '@/lib/services/types'
 import type { BoxConnection, EngineAgentConfigPatch, EngineAgentDetail, EngineAgentSetup, EngineConnection, EngineRunDetail, EngineTrigger, EngineTriggerMethod } from '@/lib/engine/types'
+import { MAX_MEMORIES_PER_CALL, MAX_MEMORY_CHARS, MAX_UPLOAD_MB } from '@/lib/mcp/account-tools'
 import { asBooleanRecord, asNumber, asString, asStringArray, clamp, requireConfirmation, requireString } from '@/lib/mcp/args'
 import { connectionModels, readModelPin, type ModelPin } from '@/lib/mcp/model-pin'
 import { projectRun } from '@/lib/mcp/run-projection'
@@ -286,6 +291,20 @@ async function listWorkspaceAgents(workspaceId: number, spaceId?: string) {
         { column: 'created_at', ascending: false },
     )
     return data ?? []
+}
+
+type MemoryEntry = { content: string; kind?: string; tags?: string[] }
+
+function readMemoryEntries(value: unknown): MemoryEntry[] {
+    if (!Array.isArray(value) || value.length === 0) throw new Error('memories must be a non-empty array of { content, kind?, tags? }.')
+    if (value.length > MAX_MEMORIES_PER_CALL) throw new Error(`At most ${MAX_MEMORIES_PER_CALL} memories per call. Send the rest in another call.`)
+    return value.map((entry, index) => {
+        const content = typeof entry === 'object' && entry !== null ? (entry as { content?: unknown }).content : undefined
+        if (typeof content !== 'string' || !content.trim()) throw new Error(`memories[${index}].content must be a non-empty string.`)
+        if (content.length > MAX_MEMORY_CHARS) throw new Error(`memories[${index}] is over ${MAX_MEMORY_CHARS} characters. Split it into several memories.`)
+        const { kind, tags } = entry as { kind?: unknown; tags?: unknown }
+        return { content, ...(typeof kind === 'string' ? { kind } : {}), ...(Array.isArray(tags) ? { tags: tags.filter((tag): tag is string => typeof tag === 'string') } : {}) }
+    })
 }
 
 // `actor` is whose access the call runs with: the workspace for an API key, the member a foreman
@@ -569,6 +588,47 @@ export async function dispatchAccountTool(actor: Actor, name: string, args: Reco
             await removeSkillFiles(conn, engineAgentId, skill.slug, removeFiles)
             const updated = await engineGetSkill(conn, engineAgentId, skill.slug)
             return { slug: updated.slug, name: updated.name, description: updated.description, files: updated.files, removed: removeFiles }
+        }
+
+        case 'write_memory': {
+            const { conn, engineAgentId, contentLocked } = await resolveAgentTarget(requireString(args.agentId, 'agentId'), actor, 'manage')
+            if (contentLocked) throw new Error(LOCKED_WRITE_ERROR)
+            const memories = readMemoryEntries(args.memories)
+            const written: string[] = []
+            const failed: { index: number; error: string }[] = []
+            // One at a time: each write embeds through the hub, and a burst of a hundred would
+            // queue there anyway while making a partial failure harder to report entry by entry.
+            for (const [index, memory] of memories.entries()) {
+                try {
+                    const { id } = await engineCreateMemory(conn, engineAgentId, memory)
+                    if (id) written.push(id)
+                } catch (err) {
+                    failed.push({ index, error: err instanceof Error ? err.message : 'Write failed' })
+                }
+            }
+            return { written: written.length, ids: written, ...(failed.length > 0 ? { failed } : {}) }
+        }
+
+        case 'upload_workspace_file': {
+            const { conn, engineAgentId, contentLocked } = await resolveAgentTarget(requireString(args.agentId, 'agentId'), actor, 'manage')
+            if (contentLocked) throw new Error(LOCKED_WRITE_ERROR)
+            const path = requireString(args.path, 'path').replace(/^\/+/, '')
+            const content = typeof args.content === 'string' ? args.content : ''
+            const base = agentFilesBase(engineAgentId)
+            const isBase64 = args.encoding === 'base64'
+            const bytes = Buffer.from(content, isBase64 ? 'base64' : 'utf8')
+            if (bytes.byteLength > MAX_UPLOAD_MB * 1024 * 1024) throw new Error(`The file is over ${MAX_UPLOAD_MB} MB${isBase64 ? ' once decoded' : ''}.`)
+            const slash = path.lastIndexOf('/')
+            const name = path.slice(slash + 1)
+            if (!name) throw new Error('path must name a file, e.g. "assets/logo.png".')
+            // The JSON write caps its content at MAX_TEXT_WRITE_CHARS on the engine; a longer text
+            // travels as bytes through the raw upload, the same door as a binary.
+            if (!isBase64 && content.length <= MAX_TEXT_WRITE_CHARS) {
+                await engineWriteFileText(conn, base, path, content)
+            } else {
+                await engineUploadFile(conn, base, new File([bytes], name), slash > 0 ? path.slice(0, slash) : '')
+            }
+            return { path, bytes: bytes.byteLength }
         }
 
         case 'delete_skill': {

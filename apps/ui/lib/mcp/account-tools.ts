@@ -1,6 +1,10 @@
 import { SHARE_TOOL_DEFS } from './share-tools'
 import { TEMPLATE_TOOL_DEFS } from './template-tools'
 
+export const MAX_MEMORIES_PER_CALL = 100
+export const MAX_MEMORY_CHARS = 20_000
+export const MAX_UPLOAD_MB = 5
+
 // Static MCP tool definitions advertised by the Rerun account server for `tools/list`.
 // Pure data (no server deps) so the route can serve them without importing the service layer.
 //
@@ -227,6 +231,43 @@ const AGENT_TOOL_DEFS = [
                 },
             },
             required: ['agentId', 'name', 'body'],
+        },
+    },
+    {
+        name: 'write_memory',
+        description: `Add memories to a coworker: what it knows about its owner, their preferences, facts it learned. Each entry is one memory, indexed for recall. Up to ${MAX_MEMORIES_PER_CALL} entries per call and ${MAX_MEMORY_CHARS.toLocaleString('en-US')} characters each; split a long memory file into one entry per fact or section, and call again for more. Entries that fail are listed in \`failed\` with the reason, the others are kept.`,
+        inputSchema: {
+            type: 'object',
+            properties: {
+                agentId: { type: 'string' },
+                memories: {
+                    type: 'array',
+                    items: {
+                        type: 'object',
+                        properties: {
+                            content: { type: 'string', description: 'The memory, in plain text or markdown.' },
+                            kind: { type: 'string', description: 'preference | fact | learned | note | task. Defaults to note.' },
+                            tags: { type: 'array', items: { type: 'string' } },
+                        },
+                        required: ['content'],
+                    },
+                },
+            },
+            required: ['agentId', 'memories'],
+        },
+    },
+    {
+        name: 'upload_workspace_file',
+        description: `Write one file into the coworker's own workspace folder, creating the folders on the way and replacing a file already at that path. \`path\` is relative to the workspace, e.g. "notes/clients.md". Text goes as is (encoding utf8, the default); a binary file goes base64-encoded with encoding base64. Up to ${MAX_UPLOAD_MB} MB either way, once decoded. One file per call.`,
+        inputSchema: {
+            type: 'object',
+            properties: {
+                agentId: { type: 'string' },
+                path: { type: 'string' },
+                content: { type: 'string' },
+                encoding: { type: 'string', enum: ['utf8', 'base64'] },
+            },
+            required: ['agentId', 'path', 'content'],
         },
     },
     {

@@ -282,6 +282,7 @@ export interface AnalyticsEventMap {
     lifecycle_email_sent: { sequence: string; category: string }
 
     api_key_created: Record<string, never>
+    agent_import_prepared: { source: string }
 
     // L'exposition au test, premier pas de tout funnel découpé par bras.
     experiment_viewed: ExperimentExposure

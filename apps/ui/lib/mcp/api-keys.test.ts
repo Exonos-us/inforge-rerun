@@ -6,14 +6,16 @@ vi.mock('@rerun/cloud/billing', async importOriginal => ({ ...(await importOrigi
 vi.mock('@/supabase/serviceRole', () => ({ createServiceRoleClient: vi.fn() }))
 
 const { createServiceRoleClient } = await import('@/supabase/serviceRole')
-const { authenticateApiKey, generateApiKey, hashApiKey } = await import('./api-keys')
+const { authenticateApiKey, bindImportKey, generateApiKey, hashApiKey } = await import('./api-keys')
+
+const LIVE = { keyId: 'k1', workspaceId: 5, createdByUserId: 'u1', scope: 'account', boundAgentId: null }
 
 let db: FakeSupabase
 let keyRow: unknown
 let workspaceRow: unknown
 
 beforeEach(() => {
-    keyRow = { id: 'k1', workspace_id: 5, revoked_at: null, created_by_user_id: 'u1' }
+    keyRow = { id: 'k1', workspace_id: 5, revoked_at: null, created_by_user_id: 'u1', expires_at: null, scope: 'account', bound_agent_id: null }
     workspaceRow = { subscription_status: 'active', is_sandbox: false }
     db = fakeSupabase((table, calls) => {
         if (writeMethodOf(calls)) return undefined
@@ -27,7 +29,7 @@ beforeEach(() => {
 describe('authenticateApiKey', () => {
     it('answers the workspace of a live key, and the member it acts for', async () => {
         const key = generateApiKey()
-        await expect(authenticateApiKey(key)).resolves.toEqual({ keyId: 'k1', workspaceId: 5, createdByUserId: 'u1' })
+        await expect(authenticateApiKey(key)).resolves.toEqual(LIVE)
     })
 
     it('looks the key up by its hash, never by the raw key', async () => {
@@ -81,7 +83,7 @@ describe('authenticateApiKey', () => {
             },
         }
         vi.mocked(createServiceRoleClient).mockReturnValue(client as unknown as typeof db.client)
-        await expect(authenticateApiKey(generateApiKey())).resolves.toEqual({ keyId: 'k1', workspaceId: 5, createdByUserId: 'u1' })
+        await expect(authenticateApiKey(generateApiKey())).resolves.toEqual(LIVE)
     })
 
     it('refuses a key once the workspace plan is cancelled', async () => {
@@ -94,7 +96,7 @@ describe('authenticateApiKey', () => {
 
     it('accepts a key on a workspace still in its trial', async () => {
         workspaceRow = { subscription_status: 'trialing', is_sandbox: false }
-        await expect(authenticateApiKey(generateApiKey())).resolves.toEqual({ keyId: 'k1', workspaceId: 5, createdByUserId: 'u1' })
+        await expect(authenticateApiKey(generateApiKey())).resolves.toEqual(LIVE)
     })
 
     it('refuses a key whose workspace is gone', async () => {
@@ -104,6 +106,43 @@ describe('authenticateApiKey', () => {
 
     it('keeps accepting the key of a sandbox, whatever its plan says', async () => {
         workspaceRow = { subscription_status: 'canceled', is_sandbox: true }
-        await expect(authenticateApiKey(generateApiKey())).resolves.toEqual({ keyId: 'k1', workspaceId: 5, createdByUserId: 'u1' })
+        await expect(authenticateApiKey(generateApiKey())).resolves.toEqual(LIVE)
+    })
+
+    it('refuses a key past its expiry, and keeps one that has time left', async () => {
+        keyRow = { ...(keyRow as object), expires_at: new Date(Date.now() - 1000).toISOString() }
+        await expect(authenticateApiKey(generateApiKey())).resolves.toBeNull()
+        expect(db.writes('api_keys')).toEqual([])
+
+        keyRow = { ...(keyRow as object), expires_at: new Date(Date.now() + 60_000).toISOString() }
+        await expect(authenticateApiKey(generateApiKey())).resolves.toEqual(LIVE)
+    })
+
+    it('answers the scope of an import key and the coworker it is bound to', async () => {
+        keyRow = { ...(keyRow as object), scope: 'agent_import', bound_agent_id: 'agent-1' }
+        await expect(authenticateApiKey(generateApiKey())).resolves.toEqual({ ...LIVE, scope: 'agent_import', boundAgentId: 'agent-1' })
+    })
+})
+
+describe('bindImportKey', () => {
+    it('binds only an unbound import key, and says whether it won', async () => {
+        db = fakeSupabase(table => (table === 'api_keys' ? { data: [{ id: 'k1' }] } : undefined))
+        vi.mocked(createServiceRoleClient).mockReturnValue(db.client)
+
+        await expect(bindImportKey('k1', 'agent-1')).resolves.toBe(true)
+        const [write] = db.writes('api_keys')
+        expect(write.payload).toEqual({ bound_agent_id: 'agent-1' })
+        expect(write.filters.filter(call => call.method !== 'select').map(call => [call.method, ...call.args])).toEqual([
+            ['eq', 'id', 'k1'],
+            ['eq', 'scope', 'agent_import'],
+            ['is', 'bound_agent_id', null],
+        ])
+    })
+
+    it('loses to a key another call already bound', async () => {
+        db = fakeSupabase(table => (table === 'api_keys' ? { data: [] } : undefined))
+        vi.mocked(createServiceRoleClient).mockReturnValue(db.client)
+
+        await expect(bindImportKey('k1', 'agent-2')).resolves.toBe(false)
     })
 })

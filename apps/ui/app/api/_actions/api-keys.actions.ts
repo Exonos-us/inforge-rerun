@@ -1,13 +1,17 @@
 'use server'
 
 import { accountLabel } from '@/lib/auth/placeholder-email'
+import { actorFromContext, keepVisible, manageableSpaceIds } from '@/app/api/_auth/access'
 import { requireAdminContext, requireWorkspaceContext, type WorkspaceContext } from '@/app/api/_auth/ownership'
 import type { Database } from '@/app/api/database.types'
 import { getAppOrigin } from '@/lib/app-origin'
 import { isWorkspaceApiEntitled } from '@rerun/cloud/billing'
 import { apiKeyPrefix, generateApiKey, hashApiKey } from '@/lib/mcp/api-keys'
 import { mcpAccountUrl } from '@/lib/mcp/connect'
-import { selectAll, selectCount, selectMaybeSingle } from '@/supabase/supabase-helpers'
+import { IMPORT_KEY_TTL_MS } from '@/lib/mcp/import-scope'
+import { buildImportPrompt } from '@/lib/agent-import/prompt'
+import { importSource, isImportSourceId, type ImportSourceId } from '@/lib/agent-import/sources'
+import { selectAll, selectCount, selectMany, selectMaybeSingle } from '@/supabase/supabase-helpers'
 
 import type { ActionResult } from './space.actions'
 
@@ -21,7 +25,7 @@ const MAX_ACTIVE_KEYS = 20
 const MAX_NAME_LENGTH = 60
 
 // key_hash stays out: nothing on the client has any use for it.
-const API_KEY_COLUMNS = ['id', 'name', 'key_prefix', 'created_by', 'last_used_at', 'created_at'] as const
+const API_KEY_COLUMNS = ['id', 'name', 'key_prefix', 'created_by', 'last_used_at', 'created_at', 'expires_at'] as const
 
 export type ApiKeyView = {
     id: string
@@ -52,7 +56,9 @@ export async function listApiKeysAction(): Promise<ActionResult<{ keys: ApiKeyVi
             { column: 'created_at', ascending: false },
         )
 
-        const keys: ApiKeyView[] = (data ?? []).map(k => ({
+        const now = Date.now()
+        const live = (data ?? []).filter(k => !k.expires_at || Date.parse(k.expires_at) > now)
+        const keys: ApiKeyView[] = live.map(k => ({
             id: k.id,
             name: k.name,
             keyPrefix: k.key_prefix,
@@ -81,7 +87,7 @@ export async function createApiKeyAction(rawName: string): Promise<ActionResult<
         if (!name) return { ok: false, error: 'Give the key a name, so you can tell it apart later.' }
         if (name.length > MAX_NAME_LENGTH) return { ok: false, error: `Keep the name under ${MAX_NAME_LENGTH} characters.` }
 
-        const { data: activeCount } = await selectCount(ctx.supabase, 'api_keys', { workspace_id: ctx.workspace.id, revoked_at: { isNull: true } })
+        const { data: activeCount } = await selectCount(ctx.supabase, 'api_keys', { workspace_id: ctx.workspace.id, revoked_at: { isNull: true }, scope: 'account' })
         if ((activeCount ?? 0) >= MAX_ACTIVE_KEYS) {
             return { ok: false, error: `This workspace already has ${MAX_ACTIVE_KEYS} active keys. Revoke one to create another.` }
         }
@@ -101,6 +107,50 @@ export async function createApiKeyAction(rawName: string): Promise<ActionResult<
     } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : 'Failed to create the key' }
     }
+}
+
+// Import keys stay off MAX_ACTIVE_KEYS: each one lives a day and reaches a single coworker, and a
+// member trying several sources should never be told to revoke a real key first.
+export async function createImportKeyAction(sourceId: ImportSourceId, requestedSpaceId: string | null = null): Promise<ActionResult<{ connectorUrl: string; prompt: string; expiresAt: string }>> {
+    try {
+        if (!isImportSourceId(sourceId)) return { ok: false, error: 'Unknown source' }
+        const ctx = await requireWorkspaceContext()
+        if (!isWorkspaceApiEntitled(ctx.workspace)) {
+            return { ok: false, error: 'Importing a coworker needs an active subscription.' }
+        }
+
+        const spaceId = await importDestination(ctx, requestedSpaceId)
+        const key = generateApiKey()
+        const expiresAt = new Date(Date.now() + IMPORT_KEY_TTL_MS).toISOString()
+        const { error } = await ctx.supabase.from('api_keys').insert<Database['public']['Tables']['api_keys']['Insert']>({
+            workspace_id: ctx.workspace.id,
+            name: `Import · ${importSource(sourceId).label}`,
+            key_prefix: apiKeyPrefix(key),
+            key_hash: hashApiKey(key),
+            created_by: accountLabel(ctx.authUser.email),
+            created_by_user_id: ctx.userId,
+            scope: 'agent_import',
+            expires_at: expiresAt,
+        })
+        if (error) return { ok: false, error: error.message }
+
+        const connectorUrl = `${mcpAccountUrl(await getAppOrigin())}/${key}`
+        return { ok: true, connectorUrl, prompt: buildImportPrompt(sourceId, connectorUrl, spaceId), expiresAt }
+    } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : 'Failed to prepare the import' }
+    }
+}
+
+// The Box the coworker lands in, named in the prompt so create_agent never has to guess between
+// several. The one asked for when the member manages it, otherwise the first one they manage.
+async function importDestination(ctx: WorkspaceContext, requested: string | null): Promise<string> {
+    const [{ data: all }, manageable] = await Promise.all([
+        selectMany(ctx.supabase, 'spaces', ['id'] as const, { workspace_id: ctx.workspace.id }, { column: 'created_at', ascending: true }),
+        manageableSpaceIds(actorFromContext(ctx)),
+    ])
+    const spaces = keepVisible(all ?? [], manageable, space => space.id)
+    if (spaces.length === 0) throw new Error('You manage no Box in this workspace yet. Create one first.')
+    return spaces.find(space => space.id === requested)?.id ?? spaces[0].id
 }
 
 export async function revokeApiKeyAction(id: string): Promise<ActionResult> {
