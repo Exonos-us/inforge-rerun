@@ -144,6 +144,27 @@ export async function listBindings(connectionId: string): Promise<ChannelBinding
     return bindingsOf(connectionId)
 }
 
+// The channels one coworker answers in, for its own card. Scoped to the workspace's connection so
+// a coworker never reports a binding that belongs to another workspace.
+export async function bindingsForAgent(connectionId: string, agentId: string): Promise<ChannelBinding[]> {
+    return (await bindingsOf(connectionId)).filter(binding => binding.agentId === agentId)
+}
+
+// The name and the face a coworker wears in one channel. Both are per channel on purpose: the
+// same coworker can be "engineer-1" with a wrench in #mdc-code and something plainer elsewhere.
+export async function updateBinding(bindingId: string, fields: { displayName?: string | null; iconEmoji?: string | null }): Promise<void> {
+    const supabase = createServiceRoleClient()
+    const { error } = await supabase
+        .from('slack_channel_agents')
+        .update<Database['public']['Tables']['slack_channel_agents']['Update']>({
+            ...(fields.displayName !== undefined ? { display_name: fields.displayName } : {}),
+            ...(fields.iconEmoji !== undefined ? { icon_emoji: fields.iconEmoji } : {}),
+            updated_at: new Date().toISOString(),
+        })
+        .eq('id', bindingId)
+    if (error) throw new Error(error.message)
+}
+
 export async function bindCoworker(params: { connectionId: string; channelId: string; channelName?: string | null; agentId: string; displayName?: string | null; iconEmoji?: string | null }): Promise<void> {
     const supabase = createServiceRoleClient()
     const { error } = await supabase.from('slack_channel_agents').upsert<BindingInsert>(

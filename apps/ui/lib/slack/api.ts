@@ -13,11 +13,24 @@ export class SlackApiError extends Error {
     }
 }
 
+// Slack takes a JSON body on the methods that write, and only form encoding on the ones that
+// read: users.info, users.conversations and conversations.info answer `ok: true` with nothing in
+// it when handed JSON, having quietly ignored every argument. Two shapes, one per family, rather
+// than one that looks right and returns empty.
+const FORM_ENCODED = new Set(['auth.test', 'users.info', 'users.conversations', 'conversations.info', 'conversations.list'])
+
 async function call<T>(token: string, method: string, payload: Record<string, unknown>): Promise<T> {
+    const form = FORM_ENCODED.has(method)
+    const body = form
+        ? new URLSearchParams(Object.entries(payload).map(([key, value]) => [key, String(value)])).toString()
+        : JSON.stringify(payload)
     const res = await fetch(`${SLACK_API}/${method}`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json; charset=utf-8' },
-        body: JSON.stringify(payload),
+        headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': form ? 'application/x-www-form-urlencoded; charset=utf-8' : 'application/json; charset=utf-8',
+        },
+        body,
     })
     const data = (await res.json().catch(() => ({ ok: false, error: `http_${res.status}` }))) as { ok: boolean; error?: string } & T
     if (!data.ok) throw new SlackApiError(method, data.error ?? 'unknown_error')

@@ -111,7 +111,7 @@ export function isPlanLimited(agent: Pick<IsoAgent, 'disabledReason'>): boolean 
 // The tabs of the agent side panel. Declared here rather than in AgentPanel so the board store and
 // the foreman's tool belt can name one without importing the component it drives. The panel groups
 // them into the screens of `agent-sheet-views.ts`.
-export const AGENT_FOCUS_TABS = ['chat', 'actions', 'services', 'mcp', 'skills', 'data', 'memories', 'files', 'published', 'scheduled', 'triggers', 'tools', 'monitoring', 'logs', 'setup', 'settings'] as const
+export const AGENT_FOCUS_TABS = ['chat', 'actions', 'services', 'mcp', 'skills', 'data', 'memories', 'files', 'published', 'scheduled', 'triggers', 'channels', 'tools', 'monitoring', 'logs', 'setup', 'settings'] as const
 
 export type AgentFocusTab = (typeof AGENT_FOCUS_TABS)[number]
 
@@ -126,6 +126,7 @@ export const AGENT_TAB_LABELS: Record<AgentFocusTab, string> = {
     files: 'Files',
     published: 'Published',
     scheduled: 'Routines',
+    channels: 'Channels',
     triggers: 'Triggers',
     tools: 'Capabilities',
     monitoring: 'Monitoring',

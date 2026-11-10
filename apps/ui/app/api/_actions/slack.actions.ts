@@ -3,6 +3,7 @@
 import { requireAdminContext, requireWorkspaceContext } from '@/app/api/_auth/ownership'
 import {
     bindCoworker,
+    bindingsForAgent,
     connectSlack,
     connectionForWorkspace,
     disconnectSlack,
@@ -10,6 +11,7 @@ import {
     publicView,
     slackChannels,
     unbindCoworker,
+    updateBinding,
     workspaceCoworkers,
     type SlackConnection,
 } from '@/app/api/_services/slack.service'
@@ -123,6 +125,70 @@ export async function bindCoworkerAction(params: { channelId: string; channelNam
         return { ok: true }
     } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : 'Could not add the coworker to that channel' }
+    }
+}
+
+// What one coworker's own card shows: the channels it answers in, the channels it could join, and
+// whether Slack is connected at all. A member may wire a coworker they can reach; connecting
+// Slack itself stays with an admin.
+export type AgentChannelsView = {
+    connected: boolean
+    canCustomizeIdentity: boolean
+    bindings: SlackBindingView[]
+    channels: SlackChannel[]
+    agentName: string
+}
+
+export async function getAgentChannelsAction(params: { agentId: string }): Promise<ActionResult<{ state: AgentChannelsView }>> {
+    try {
+        const ctx = await requireWorkspaceContext()
+        const { data: agent } = await selectMaybeSingle(ctx.supabase, 'agents', ['workspace_id', 'name'] as const, { id: params.agentId })
+        if (!agent || agent.workspace_id !== ctx.workspace.id) return { ok: false, error: 'Coworker not found' }
+
+        const connection = await connectionForWorkspace(ctx.workspace.id)
+        if (!connection) return { ok: true, state: { connected: false, canCustomizeIdentity: false, bindings: [], channels: [], agentName: agent.name } }
+
+        const [bindings, channels] = await Promise.all([
+            bindingsForAgent(connection.id, params.agentId),
+            slackChannels(connection).catch(() => [] as SlackChannel[]),
+        ])
+        return {
+            ok: true,
+            state: {
+                connected: true,
+                canCustomizeIdentity: connection.can_customize_identity,
+                bindings: bindings.map(bindingView),
+                // Only the channels it is not already in: adding it twice is refused anyway.
+                channels: channels.filter(channel => !bindings.some(binding => binding.channelId === channel.id)),
+                agentName: agent.name,
+            },
+        }
+    } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : 'Could not read the Slack channels' }
+    }
+}
+
+export async function updateBindingAction(params: { bindingId: string; displayName?: string | null; iconEmoji?: string | null }): Promise<ActionResult> {
+    try {
+        const ctx = await requireWorkspaceContext()
+        const connection = await connectionForWorkspace(ctx.workspace.id)
+        if (!connection) return { ok: false, error: 'Slack is not connected' }
+        const mine = (await listBindings(connection.id)).some(binding => binding.id === params.bindingId)
+        if (!mine) return { ok: false, error: 'That channel does not belong to this workspace' }
+
+        const displayName = params.displayName?.trim()
+        if (params.displayName !== undefined && !displayName) return { ok: false, error: 'A coworker needs a name to post under.' }
+        // Slack wants :shortcode: form, and silently ignores anything else.
+        const emoji = params.iconEmoji?.trim()
+        const iconEmoji = emoji ? (/^:[a-z0-9_+-]+:$/.test(emoji) ? emoji : `:${emoji.replace(/^:|:$/g, '')}:`) : null
+
+        await updateBinding(params.bindingId, {
+            ...(params.displayName !== undefined ? { displayName } : {}),
+            ...(params.iconEmoji !== undefined ? { iconEmoji } : {}),
+        })
+        return { ok: true }
+    } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : 'Could not change how the coworker appears' }
     }
 }
 

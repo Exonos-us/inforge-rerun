@@ -122,6 +122,7 @@ const AGENT_TAB_HINTS: Record<AgentFocusTab, string> = {
     published: 'the links it published, and who can open each',
     scheduled: 'its recurring tasks',
     triggers: 'its public URLs that start a run',
+    channels: 'the Slack channels it reads and answers in, and the name and avatar it posts under in each',
     tools: 'the tools it is allowed to use',
     monitoring: 'its usage and cost',
     logs: 'its run history',

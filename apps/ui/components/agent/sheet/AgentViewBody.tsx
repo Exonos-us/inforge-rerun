@@ -1,5 +1,6 @@
 'use client'
 
+import { AgentPanelChannels } from '@/components/agent/AgentPanelChannels'
 import { AgentPanelData } from '@/components/agent/AgentPanelData'
 import { AgentPanelFiles } from '@/components/agent/AgentPanelFiles'
 import { AgentPanelLogs } from '@/components/agent/AgentPanelLogs'
@@ -69,6 +70,8 @@ export function AgentViewBody({ agent, tab, onOpenSession }: AgentViewBodyProps)
             )
         case 'triggers':
             return <AgentPanelTriggers agentId={agent.id} onOpenSession={onOpenSession} />
+        case 'channels':
+            return <AgentPanelChannels agent={agent} />
         case 'monitoring':
             return <AgentPanelMonitoring agentId={agent.id} />
         case 'logs':
