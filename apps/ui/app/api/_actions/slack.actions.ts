@@ -9,6 +9,7 @@ import {
     disconnectSlack,
     listBindings,
     publicView,
+    replaceSigningSecret,
     slackChannels,
     unbindCoworker,
     updateBinding,
@@ -109,6 +110,18 @@ export async function connectSlackAction(params: { botToken: string; signingSecr
         return result.ok ? { ok: true, teamName: result.teamName, canCustomizeIdentity: result.canCustomizeIdentity } : { ok: false, error: result.error }
     } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : 'Could not connect Slack' }
+    }
+}
+
+// The fix for the one failure the screen can diagnose, offered where it is diagnosed.
+export async function updateSigningSecretAction(params: { signingSecret: string }): Promise<ActionResult> {
+    try {
+        const ctx = await requireAdminContext().catch(() => null)
+        if (!ctx) return { ok: false, error: SLACK_ADMIN_ONLY }
+        const result = await replaceSigningSecret(ctx.workspace.id, params.signingSecret)
+        return result.ok ? { ok: true } : { ok: false, error: result.error }
+    } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : 'Could not save the signing secret' }
     }
 }
 

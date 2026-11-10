@@ -102,6 +102,20 @@ export async function connectSlack(params: { workspaceId: number; userId: string
     return { ok: true, teamName: identity.team, canCustomizeIdentity: scopes.includes('chat:write.customize') }
 }
 
+// Replacing the secret, not the connection. Disconnecting would take the channel bindings with
+// it (they hang off the connection row), and losing which coworkers are in which channels is a
+// steep price for fixing a value that was mistyped once.
+export async function replaceSigningSecret(workspaceId: number, signingSecret: string): Promise<{ ok: true } | { ok: false; error: string }> {
+    const secret = signingSecret.trim()
+    if (!looksLikeSigningSecret(secret)) return { ok: false, error: 'A signing secret is 32 characters, digits and a–f. Basic Information → App Credentials → Signing Secret → Show.' }
+
+    const { error } = await createServiceRoleClient()
+        .from('slack_connections')
+        .update<ConnectionUpdate>({ signing_secret: secret, last_signature_error_at: null, updated_at: new Date().toISOString() })
+        .eq('workspace_id', workspaceId)
+    return error ? { ok: false, error: error.message } : { ok: true }
+}
+
 export async function disconnectSlack(workspaceId: number): Promise<void> {
     await createServiceRoleClient().from('slack_connections').delete().eq('workspace_id', workspaceId)
 }

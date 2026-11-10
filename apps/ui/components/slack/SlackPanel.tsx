@@ -1,6 +1,6 @@
 'use client'
 
-import { bindCoworkerAction, connectSlackAction, createSlackChannelAction, disconnectSlackAction, getSlackStateAction, unbindCoworkerAction, type SlackHealth, type SlackStateView } from '@/app/api/_actions/slack.actions'
+import { bindCoworkerAction, connectSlackAction, createSlackChannelAction, disconnectSlackAction, getSlackStateAction, unbindCoworkerAction, updateSigningSecretAction, type SlackHealth, type SlackStateView } from '@/app/api/_actions/slack.actions'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@rerun/ui/primitives'
 import { Field } from '@/components/ui/field'
@@ -184,7 +184,7 @@ function Connected({ state, busy, setBusy, reload, isAdmin }: { state: SlackStat
 
             {state.slackError && <p className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-xs text-destructive">{state.slackError}</p>}
 
-            <HealthNotice health={state.health} requestUrl={state.requestUrl} />
+            <HealthNotice health={state.health} requestUrl={state.requestUrl} reload={reload} isAdmin={isAdmin} />
 
             <CreateChannel state={state} busy={busy} setBusy={setBusy} reload={reload} />
 
@@ -336,20 +336,10 @@ function AddToChannel({ state, busy, setBusy, reload }: { state: SlackStateView;
 // The two silences a connected Slack falls into — a Request URL that was never saved, and a
 // signing secret copied off the wrong line — look identical from the channel: a coworker that
 // does not answer. Both are visible here, with the page to go to.
-function HealthNotice({ health, requestUrl }: { health: SlackHealth | null; requestUrl: string }) {
+function HealthNotice({ health, requestUrl, reload, isAdmin }: { health: SlackHealth | null; requestUrl: string; reload: () => Promise<void>; isAdmin: boolean }) {
     if (!health) return null
 
-    if (health.state === 'bad_signature') {
-        return (
-            <div className="flex flex-col gap-1.5 rounded-xl border border-destructive/40 bg-destructive/5 p-3">
-                <p className="text-sm font-medium text-destructive">Slack is calling, and every message is being refused</p>
-                <p className="text-xs text-muted-foreground">
-                    The signing secret saved here is not this app&apos;s, so nothing a coworker is told ever reaches it — last refused {relative(health.at)}. Copy it again from
-                    <b> Basic Information → App Credentials → Signing Secret</b> (32 characters, digits and a–f), then disconnect and connect again. The bot token is fine.
-                </p>
-            </div>
-        )
-    }
+    if (health.state === 'bad_signature') return <BadSignatureNotice at={health.at} reload={reload} isAdmin={isAdmin} />
 
     if (health.state === 'never_called') {
         return (
@@ -380,6 +370,42 @@ function HealthNotice({ health, requestUrl }: { health: SlackHealth | null; requ
     }
 
     return null
+}
+
+// The fix, where the problem is named: one field, and the connection keeps its channels. Sending
+// the user to Disconnect would have taken every binding with it.
+function BadSignatureNotice({ at, reload, isAdmin }: { at: string; reload: () => Promise<void>; isAdmin: boolean }) {
+    const [secret, setSecret] = useState('')
+    const [saving, setSaving] = useState(false)
+
+    const save = async () => {
+        setSaving(true)
+        const result = await updateSigningSecretAction({ signingSecret: secret })
+        setSaving(false)
+        if (!result.ok) return toast.error(result.error)
+        toast.success('Saved. Write to a coworker in Slack to check.')
+        setSecret('')
+        await reload()
+    }
+
+    return (
+        <div className="flex flex-col gap-2.5 rounded-xl border border-destructive/40 bg-destructive/5 p-3">
+            <p className="text-sm font-medium text-destructive">Slack is calling, and every message is being refused</p>
+            <p className="text-xs text-muted-foreground">
+                The signing secret saved here is not this app&apos;s, so nothing a coworker is told ever reaches it — last refused {relative(at)}. In Slack:
+                <b> Basic Information → App Credentials → Signing Secret → Show</b>. Paste it below; the bot token is fine and your channels stay as they are.
+            </p>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                <Field label="Signing secret" htmlFor="slack-new-secret" className="flex-1">
+                    <Input id="slack-new-secret" value={secret} onChange={e => setSecret(e.target.value)} placeholder="32 characters, digits and a–f" autoComplete="off" spellCheck={false} disabled={!isAdmin} />
+                </Field>
+                <Button size="sm" disabled={!isAdmin || !secret || saving} onClick={save}>
+                    {saving ? 'Saving…' : 'Save it'}
+                </Button>
+            </div>
+            {!isAdmin && <p className="text-xs text-muted-foreground">Only an admin of this workspace can change it.</p>}
+        </div>
+    )
 }
 
 function relative(at: string): string {
