@@ -22,3 +22,11 @@ export function verifySlackSignature(params: { body: string; timestamp: string |
     const b = Buffer.from(signature, 'utf8')
     return a.length === b.length && timingSafeEqual(a, b)
 }
+
+// A Slack signing secret is 32 hexadecimal characters, and it sits on the same page as the client
+// secret, the client id and the app-level token. Pasting a neighbour is the easy mistake, and its
+// only symptom is silence: Slack calls, every delivery fails its signature, and nothing in the
+// channel says why. Cheaper to refuse it at the form.
+export function looksLikeSigningSecret(value: string): boolean {
+    return /^[0-9a-f]{32}$/i.test(value.trim())
+}

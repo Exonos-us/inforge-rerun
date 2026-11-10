@@ -6,6 +6,7 @@ import { getWorkspaceConnection } from '@/app/api/_services/workspace-engine.ser
 import { chat, getRun, getRunTools, listFiles, readFileBytes } from '@/lib/engine/client'
 import { authTest, fitMessage, installedScopes, listChannels, postMessage, toMrkdwn, updateMessage, uploadFile, userName, type SlackIdentity } from '@/lib/slack/api'
 import { attachmentComment, attachmentsFor, type WorkspaceFile } from '@/lib/slack/attachments'
+import { looksLikeSigningSecret } from '@/lib/slack/signature'
 import { createServiceRoleClient } from '@/supabase/serviceRole'
 import { selectMany, selectManyWithJoins, selectMaybeSingle } from '@/supabase/supabase-helpers'
 
@@ -65,7 +66,11 @@ export async function connectSlack(params: { workspaceId: number; userId: string
     const token = params.botToken.trim()
     const secret = params.signingSecret.trim()
     if (!token.startsWith('xoxb-')) return { ok: false, error: 'That is not a bot token — it should start with xoxb-. Copy it from OAuth & Permissions → Bot User OAuth Token.' }
-    if (secret.length < 16) return { ok: false, error: 'That signing secret looks too short. Copy it from Basic Information → App Credentials → Signing Secret.' }
+    if (!looksLikeSigningSecret(secret))
+        return {
+            ok: false,
+            error: `That is not the signing secret — it is 32 hexadecimal characters, and what you pasted is ${secret.length}. Basic Information → App Credentials → Signing Secret → Show. The client secret and the app token sit right beside it.`,
+        }
 
     let identity: Awaited<ReturnType<typeof authTest>>
     try {

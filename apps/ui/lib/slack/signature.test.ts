@@ -1,6 +1,6 @@
 import { createHmac } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import { verifySlackSignature } from './signature'
+import { looksLikeSigningSecret, verifySlackSignature } from './signature'
 
 const SECRET = 'a-signing-secret'
 const BODY = JSON.stringify({ type: 'event_callback', event: { type: 'message', text: 'hello' } })
@@ -45,5 +45,23 @@ describe('verifySlackSignature', () => {
         expect(verifySlackSignature({ body: BODY, timestamp, signature: null, signingSecret: SECRET, now })).toBe(false)
         expect(verifySlackSignature({ body: BODY, timestamp, signature: sign(BODY, timestamp), signingSecret: '', now })).toBe(false)
         expect(verifySlackSignature({ body: BODY, timestamp: 'not-a-number', signature: sign(BODY, timestamp), signingSecret: SECRET, now })).toBe(false)
+    })
+})
+
+describe('looksLikeSigningSecret', () => {
+    it('takes the 32 hex characters Slack gives', () => {
+        expect(looksLikeSigningSecret('8f2a1c4e6b9d0a3f5e7c1b8d2a4f6e9c')).toBe(true)
+        expect(looksLikeSigningSecret('  8F2A1C4E6B9D0A3F5E7C1B8D2A4F6E9C  ')).toBe(true)
+    })
+
+    it('refuses the neighbours on that page', () => {
+        // An app-level token, a bot token, a client id: all within reach of the wrong copy.
+        expect(looksLikeSigningSecret('xapp-fake-app-level-token-with-the-right-shape')).toBe(false)
+        expect(looksLikeSigningSecret('xoxb-fake-bot-token-with-the-right-shape')).toBe(false)
+        expect(looksLikeSigningSecret('1234567890.1234567890123')).toBe(false)
+    })
+
+    it('refuses something of the right length that is not hex', () => {
+        expect(looksLikeSigningSecret('zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz')).toBe(false)
     })
 })
