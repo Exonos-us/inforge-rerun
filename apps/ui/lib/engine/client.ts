@@ -7,6 +7,8 @@ import {
     type CustomProbeInput,
     type CustomProbeResult,
     takeoverResultSchema,
+    screenSessionsSchema,
+    type ScreenSession,
     type DesktopApp,
     type DesktopStatus,
     type TakeoverResult,
@@ -107,6 +109,7 @@ import {
     engineAgentDetailSchema,
     engineActivatedAutomationsSchema,
     engineAgentKeysListSchema,
+    type EngineScreenSecretMeta,
     boxConnectionSchema,
     boxConnectionsListSchema,
     connectionUsageSchema,
@@ -266,14 +269,14 @@ export async function getAgent(conn: EngineConnection, id: string): Promise<Engi
 // names are ever returned (values stay server-side); updates merge set/remove.
 // `engineKeys` are the RERUN_* names the engine resolves from its own process env;
 // engines predating the field simply omit it.
-export async function getAgentKeys(conn: EngineConnection, id: string): Promise<{ keys: string[]; engineKeys: string[] }> {
+export async function getAgentKeys(conn: EngineConnection, id: string): Promise<{ keys: string[]; engineKeys: string[]; screen: Record<string, EngineScreenSecretMeta> }> {
     return request(conn, `/agents/${encodeURIComponent(id)}/keys`, { method: 'GET' }, d => {
         const parsed = engineAgentKeysListSchema.parse(d)
-        return { keys: parsed.keys, engineKeys: parsed.engineKeys ?? [] }
+        return { keys: parsed.keys, engineKeys: parsed.engineKeys ?? [], screen: parsed.screen ?? {} }
     })
 }
 
-export async function updateAgentKeys(conn: EngineConnection, id: string, body: { set?: Record<string, string>; remove?: string[] }): Promise<string[]> {
+export async function updateAgentKeys(conn: EngineConnection, id: string, body: { set?: Record<string, string>; remove?: string[]; screen?: Record<string, EngineScreenSecretMeta> }): Promise<string[]> {
     return request(conn, `/agents/${encodeURIComponent(id)}/keys`, { method: 'PATCH', body: JSON.stringify(body) }, d => engineAgentKeysListSchema.parse(d).keys)
 }
 
@@ -701,10 +704,36 @@ export async function startTakeover(conn: EngineConnection, agentId: string, url
     await request(conn, `/agents/${encodeURIComponent(agentId)}/desktop/takeover`, { method: 'POST', body: JSON.stringify(url ? { url } : {}), signal: AbortSignal.timeout(DESKTOP_TIMEOUT_MS) }, () => undefined)
 }
 
+// The explicit "Take over" on the coworker's screen: while held the agent keeps its hands off, even
+// when the person pauses. Taking it again renews it; the engine expires a hold nobody renews.
+export async function holdDesktop(conn: EngineConnection, agentId: string): Promise<void> {
+    await request(conn, `/agents/${encodeURIComponent(agentId)}/desktop/hold`, { method: 'POST', signal: AbortSignal.timeout(DESKTOP_TIMEOUT_MS) }, () => undefined)
+}
+
+export async function releaseDesktopHold(conn: EngineConnection, agentId: string): Promise<void> {
+    await request(conn, `/agents/${encodeURIComponent(agentId)}/desktop/hold`, { method: 'DELETE', signal: AbortSignal.timeout(DESKTOP_TIMEOUT_MS) }, () => undefined)
+}
+
+// Pauses (capturing: false) or resumes the capture of the running screen session, for the moment the
+// person on the screen types a credential.
+export async function setDesktopRecording(conn: EngineConnection, agentId: string, capturing: boolean): Promise<void> {
+    await request(conn, `/agents/${encodeURIComponent(agentId)}/desktop/recording`, { method: 'POST', body: JSON.stringify({ capturing }), signal: AbortSignal.timeout(DESKTOP_TIMEOUT_MS) }, () => undefined)
+}
+
 // keepOpen leaves the window on the coworker's screen for the run it resumes. An engine that predates
 // it ignores the flag, closes the window and says nothing of `open`.
 export async function finishTakeover(conn: EngineConnection, agentId: string, { keepOpen = false } = {}): Promise<TakeoverResult> {
     return request(conn, `/agents/${encodeURIComponent(agentId)}/desktop/takeover${keepOpen ? '?keepOpen=1' : ''}`, { method: 'DELETE', signal: AbortSignal.timeout(DESKTOP_TIMEOUT_MS) }, d => takeoverResultSchema.parse(d))
+}
+
+// The screen sessions an agent's workspace keeps (screenshots + recording per session). An engine
+// that predates the route answers 404, which reads as "no evidence kept".
+export async function listScreenSessions(conn: EngineConnection, agentId: string): Promise<ScreenSession[]> {
+    try {
+        return (await request(conn, `/agents/${encodeURIComponent(agentId)}/screen/sessions`, {}, d => screenSessionsSchema.parse(d))).sessions
+    } catch {
+        return []
+    }
 }
 
 export function forgetEngineCapabilities(conn: EngineConnection): void {

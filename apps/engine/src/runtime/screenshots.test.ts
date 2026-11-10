@@ -25,6 +25,14 @@ describe('screenshot store', () => {
         expect(ids.slice(0, 4).some(id => store.get(id))).toBe(false)
         expect([...ids.slice(4), seventh].every(id => store.get(id))).toBe(true)
     })
+
+    it('keeps as many pictures as it is given, then drops down to half of them', () => {
+        const store = createScreenshotStore(2)
+        const ids = [store.add(picture('0')), store.add(picture('1'))]
+        const third = store.add(picture('2'))
+        expect(ids.some(id => store.get(id))).toBe(false)
+        expect(store.get(third)).toBeDefined()
+    })
 })
 
 describe('withScreenshots', () => {

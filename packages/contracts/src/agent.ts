@@ -46,6 +46,7 @@ export const toolsSchema = z.object({
     quickReplies: z.boolean().default(true),
     brain: z.boolean().default(true),
     computer: z.boolean().default(true),
+    computerRecording: z.boolean().default(true),
     paidData: z.boolean().default(true),
 })
 export type Tools = z.infer<typeof toolsSchema>
@@ -235,12 +236,29 @@ export type AgentDuplicateResult = z.infer<typeof agentDuplicateResultSchema>
 
 export const updateAgentSchema = agentConfigSchema.omit({ kind: true }).partial()
 
-export const agentKeysListSchema = z.object({ keys: z.array(z.string()), engineKeys: z.array(z.string()).optional() })
+// What makes a coworker variable a screen secret: the site its value signs in to, and whether the
+// user already allowed the agent to type it there without asking each run. The value itself stays
+// in the agent .env; this is metadata only.
+export const screenSecretMetaSchema = z.object({
+    site: z.string().min(1),
+    allowAlways: z.boolean().default(false),
+})
+export type ScreenSecretMeta = z.infer<typeof screenSecretMetaSchema>
+
+export const agentKeysListSchema = z.object({
+    keys: z.array(z.string()),
+    engineKeys: z.array(z.string()).optional(),
+    // Absent on an engine that predates screen secrets.
+    screen: z.record(z.string(), screenSecretMetaSchema).optional(),
+})
 export type AgentKeysList = z.infer<typeof agentKeysListSchema>
 
 export const updateAgentKeysSchema = z.object({
     set: z.record(z.string(), z.string()).default({}),
     remove: z.array(z.string()).default([]),
+    // Screen-secret metadata for keys in `set` (or already stored): the key never types anywhere
+    // without a site to pin it to.
+    screen: z.record(z.string(), screenSecretMetaSchema).default({}),
 })
 
 export const updateAgentMcpServersSchema = z.object({

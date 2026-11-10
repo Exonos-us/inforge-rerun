@@ -11,6 +11,7 @@ import { AlertBlock } from '@/components/chat/AlertBlock'
 import { McpSignInBlock } from '@/components/chat/McpSignInBlock'
 import { SecretRequestBlock } from '@/components/chat/SecretRequestBlock'
 import { ChatScreen } from '@/components/chat/ChatScreen'
+import { ScreenHoldNotice } from '@/components/desktop/ScreenHoldNotice'
 import { BudgetExhaustedNotice, usePriceArm } from '@rerun/cloud/billing.client'
 import { ProviderErrorNotice } from '@/components/chat/ProviderErrorNotice'
 import { ComposerSubscriptionCta } from '@/components/chat/ComposerSubscriptionCta'
@@ -73,7 +74,7 @@ import { isPremiumModelEntitled } from '@rerun/cloud/billing'
 import { createClient } from '@/supabase/client'
 import { selectMaybeSingle } from '@/supabase/supabase-helpers'
 import { useChat } from '@ai-sdk/react'
-import { COWORKER_STARTER_SUGGESTIONS, paidDataSourcesByTurn, RERUN_CONNECTION_ID, runUsesScreen, screenSite } from '@rerun/contracts'
+import { COWORKER_STARTER_SUGGESTIONS, paidDataSourcesByTurn, RERUN_CONNECTION_ID, runUsesScreen, screenSessionsByTurn, screenSite } from '@rerun/contracts'
 import { track } from '@rerun/analytics/client'
 import { AnimatePresence, motion } from 'motion/react'
 import { DefaultChatTransport } from 'ai'
@@ -890,6 +891,7 @@ export function AgentChat({ uid, active, agentId, agentName, sessionId, onSessio
     const errorKind = displayedError === null ? null : classifyChatError(displayedError)
     const outOfPaidCredit = useMemo(() => turnRanOutOfPaidCredit(messages), [messages])
     const paidSourcesByTurn = useMemo(() => paidDataSourcesByTurn(messages), [messages])
+    const screenTurns = useMemo(() => screenSessionsByTurn(messages), [messages])
 
     // The queued message leaves as soon as the conversation is free again. The engine only drops
     // its session claim once the run has torn its provider down, well after this stream closed, so
@@ -935,6 +937,7 @@ export function AgentChat({ uid, active, agentId, agentName, sessionId, onSessio
     return (
         <div ref={chatRootRef} data-chat-scrolled={active && scrollEdges.top > 0 ? '' : undefined} className="relative flex flex-1 flex-col overflow-hidden">
             {header}
+            <ScreenHoldNotice agentId={agentId} />
             {/* History lands after mount, as a resize: animating it would scroll the whole
                 conversation in front of the user. Only a reply being written is followed smoothly. */}
             <Conversation className="flex-1" contextRef={conversationRef} initial="instant" resize={status === 'streaming' || status === 'submitted' ? 'smooth' : 'instant'}>
@@ -988,6 +991,7 @@ export function AgentChat({ uid, active, agentId, agentName, sessionId, onSessio
                                         mentions={mentionTokens}
                                         createdAt={messageTimes[mi]}
                                         paidSources={paidSourcesByTurn.get(message.id)}
+                                        screenSessions={screenTurns.get(message.id)}
                                     />
                                 )
                                 if (!branches?.length) return view

@@ -10,6 +10,7 @@ import { holdDisplay } from '../tools/virtual-display.js'
 import { inheritedEnv } from '../lib/child-env.js'
 import { HttpError } from '../lib/errors.js'
 import { logger } from '../lib/logger.js'
+import { reapOnExit } from '../lib/child-reaper.js'
 import { barConfig, dockConfig, openboxConfig } from './panels.js'
 
 // The X convention: display :N is served on 5900 + N, so two agents never share a port.
@@ -20,7 +21,6 @@ const PANEL_BINARIES = ['tint2', 'curl']
 export const SCREEN_CAPTURE_BINARY = 'maim'
 const ASSETS_DIR = fileURLToPath(new URL('../../assets/desktop', import.meta.url))
 const DEFAULT_DATA_DIRS = '/usr/local/share:/usr/share'
-const IDLE_STOP_MS = 5 * 60_000
 // Long enough to cover the pause between two clicks, short enough that the agent picks its work back up.
 const DRIVER_QUIET_MS = 5_000
 const VNC_READY_TIMEOUT_MS = 5_000
@@ -32,15 +32,16 @@ const PORT_FREE_TIMEOUT_MS = KILL_GRACE_MS + 500
 
 export type Desktop = { display: string; vncPort: number }
 type RunningDesktop = Desktop & { children: ChildProcess[]; releaseDisplay: () => void }
-type Screen = { desktop: Promise<RunningDesktop> | null; viewers: number; drivers: number; lastDriverInput: number; holds: number; idleTimer: NodeJS.Timeout | null; dock: boolean }
+type Screen = { desktop: Promise<RunningDesktop> | null; viewers: number; drivers: number; lastDriverInput: number; heldUntil: number; holds: number; idleTimer: NodeJS.Timeout | null; dock: boolean }
 export type DesktopOptions = { timeZone?: string }
 
 const screens = new Map<string, Screen>()
-// Read synchronously by the exit hook, where nothing can be awaited.
+// The children this module still owns: one leaving without a stop of ours takes the screen down.
 const liveChildren = new Set<ChildProcess>()
+// Set the moment a screen's start begins, so the cap counts the ones still starting too.
+const startedAt = new Map<string, number>()
 let available = false
 let computer = false
-let exitHooked = false
 
 export function onPath(binary: string): boolean {
     return (process.env.PATH ?? '').split(delimiter).some(dir => dir && existsSync(resolve(dir, binary)))
@@ -69,7 +70,7 @@ export function desktopEnv(display: string): Record<string, string> {
 function screenOf(agentId: string): Screen {
     let screen = screens.get(agentId)
     if (!screen) {
-        screen = { desktop: null, viewers: 0, drivers: 0, lastDriverInput: 0, holds: 0, idleTimer: null, dock: false }
+        screen = { desktop: null, viewers: 0, drivers: 0, lastDriverInput: 0, heldUntil: 0, holds: 0, idleTimer: null, dock: false }
         screens.set(agentId, screen)
     }
     return screen
@@ -101,12 +102,6 @@ async function settles(condition: () => Promise<boolean>, timeoutMs: number): Pr
 
 async function waitForVnc(port: number): Promise<void> {
     if (!(await settles(() => vncAnswers(port), VNC_READY_TIMEOUT_MS))) throw new HttpError(503, 'The desktop did not start.')
-}
-
-function killChildrenOnExit(): void {
-    if (exitHooked) return
-    exitHooked = true
-    process.once('exit', () => liveChildren.forEach(child => child.kill()))
 }
 
 const hasExited = (child: ChildProcess): boolean => child.exitCode !== null || child.signalCode !== null
@@ -179,6 +174,7 @@ async function start(agentId: string, { timeZone }: DesktopOptions): Promise<Run
             if (liveChildren.has(child)) void stopDesktop(agentId)
         })
         liveChildren.add(child)
+        reapOnExit(child)
     }
     const panels = PANEL_BINARIES.every(onPath) ? await startPanels(agentId, display, timeZone) : []
     for (const panel of panels) {
@@ -190,10 +186,10 @@ async function start(agentId: string, { timeZone }: DesktopOptions): Promise<Run
             if (screen) screen.dock = false
         })
         liveChildren.add(panel)
+        reapOnExit(panel)
         children.push(panel)
     }
     screenOf(agentId).dock = panels.length > 0
-    killChildrenOnExit()
     try {
         await waitForVnc(vncPort)
     } catch (err) {
@@ -212,31 +208,41 @@ function armIdleStop(agentId: string): void {
     screen.idleTimer = null
     if (screen.viewers > 0 || screen.holds > 0) return
     if (!screen.desktop) return forgetIfUnused(agentId)
-    screen.idleTimer = setTimeout(() => void stopDesktop(agentId), IDLE_STOP_MS)
+    screen.idleTimer = setTimeout(() => void stopDesktop(agentId), env().RERUN_DESKTOP_IDLE_STOP_MINUTES * 60_000)
     screen.idleTimer.unref()
 }
 
 export async function ensureDesktop(agentId: string, options: DesktopOptions = {}): Promise<Desktop> {
     if (!desktopAvailable()) throw new HttpError(501, 'This box has no desktop installed.')
     const screen = screenOf(agentId)
-    screen.desktop ??= start(agentId, options).catch(err => {
-        screen.desktop = null
-        forgetIfUnused(agentId)
-        throw err
-    })
+    if (!screen.desktop) {
+        refusePastTheCap()
+        startedAt.set(agentId, Date.now())
+        screen.desktop = start(agentId, options).catch(err => {
+            screen.desktop = null
+            startedAt.delete(agentId)
+            forgetIfUnused(agentId)
+            throw err
+        })
+    }
     const { display, vncPort } = await screen.desktop
     armIdleStop(agentId)
     return { display, vncPort }
 }
 
+// An app opened on a screen that stopped meanwhile would run on forever with nothing to close it.
 export function trackDesktopChild(agentId: string, child: ChildProcess): void {
-    void screens
-        .get(agentId)
-        ?.desktop?.then(running => {
+    reapOnExit(child)
+    const desktop = screens.get(agentId)?.desktop
+    if (!desktop) return void child.kill()
+    void desktop.then(
+        running => {
+            if (screens.get(agentId)?.desktop !== desktop) return void child.kill()
             running.children.push(child)
             liveChildren.add(child)
-        })
-        .catch(() => {})
+        },
+        () => void child.kill()
+    )
 }
 
 export async function stopDesktop(agentId: string): Promise<void> {
@@ -245,6 +251,7 @@ export async function stopDesktop(agentId: string): Promise<void> {
     const running = await screen.desktop?.catch(() => null)
     screen.desktop = null
     screen.dock = false
+    startedAt.delete(agentId)
     if (screen.idleTimer) clearTimeout(screen.idleTimer)
     screen.idleTimer = null
     forgetIfUnused(agentId)
@@ -283,7 +290,36 @@ export function driverActed(agentId: string, now: number = Date.now()): void {
 
 export function humanDriving(agentId: string, now: number = Date.now()): boolean {
     const screen = screens.get(agentId)
-    return !!screen && screen.drivers > 0 && now - screen.lastDriverInput < DRIVER_QUIET_MS
+    if (!screen) return false
+    return screen.heldUntil > now || (screen.drivers > 0 && now - screen.lastDriverInput < DRIVER_QUIET_MS)
+}
+
+// An explicit hold a person takes on the screen ("Take over"), distinct from the input detector
+// above: while it lasts the agent keeps its hands off even when the person pauses. It expires on
+// its own so a closed tab never leaves an agent waiting forever; the app renews it while the
+// person still has the screen.
+export const HOLD_TTL_MS = 2 * 60_000
+
+export function renewHumanHold(agentId: string, now: number = Date.now()): void {
+    screenOf(agentId).heldUntil = now + HOLD_TTL_MS
+}
+
+// `heldUntil` becomes the moment the hold ended, so a hold released between two agent actions
+// still reads as "the user touched the screen" to the next one.
+export function endHumanHold(agentId: string, now: number = Date.now()): void {
+    const screen = screens.get(agentId)
+    if (screen) screen.heldUntil = Math.min(screen.heldUntil, now)
+}
+
+export function humanHolding(agentId: string, now: number = Date.now()): boolean {
+    return (screens.get(agentId)?.heldUntil ?? 0) > now
+}
+
+// Whether a person drove or held this screen after `since`: a hold still running, one that ended
+// after it, or any drive-mode input sent after it.
+export function humanTouchedSince(agentId: string, since: number): boolean {
+    const screen = screens.get(agentId)
+    return !!screen && (screen.lastDriverInput > since || screen.heldUntil > since)
 }
 
 // A takeover keeps the screen up for as long as its browser is open, watched or not.
@@ -309,6 +345,19 @@ export function desktopViewerCount(): number {
 
 export const viewersOf = (agentId: string): number => screens.get(agentId)?.viewers ?? 0
 
-export function runningDesktops(): Array<{ agentId: string; viewers: number; dock: boolean }> {
-    return [...screens].filter(([, screen]) => screen.desktop !== null).map(([agentId, screen]) => ({ agentId, viewers: screen.viewers, dock: screen.dock }))
+export function runningDesktops(now: number = Date.now()): Array<{ agentId: string; viewers: number; dock: boolean; startedAt: string; uptimeSeconds: number }> {
+    return [...screens]
+        .filter(([, screen]) => screen.desktop !== null)
+        .map(([agentId, screen]) => {
+            const since = startedAt.get(agentId) ?? now
+            return { agentId, viewers: screen.viewers, dock: screen.dock, startedAt: new Date(since).toISOString(), uptimeSeconds: Math.max(0, Math.floor((now - since) / 1000)) }
+        })
+}
+
+// Each screen is an Xvfb, a VNC server, a window manager and whatever the agent opened on it; past
+// the cap a box would rather tell the agent no than slow every screen down.
+function refusePastTheCap(): void {
+    const max = env().RERUN_DESKTOP_MAX_SCREENS
+    const running = [...screens.values()].filter(screen => screen.desktop !== null).length
+    if (running >= max) throw new HttpError(503, `This box already runs ${running} agent screens, its limit (RERUN_DESKTOP_MAX_SCREENS=${max}). Close one or try again once an idle screen stops.`)
 }

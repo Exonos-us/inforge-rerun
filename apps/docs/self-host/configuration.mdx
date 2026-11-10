@@ -119,4 +119,11 @@ An engine started by hand, on a [server](/self-host/servers), reads these.
 | `RERUN_DATA_DIR` | `/data` in the image | Where the engine keeps everything. Mount a volume there. |
 | `RERUN_PORT` | `3000` | The port the engine listens on. |
 | `RERUN_DESKTOP` | on | `off` turns off the desktop screen and the computer tools. |
+| `RERUN_DESKTOP_MAX_SCREENS` | `20` | How many coworker screens run at once. One more is refused until an idle one stops. |
+| `RERUN_DESKTOP_IDLE_STOP_MINUTES` | `5` | Minutes a screen nobody watches or uses stays up. |
+| `RERUN_COMPUTER_RECORDING` | on | `off` never records the screens, whatever each coworker's switch says. |
+| `RERUN_COMPUTER_RECORDING_MAX_MINUTES` | `15` | Longest recording of one screen session. |
+| `RERUN_COMPUTER_SESSIONS_KEPT` | `20` | Screen sessions kept in each coworker's `screen/` folder. |
+| `RERUN_COMPUTER_MAX_ACTIONS` | `200` | Screen actions one run may take (`RERUN_COMPUTER_MAX_ACTIONS_CLI`, `60`, on Claude and ChatGPT subscriptions). |
+| `RERUN_COMPUTER_SCREENSHOTS_IN_CONTEXT` | `6` | Screenshots a run keeps in front of the model. |
 | `RERUN_LOG_LEVEL` | `info` | How much the engine logs. |

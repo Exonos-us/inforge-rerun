@@ -2,6 +2,8 @@ import { z } from 'zod'
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
 
+const positiveInt = (fallback: number) => z.preprocess(v => (v === '' ? undefined : v), z.coerce.number().int().positive().default(fallback))
+
 const schema = z.object({
     RERUN_DATA_DIR: z.string().default(resolve(homedir(), '.rerun')),
     RERUN_PORT: z.coerce.number().int().positive().default(3000),
@@ -14,6 +16,16 @@ const schema = z.object({
     RERUN_CODEX_PATH: z.string().optional(),
     // `on` opens the desktop of the agents on this box ahead of the release, `off` keeps it shut after.
     RERUN_DESKTOP: z.string().optional(),
+    // The economics of the agents' screens. Defaults are what a box ran with before they were settings.
+    RERUN_DESKTOP_MAX_SCREENS: positiveInt(20),
+    RERUN_DESKTOP_IDLE_STOP_MINUTES: positiveInt(5),
+    // `off` keeps every screen session of the box unrecorded, whatever each agent's own switch says.
+    RERUN_COMPUTER_RECORDING: z.enum(['on', 'off']).default('on'),
+    RERUN_COMPUTER_RECORDING_MAX_MINUTES: positiveInt(15),
+    RERUN_COMPUTER_SESSIONS_KEPT: positiveInt(20),
+    RERUN_COMPUTER_MAX_ACTIONS: positiveInt(200),
+    RERUN_COMPUTER_MAX_ACTIONS_CLI: positiveInt(60),
+    RERUN_COMPUTER_SCREENSHOTS_IN_CONTEXT: positiveInt(6),
 })
 
 export type Env = z.infer<typeof schema>

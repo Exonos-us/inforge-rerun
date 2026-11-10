@@ -23,7 +23,7 @@ import { updateRoutes } from './routes/update.js'
 import { doctorRoutes } from './routes/doctor.js'
 import { createFilesRouter } from './routes/files.js'
 import { brainRoutes } from './routes/brain.js'
-import { agentDesktopRoutes, desktopRoutes } from './routes/desktop.js'
+import { agentDesktopRoutes, agentScreenRoutes, desktopRoutes } from './routes/desktop.js'
 import { HttpError, notFound } from '../lib/errors.js'
 import { agentExists, listAgentIdsOnDisk } from '../agents/loader.js'
 import { workspaceDir, sharedDir } from '../config/paths.js'
@@ -86,6 +86,7 @@ export function createServer(): Hono {
     api.route('/brain', brainRoutes)
     api.route('/desktop', desktopRoutes)
     api.route('/agents/:id/desktop', agentDesktopRoutes)
+    api.route('/agents/:id/screen', agentScreenRoutes)
     api.route('/agents/:id', chatRoutes)
     app.route('/', api)
 

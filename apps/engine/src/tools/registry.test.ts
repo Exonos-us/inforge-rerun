@@ -69,7 +69,7 @@ beforeEach(() => {
 // The schemas ride along on every step of every run: the budget is what the whole set may cost a
 // prompt (a ratchet, set just above what the set weighs today and lowered as families move on
 // demand), and the per-tool cap is what the OpenAI chat API accepts for a description.
-const TOOL_PAYLOAD_CHARS_BUDGET = 72_064
+const TOOL_PAYLOAD_CHARS_BUDGET = 72_192
 const TOOL_DESCRIPTION_CHARS_CAP = 1_024
 
 describe('tool payload', () => {
@@ -109,6 +109,24 @@ describe('buildTools', () => {
         const names = await namesOf(ctxWith())
         expect(names).toContain('browser_navigate')
         expect(names).not.toContain('request_takeover')
+    })
+
+    it('hands a run on the Claude API with a toolset-era model the native computer toolset, and everyone else the generic tool', async () => {
+        const native = await buildTools(ctxWith({}, { provider: 'anthropic', model: 'claude-opus-5-5' }))
+        await native.close()
+        expect((native.tools.computer as { id?: string }).id).toBe('anthropic.computer_toolset_20260801')
+        expect(Object.keys(native.tools)).toContain('type_secret')
+
+        for (const [provider, model] of [
+            ['anthropic', 'claude-sonnet-4-6'],
+            ['rerun', 'claude-opus-5-5'],
+            ['openrouter', 'anthropic/claude-opus-5-5'],
+        ]) {
+            const generic = await buildTools(ctxWith({}, { provider, model }))
+            await generic.close()
+            expect((generic.tools.computer as { id?: string }).id, `${provider}:${model}`).toBeUndefined()
+            expect(Object.keys(generic.tools), `${provider}:${model}`).not.toContain('type_secret')
+        }
     })
 
     it('gives an agent its computer on every provider, where the box can show and capture its screen', async () => {

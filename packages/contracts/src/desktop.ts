@@ -27,7 +27,22 @@ export const desktopStatusSchema = z.object({
     available: z.boolean(),
     // `dock` says the screen draws its own launcher, so the app leaves that to it.
     // `agentDriving` says a run of the agent has its hands on the screen.
-    screens: z.array(z.object({ agentId: z.string(), viewers: z.number(), takeover: z.boolean(), dock: z.boolean().default(false), agentDriving: z.boolean().default(false) })),
+    // `humanHolding` says a person explicitly took the screen; `recordingPaused` that they paused
+    // its capture. Both default so an older engine reads as "nobody holds, nothing paused".
+    // `startedAt` / `uptimeSeconds` say how long the screen has been up; absent from older engines.
+    screens: z.array(
+        z.object({
+            agentId: z.string(),
+            viewers: z.number(),
+            takeover: z.boolean(),
+            dock: z.boolean().default(false),
+            agentDriving: z.boolean().default(false),
+            humanHolding: z.boolean().default(false),
+            recordingPaused: z.boolean().default(false),
+            startedAt: z.string().optional(),
+            uptimeSeconds: z.number().optional(),
+        })
+    ),
 })
 export type DesktopStatus = z.infer<typeof desktopStatusSchema>
 
@@ -36,9 +51,30 @@ export type DesktopStatus = z.infer<typeof desktopStatusSchema>
 export const takeoverUrlSchema = z.string().url().refine(url => /^https?:\/\//i.test(url), 'Only a web page can be opened')
 export const takeoverRequestSchema = z.object({ url: takeoverUrlSchema.optional() })
 
+// Pausing the capture of the screen recording (capturing: false) and resuming it (capturing: true),
+// for the moment a person types a credential on the screen they hold.
+export const desktopRecordingRequestSchema = z.object({ capturing: z.boolean() })
+
 // open: the window was left on the agent's screen. An engine that predates it closes the window and leaves it out.
 export const takeoverResultSchema = z.object({ url: z.string().nullable(), open: z.boolean().optional() })
 export type TakeoverResult = z.infer<typeof takeoverResultSchema>
+
+// One screen session of an agent: the workspace folder `screen/<id>` holding the screenshots of a
+// run's actions and the MP4 of the whole session. `endedAt` is null while it is still being written.
+// `recordings` lists the segment files when the capture was paused and resumed (recording.mp4,
+// recording-2.mp4, ...); an engine that predates it sends only the `recording` boolean.
+export const screenSessionSchema = z.object({
+    id: z.string(),
+    startedAt: z.string(),
+    endedAt: z.string().nullable(),
+    frames: z.number().int().nonnegative(),
+    recording: z.boolean(),
+    recordings: z.array(z.string()).optional(),
+})
+export type ScreenSession = z.infer<typeof screenSessionSchema>
+
+export const screenSessionsSchema = z.object({ sessions: z.array(screenSessionSchema) })
+export type ScreenSessions = z.infer<typeof screenSessionsSchema>
 
 // An app's request for a socket to one agent's screen. The ticket in the URL is spent after a minute:
 // a reconnect asks again.

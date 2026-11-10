@@ -121,6 +121,14 @@ export const skillProposals = sqliteTable('skill_proposals', {
     model: text('model'),
 })
 
+// The value lives in the agent's .env under `key`; this row only pins where it may be typed.
+export const screenSecrets = sqliteTable('screen_secrets', {
+    key: text('key').primaryKey(),
+    site: text('site').notNull(),
+    approvedAlways: integer('approved_always').notNull().default(0),
+    createdAt: text('created_at').notNull(),
+})
+
 export type AgentRow = typeof agents.$inferSelect
 export type SessionRow = typeof sessions.$inferSelect
 export type MessageRow = typeof messages.$inferSelect

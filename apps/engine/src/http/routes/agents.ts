@@ -3,6 +3,7 @@ import { rm, writeFile, readFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { Readable } from 'node:stream'
 import { createAgentSchema, duplicateAgentSchema, mcpTokenSchema, updateAgentKeysSchema, updateAgentMcpServersSchema } from '@rerun/contracts'
+import { dropScreenSecretMeta, listScreenSecretMeta, saveScreenSecretMeta } from '../../desktop/screen-secrets.js'
 import { clearToken, saveToken } from '../../tools/mcp-auth.js'
 import { probeMcpStatuses } from '../../tools/mcp-status.js'
 import { agentMcpSpawn } from '../../tools/mcp-pool.js'
@@ -200,18 +201,24 @@ agentRoutes.get('/:id/keys', async c => {
     const engineKeys = Object.keys(process.env)
         .filter(key => key.startsWith('RERUN_') && process.env[key])
         .sort()
-    return c.json({ keys: Object.keys(env).sort(), engineKeys })
+    return c.json({ keys: Object.keys(env).sort(), engineKeys, screen: await listScreenSecretMeta(id) })
 })
 
 agentRoutes.patch('/:id/keys', async c => {
     const id = c.req.param('id')
     if (!agentExists(id)) return c.json({ error: 'agent not found' }, 404)
-    const { set, remove } = updateAgentKeysSchema.parse(await c.req.json())
+    const { set, remove, screen } = updateAgentKeysSchema.parse(await c.req.json())
     const keys = await withAgentLock(id, async () => {
         const next = await readAgentEnv(id)
         for (const key of remove) delete next[key]
         for (const [key, value] of Object.entries(set)) next[key] = value
         await writeAgentEnv(id, next)
+        // Metadata rides along with a value, never ahead of one: a site labelling a key that holds
+        // nothing would let a later value inherit a scope nobody confirmed for it.
+        await dropScreenSecretMeta(id, remove)
+        for (const [key, meta] of Object.entries(screen)) {
+            if (key in next) await saveScreenSecretMeta(id, key, meta)
+        }
         await reloadAgent(id)
         return Object.keys(next).sort()
     })

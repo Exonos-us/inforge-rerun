@@ -180,4 +180,23 @@ describe('answerSecretRequestAction', () => {
         await expect(actions.answerSecretRequestAction('session-1', { API_KEY: 'secret' })).resolves.toEqual({ success: false, error: 'Session not found' })
         expect(engine.updateAgentKeys).not.toHaveBeenCalled()
     })
+
+    it('pins a screen secret to the site the request named, never one the caller sends', async () => {
+        const screenRequest = [{ id: 'm1', role: 'assistant', parts: [{ type: 'tool-request_secret', toolCallId: 'call-1', input: { secrets: [{ key: 'GH_PASSWORD', label: 'GitHub password', site: 'github.com' }, { key: 'API_KEY', label: 'API key' }] } }] }]
+        vi.mocked(engine.getSessionMessages).mockResolvedValue(screenRequest as never)
+
+        await expect(actions.answerSecretRequestAction('session-1', { GH_PASSWORD: 'v', API_KEY: 'k' }, ['GH_PASSWORD', 'API_KEY'])).resolves.toEqual({ success: true })
+        expect(engine.updateAgentKeys).toHaveBeenCalledWith(conn, 'engine-1', {
+            set: { GH_PASSWORD: 'v', API_KEY: 'k' },
+            screen: { GH_PASSWORD: { site: 'github.com', allowAlways: true } },
+        })
+    })
+
+    it('sends no screen metadata when the user skipped the site-labeled field', async () => {
+        const screenRequest = [{ id: 'm1', role: 'assistant', parts: [{ type: 'tool-request_secret', toolCallId: 'call-1', input: { secrets: [{ key: 'GH_PASSWORD', label: 'GitHub password', site: 'github.com' }, { key: 'API_KEY', label: 'API key' }] } }] }]
+        vi.mocked(engine.getSessionMessages).mockResolvedValue(screenRequest as never)
+
+        await expect(actions.answerSecretRequestAction('session-1', { API_KEY: 'k' })).resolves.toEqual({ success: true })
+        expect(engine.updateAgentKeys).toHaveBeenCalledWith(conn, 'engine-1', { set: { API_KEY: 'k' } })
+    })
 })

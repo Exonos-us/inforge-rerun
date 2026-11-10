@@ -3,11 +3,8 @@ import { behaviourOf, modelSeesImages } from '../agents/opencode.js'
 import type { Provider } from '@rerun/contracts'
 import type { ModelMessage } from 'ai'
 import { newId } from '../lib/ids.js'
+import { env } from '../config/env.js'
 
-// Dropped in one go rather than one per step: every eviction rewrites the prompt from that picture
-// on, and a provider's prefix cache only survives when that happens rarely.
-const MAX_KEPT = 6
-const KEPT_AFTER_EVICTION = 3
 
 export type StoredScreenshot = { image: Buffer; mediaType: string }
 
@@ -19,13 +16,16 @@ export type ScreenshotStore = {
 // A tool result is frozen into the conversation the moment it is produced, so a picture put there
 // would be stored, replayed and counted as text forever. The result only names its screenshot, the
 // pictures live here for the length of the run, and each model call gets the recent ones attached.
-export function createScreenshotStore(): ScreenshotStore {
+// Dropped in one go rather than one per step: every eviction rewrites the prompt from that picture
+// on, and a provider's prefix cache only survives when that happens rarely.
+export function createScreenshotStore(maxKept: number = env().RERUN_COMPUTER_SCREENSHOTS_IN_CONTEXT): ScreenshotStore {
+    const keptAfterEviction = Math.ceil(maxKept / 2)
     const kept = new Map<string, StoredScreenshot>()
     return {
         add: screenshot => {
             const id = newId()
             kept.set(id, screenshot)
-            if (kept.size > MAX_KEPT) for (const stale of [...kept.keys()].slice(0, kept.size - KEPT_AFTER_EVICTION)) kept.delete(stale)
+            if (kept.size > maxKept) for (const stale of [...kept.keys()].slice(0, kept.size - keptAfterEviction)) kept.delete(stale)
             return id
         },
         get: id => kept.get(id),

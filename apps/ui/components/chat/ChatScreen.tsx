@@ -47,6 +47,9 @@ function ScreenBlock({ agentId, site, takeover, scroller, floatingHost, arriveRe
     const { screen, onDisconnect } = useAgentScreen(agentId)
     const openDesktop = useDesktopStore(s => s.openDesktop)
     const driving = useDesktopStore(s => s.agentId === agentId)
+    // While the person holds the screen, the "You have the screen" notice floats where the mini
+    // screen would, and says more than the thumbnail.
+    const holding = useDesktopStore(s => s.holdingAgentId === agentId)
     const [canvas, setCanvas] = useState<HTMLCanvasElement | null>(null)
     const [card, setCard] = useState<HTMLDivElement | null>(null)
     const cardSeen = useSeenInThread(card, scroller)
@@ -77,7 +80,7 @@ function ScreenBlock({ agentId, site, takeover, scroller, floatingHost, arriveRe
             {floatingHost &&
                 createPortal(
                     <AnimatePresence>
-                        {!cardSeen && !driving && (
+                        {!cardSeen && !driving && !holding && (
                             <FloatingScreen key="mini" className="top-1" takeControlLabel={takeover ? 'Open browser' : 'Take control'} onTakeControl={takeControl}>
                                 <ScreenFace status={screen.status}>{canvas ? <ScreenMirror source={canvas} /> : <DesktopScreenLoader compact className="bg-muted/40" />}</ScreenFace>
                             </FloatingScreen>

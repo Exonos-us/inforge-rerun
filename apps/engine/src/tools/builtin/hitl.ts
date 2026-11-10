@@ -265,7 +265,7 @@ export function requestSecretTool(ctx: Pick<RunContext, 'turnOrder'>): ToolSet {
     return {
         request_secret: hitlTool(
             ctx.turnOrder,
-            'Ask the user for one or more credentials (API key, token, password) through a secure masked form, then END YOUR TURN. NEVER ask anyone to paste a secret into the chat: the conversation is stored and sent to the model, this form is not. Each value the user enters is written straight into your coworker variables on the engine and is NEVER shown to you: you only get back the names of the variables that were filled. Reference a filled variable as ${KEY} in an MCP server config (headers, url, env, args) or in a shell command; that placeholder is resolved at run time. Use suggest_service instead when the service exists in the Rerun catalog; use this tool for anything else that needs a key. Group every credential you need for the same setup into a single call.',
+            'Ask the user for one or more credentials (API key, token, password) through a secure masked form, then END YOUR TURN. NEVER ask anyone to paste a secret into the chat: the conversation is stored and sent to the model, this form is not. Each value the user enters is written straight into your coworker variables on the engine and is NEVER shown to you: you only get back the names of the variables that were filled. Reference a filled variable as ${KEY} in an MCP server config (headers, url, env, args) or in a shell command; that placeholder is resolved at run time. For a password to type on your own screen, set the item\'s site: the computer type_secret action then types it there, and only there.Use suggest_service instead when the service exists in the Rerun catalog; use this tool for anything else that needs a key. Group every credential you need for the same setup into a single call.',
             z.object({
                 secrets: jsonTolerantArray(
                     z
@@ -278,6 +278,7 @@ export function requestSecretTool(ctx: Pick<RunContext, 'turnOrder'>): ToolSet {
                                 label: z.string().min(1).describe('Short human label for the field, a few words (e.g. "Linear API key"). Not a sentence.'),
                                 help: nullTolerantOptional(z.string().max(300)).describe('Optional single short line telling the user where to find this value. Any longer explanation goes in your message.'),
                                 docsUrl: nullTolerantOptional(z.string().url()).describe('Optional link to the page where the user can create or copy this credential.'),
+                                site: nullTolerantOptional(z.string().min(1).max(200)).describe('Only for a password or code you will type on your own screen: the site it signs in to, as a domain (e.g. "github.com"). The engine will refuse to type it anywhere else. Leave it out for keys used in configs and commands.'),
                             }),
                         )
                         .min(1)

@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import type { Readable } from 'node:stream'
+import { reapOnExit } from '../lib/child-reaper.js'
 
 const XVFB_ARGS = ['-displayfd', '3', '-screen', '0', '1920x1080x24', '-nolisten', 'tcp']
 const START_TIMEOUT_MS = 5_000
@@ -11,8 +12,6 @@ type Slot = { xvfb: Promise<Xvfb | null>; uses: number; idleTimer: NodeJS.Timeou
 export type DisplayHold = { display: string | null; release: () => void }
 
 const slots = new Map<string, Slot>()
-const running = new Set<ChildProcess>()
-let exitHooked = false
 
 const NOTHING_TO_RELEASE = () => {}
 
@@ -57,12 +56,6 @@ function openSlot(agentId: string): Slot {
     return slot
 }
 
-function killRunningOnExit(): void {
-    if (exitHooked) return
-    exitHooked = true
-    process.once('exit', () => running.forEach(child => child.kill()))
-}
-
 function startXvfb(onGone: () => void): Promise<Xvfb | null> {
     return new Promise(resolve => {
         const child = spawn('Xvfb', XVFB_ARGS, { stdio: ['ignore', 'ignore', 'ignore', 'pipe'] })
@@ -74,7 +67,6 @@ function startXvfb(onGone: () => void): Promise<Xvfb | null> {
             resolve(value)
         }
         const gone = () => {
-            running.delete(child)
             onGone()
             settle(null)
         }
@@ -86,8 +78,7 @@ function startXvfb(onGone: () => void): Promise<Xvfb | null> {
         })
         child.once('error', gone)
         child.once('exit', gone)
-        running.add(child)
-        killRunningOnExit()
+        reapOnExit(child)
         child.unref()
     })
 }

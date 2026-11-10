@@ -76,6 +76,8 @@ async function freshModule() {
     return import('./session.js')
 }
 
+const up = { startedAt: expect.any(String), uptimeSeconds: expect.any(Number) }
+
 const killed = () => (state.children as FakeChild[]).map(child => child.killed)
 
 beforeEach(() => {
@@ -109,7 +111,7 @@ describe('desktop session', () => {
         expect(state.spawns.map(s => s.command)).toEqual(['openbox', 'x11vnc'])
         expect(state.spawns[1]!.args).toEqual(expect.arrayContaining(['-display', ':42', '-localhost', '-rfbport', '5942']))
         expect(state.spawns[0]!.env.DISPLAY).toBe(':42')
-        expect(session.runningDesktops()).toEqual([{ agentId: 'a1', viewers: 0, dock: false }])
+        expect(session.runningDesktops()).toEqual([{ agentId: 'a1', viewers: 0, dock: false, ...up }])
     })
 
     it('starts the screen processes without the engine configuration', async () => {
@@ -132,8 +134,8 @@ describe('desktop session', () => {
         expect(state.spawns.map(s => `${s.command} ${s.env.DISPLAY}`)).toEqual(['openbox :42', 'x11vnc :42', 'openbox :43', 'x11vnc :43'])
         session.viewerJoined('a2')
         expect(session.runningDesktops()).toEqual([
-            { agentId: 'a1', viewers: 0, dock: false },
-            { agentId: 'a2', viewers: 1, dock: false },
+            { agentId: 'a1', viewers: 0, dock: false, ...up },
+            { agentId: 'a2', viewers: 1, dock: false, ...up },
         ])
         expect(session.desktopViewerCount()).toBe(1)
     })
@@ -187,6 +189,40 @@ describe('desktop session', () => {
         expect(session.humanDriving('a1', 300_000 + 5_000)).toBe(false)
     })
 
+    it('keeps the agent off a screen a person explicitly holds, even without input, until it expires', async () => {
+        const session = await freshModule()
+        session.renewHumanHold('a1', 1_000_000)
+        expect(session.humanHolding('a1', 1_000_001)).toBe(true)
+        expect(session.humanDriving('a1', 1_000_001)).toBe(true)
+        expect(session.humanDriving('a1', 1_000_000 + 2 * 60_000 - 1)).toBe(true)
+        expect(session.humanHolding('a1', 1_000_000 + 2 * 60_000)).toBe(false)
+        expect(session.humanDriving('a1', 1_000_000 + 2 * 60_000)).toBe(false)
+        expect(session.humanHolding('a2', 1_000_001)).toBe(false)
+    })
+
+    it('renews a hold on every take and ends it on release', async () => {
+        const session = await freshModule()
+        session.renewHumanHold('a1', 1_000_000)
+        session.renewHumanHold('a1', 1_000_000 + 90_000)
+        expect(session.humanHolding('a1', 1_000_000 + 3 * 60_000)).toBe(true)
+        session.endHumanHold('a1', 1_000_000 + 95_000)
+        expect(session.humanHolding('a1', 1_000_000 + 95_001)).toBe(false)
+        session.endHumanHold('zz')
+    })
+
+    it('tells a run whether a person touched the screen since its previous action', async () => {
+        const session = await freshModule()
+        expect(session.humanTouchedSince('a1', 0)).toBe(false)
+        session.driverJoined('a1')
+        session.driverActed('a1', 500)
+        expect(session.humanTouchedSince('a1', 400)).toBe(true)
+        expect(session.humanTouchedSince('a1', 500)).toBe(false)
+        session.renewHumanHold('a2', 1_000)
+        session.endHumanHold('a2', 2_000)
+        expect(session.humanTouchedSince('a2', 1_500)).toBe(true)
+        expect(session.humanTouchedSince('a2', 2_000)).toBe(false)
+    })
+
     it('refuses to start where the agent has no display, and holds none', async () => {
         state.displays = { a1: null }
         const session = await freshModule()
@@ -218,7 +254,7 @@ describe('desktop session', () => {
         session.viewerJoined('a2')
         await vi.advanceTimersByTimeAsync(5 * 60_000)
         expect(killed()).toEqual([true, true, false, false])
-        expect(session.runningDesktops()).toEqual([{ agentId: 'a2', viewers: 1, dock: false }])
+        expect(session.runningDesktops()).toEqual([{ agentId: 'a2', viewers: 1, dock: false, ...up }])
     })
 
     it('stays up while a takeover holds it, watched or not', async () => {
@@ -275,7 +311,7 @@ describe('desktop session', () => {
             TZ: 'Europe/Paris',
         })
         expect(state.spawns[4]!.env.RERUN_API_KEY).toBe('engine-key')
-        expect(session.runningDesktops()).toEqual([{ agentId: 'a1', viewers: 0, dock: true }])
+        expect(session.runningDesktops()).toEqual([{ agentId: 'a1', viewers: 0, dock: true, ...up }])
     })
 
     it('stays up when the wallpaper is painted or the dock dies, and then says it has no dock', async () => {
@@ -285,7 +321,7 @@ describe('desktop session', () => {
         ;(state.children[0] as FakeChild).emit('exit', 0)
         ;(state.children[3] as FakeChild).emit('exit', 1)
         await vi.advanceTimersByTimeAsync(0)
-        expect(session.runningDesktops()).toEqual([{ agentId: 'a1', viewers: 0, dock: false }])
+        expect(session.runningDesktops()).toEqual([{ agentId: 'a1', viewers: 0, dock: false, ...up }])
         expect(killed()).toEqual([false, false, false, false, false])
         await session.stopDesktop('a1')
         expect(killed()).toEqual([false, true, true, true, true])
@@ -368,5 +404,55 @@ describe('desktop session', () => {
         await settled
         expect(state.spawns.map(s => s.command)).toEqual(['openbox', 'x11vnc'])
         expect(state.displayHolds).toBe(0)
+    })
+
+    it('refuses a screen past the box cap with a 503 that names the setting, and starts it once one stops', async () => {
+        vi.stubEnv('RERUN_DESKTOP_MAX_SCREENS', '1')
+        const session = await freshModule()
+        await session.ensureDesktop('a1')
+        await expect(session.ensureDesktop('a2')).rejects.toMatchObject({ status: 503, message: expect.stringContaining('RERUN_DESKTOP_MAX_SCREENS=1') })
+        expect(await session.ensureDesktop('a1')).toEqual({ display: ':42', vncPort: 5942 })
+        await session.stopDesktop('a1')
+        expect(await session.ensureDesktop('a2')).toEqual({ display: ':43', vncPort: 5943 })
+    })
+
+    it('reports how long each screen has been up', async () => {
+        const session = await freshModule()
+        const startedAt = Date.now()
+        await session.ensureDesktop('a1')
+        session.viewerJoined('a1')
+        await vi.advanceTimersByTimeAsync(90_000)
+        expect(session.runningDesktops()).toEqual([{ agentId: 'a1', viewers: 1, dock: false, startedAt: new Date(startedAt).toISOString(), uptimeSeconds: 90 }])
+    })
+
+    it('stops an unwatched screen after the idle minutes the box is configured with', async () => {
+        vi.stubEnv('RERUN_DESKTOP_IDLE_STOP_MINUTES', '1')
+        const session = await freshModule()
+        await session.ensureDesktop('a1')
+        await vi.advanceTimersByTimeAsync(59_000)
+        expect(killed()).toEqual([false, false])
+        await vi.advanceTimersByTimeAsync(1_000)
+        expect(killed()).toEqual([true, true])
+    })
+
+    it('closes an app opened on a screen that stopped meanwhile', async () => {
+        const session = await freshModule()
+        const app = fakeChild()
+        session.trackDesktopChild('a1', app as never)
+        expect(app.killed).toBe(true)
+    })
+
+    it('reaps with SIGKILL on engine exit a screen process still in the grace of its own stop', async () => {
+        const session = await freshModule()
+        const { reapLiveChildren } = await import('../lib/child-reaper.js')
+        await session.ensureDesktop('a1')
+        const app = fakeChild()
+        session.trackDesktopChild('a1', app as never)
+        await vi.advanceTimersByTimeAsync(0)
+        await session.stopDesktop('a1')
+        const [openbox, x11vnc] = state.children as FakeChild[]
+        expect(x11vnc!.signals).toEqual(['SIGTERM'])
+        reapLiveChildren()
+        for (const child of [openbox!, x11vnc!, app]) expect(child.signals.at(-1)).toBe('SIGKILL')
     })
 })

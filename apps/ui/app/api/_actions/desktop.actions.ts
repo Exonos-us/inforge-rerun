@@ -1,12 +1,13 @@
 'use server'
 
-import { desktopAppSchema, desktopViewModeSchema, takeoverUrlSchema, type DesktopApp, type DesktopViewMode, type TakeoverResult } from '@rerun/contracts'
+import { desktopAppSchema, desktopViewModeSchema, takeoverUrlSchema, type DesktopApp, type DesktopViewMode, type ScreenSession, type TakeoverResult } from '@rerun/contracts'
 
 import { assertAgentInWorkspace, deniedCode, type DeniedCode } from '@/app/api/_auth/access'
 import { requireWorkspaceContext } from '@/app/api/_auth/ownership'
 import { DesktopUnavailableError, desktopSocketUrl, resolveWorkspaceDesktop, type WorkspaceDesktop } from '@/app/api/_services/desktop.service'
+import { resolveRunTarget } from '@/app/api/_services/chat.service'
 import { NoEngineError } from '@/app/api/_services/workspace-engine.service'
-import { finishTakeover, openDesktopApp, startDesktop, startTakeover } from '@/lib/engine/client'
+import { finishTakeover, holdDesktop, listScreenSessions, openDesktopApp, releaseDesktopHold, setDesktopRecording, startDesktop, startTakeover } from '@/lib/engine/client'
 
 type Failure = { ok: false; error: string; code?: DeniedCode }
 
@@ -35,7 +36,8 @@ async function engineAgentId(agentId: string): Promise<string> {
 }
 
 // `dock` is true when the screen draws its own launcher, which an older machine does not.
-export type DesktopSocket = { ok: true; socketUrl: string; dock: boolean } | Failure
+// `recordingPaused` carries the capture state, so a view reopened mid-hold shows the right toggle.
+export type DesktopSocket = { ok: true; socketUrl: string; dock: boolean; recordingPaused: boolean } | Failure
 
 // Also what a reconnect calls: the ticket in the URL is spent after a minute. The agent keeps its
 // hands off a screen while someone clicks or types in it, so a view that only watches says so.
@@ -43,8 +45,8 @@ export async function openDesktopAction(agentId: string, mode: DesktopViewMode, 
     try {
         const [desktop, engineId] = await Promise.all([memberDesktop(), engineAgentId(agentId)])
         const { screens } = await startDesktop(desktop.conn, engineId, timeZone)
-        const dock = screens.find(screen => screen.agentId === engineId)?.dock ?? false
-        return { ok: true, socketUrl: desktopSocketUrl(desktop, engineId, desktopViewModeSchema.parse(mode)), dock }
+        const screen = screens.find(entry => entry.agentId === engineId)
+        return { ok: true, socketUrl: desktopSocketUrl(desktop, engineId, desktopViewModeSchema.parse(mode)), dock: screen?.dock ?? false, recordingPaused: screen?.recordingPaused ?? false }
     } catch (err) {
         return failure(err)
     }
@@ -67,6 +69,51 @@ export async function startTakeoverAction(agentId: string, url?: string): Promis
         return { ok: true }
     } catch (err) {
         return failure(err)
+    }
+}
+
+// The explicit "Take over" on a coworker's screen. Calling it again renews the hold: the engine
+// expires one the app stops renewing, so a closed tab never leaves the coworker waiting.
+export async function holdScreenAction(agentId: string): Promise<{ ok: true } | Failure> {
+    try {
+        const [desktop, engineId] = await Promise.all([memberDesktop(), engineAgentId(agentId)])
+        await holdDesktop(desktop.conn, engineId)
+        return { ok: true }
+    } catch (err) {
+        return failure(err)
+    }
+}
+
+export async function releaseScreenHoldAction(agentId: string): Promise<{ ok: true } | Failure> {
+    try {
+        const [desktop, engineId] = await Promise.all([memberDesktop(), engineAgentId(agentId)])
+        await releaseDesktopHold(desktop.conn, engineId)
+        return { ok: true }
+    } catch (err) {
+        return failure(err)
+    }
+}
+
+// Pauses or resumes the capture of the running screen session, while the person types a credential.
+export async function setRecordingCaptureAction(agentId: string, capturing: boolean): Promise<{ ok: true } | Failure> {
+    try {
+        const [desktop, engineId] = await Promise.all([memberDesktop(), engineAgentId(agentId)])
+        await setDesktopRecording(desktop.conn, engineId, capturing)
+        return { ok: true }
+    } catch (err) {
+        return failure(err)
+    }
+}
+
+// The evidence a coworker's screen work left in its workspace. Reads like the files routes do, so it
+// needs no running desktop; a coworker without any answers an empty list.
+export async function listScreenSessionsAction(agentId: string): Promise<ScreenSession[]> {
+    try {
+        const target = await resolveRunTarget(agentId)
+        return await listScreenSessions(target.conn, target.engineAgentId)
+    } catch (err) {
+        console.error('[desktop] screen sessions', err)
+        return []
     }
 }
 

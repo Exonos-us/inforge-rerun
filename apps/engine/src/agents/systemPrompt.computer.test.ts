@@ -96,6 +96,15 @@ describe('computer section', () => {
         expect(section).not.toContain('paid_data')
     })
 
+    it('explains the zoomed coordinate frame to the generic dialect, never to the Anthropic-native toolset', async () => {
+        const generic = await buildSystemPrompt(agentWith({ computer: true }), { source: 'chat' })
+        expect(generic).toContain('zoom into that region: screenshots and coordinates then refer to the zoomed view')
+        const anthropic = { ...agentWith({ computer: true }), resolved: { connection: null, provider: 'anthropic', model: 'claude-opus-5-5' } }
+        const native = await buildSystemPrompt(anthropic, { source: 'chat' }, 'anthropic')
+        expect(native).toContain('zoom into that region first')
+        expect(native).not.toContain('refer to the zoomed view')
+    })
+
     it('tells codex alone to open each screenshot with its own image reader', async () => {
         expect(await buildSystemPrompt(agentWith({ computer: true }), { source: 'chat' }, 'codex')).toContain('view_image')
         expect(await buildSystemPrompt(agentWith({ computer: true }), { source: 'chat' }, 'claude')).not.toContain('view_image')

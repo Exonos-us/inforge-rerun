@@ -13,12 +13,13 @@ type DesktopDialogProps = {
     children: ReactNode
 }
 
-// Where the screen of an agent is driven, as large as the window allows.
+// Where the screen of an agent is used, full-bleed: the whole window from tablet width up, and the
+// bottom sheet grown to its full height on a phone.
 export function DesktopDialog({ open, onOpenChange, title, description, children }: DesktopDialogProps) {
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <PanelDialogContent
-                className="sm:h-[calc(100dvh-6rem)] sm:max-w-[calc(100vw-6rem)]"
+                className="max-sm:h-[calc(96dvh-var(--consent-inset))] sm:h-dvh sm:max-h-dvh sm:max-w-full sm:rounded-none"
                 showCloseButton={false}
                 // Escape belongs to the machine on the screen: it closes a menu there, not this dialog.
                 onEscapeKeyDown={event => event.preventDefault()}

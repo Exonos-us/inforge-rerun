@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { ENGINE_CAPABILITY_ARTIFACT_UPDATE, ENGINE_CAPABILITY_CUSTOM, ENGINE_CAPABILITY_OPENCODE, ENGINE_CAPABILITY_DESKTOP, ENGINE_CAPABILITY_FILES_STREAM, ENGINE_CAPABILITY_FOREMAN_FILES, ENGINE_CAPABILITY_SCHEDULE_RENAME } from '@rerun/contracts'
+import { ENGINE_CAPABILITY_ARTIFACT_UPDATE, ENGINE_CAPABILITY_COMPUTER, ENGINE_CAPABILITY_COMPUTER_RECORDING, ENGINE_CAPABILITY_CUSTOM, ENGINE_CAPABILITY_OPENCODE, ENGINE_CAPABILITY_DESKTOP, ENGINE_CAPABILITY_DESKTOP_HOLD, ENGINE_CAPABILITY_FILES_STREAM, ENGINE_CAPABILITY_FOREMAN_FILES, ENGINE_CAPABILITY_SCHEDULE_RENAME } from '@rerun/contracts'
 import { activeAgentCount } from '../../agents/registry.js'
 import { activeRunCount, sessionClaimCount } from '../../runtime/run-control.js'
 import { buildCommit, processStartedAt } from '../../runtime/build-info.js'
@@ -7,7 +7,8 @@ import { detectLayout } from '../../runtime/layout.js'
 import { readLastUpdate } from '../../runtime/last-update.js'
 import { DATA_DIR_VERSION } from '../../datadir/migrations.js'
 import { readDataVersion } from '../../datadir/version.js'
-import { desktopAvailable, desktopViewerCount } from '../../desktop/session.js'
+import { recordingAvailable } from '../../desktop/recording.js'
+import { computerAvailable, desktopAvailable, desktopViewerCount } from '../../desktop/session.js'
 
 export const healthRoutes = new Hono()
 
@@ -28,7 +29,9 @@ healthRoutes.get('/health', c =>
             ENGINE_CAPABILITY_ARTIFACT_UPDATE,
             ENGINE_CAPABILITY_OPENCODE,
             ENGINE_CAPABILITY_CUSTOM,
-            ...(desktopAvailable() ? [ENGINE_CAPABILITY_DESKTOP] : []),
+            ...(desktopAvailable() ? [ENGINE_CAPABILITY_DESKTOP, ENGINE_CAPABILITY_DESKTOP_HOLD] : []),
+            ...(computerAvailable() ? [ENGINE_CAPABILITY_COMPUTER] : []),
+            ...(computerAvailable() && recordingAvailable() ? [ENGINE_CAPABILITY_COMPUTER_RECORDING] : []),
         ],
         commit: buildCommit(),
         startedAt: processStartedAt(),
@@ -36,5 +39,5 @@ healthRoutes.get('/health', c =>
         lastUpdate: readLastUpdate(),
         dataVersion: readDataVersion(),
         dataVersionTarget: DATA_DIR_VERSION,
-    }),
+    })
 )

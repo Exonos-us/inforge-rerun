@@ -1,4 +1,7 @@
 .git
+# The private Rerun Cloud checkout: git-ignored, never part of the open source image. Inside the
+# build its postinstall would try to wire a workspace that has no git and no credentials, and hang.
+cloud
 node_modules
 **/node_modules
 .next
@@ -8,6 +11,7 @@ node_modules
 dist
 **/dist
 *.tsbuildinfo
+**/*.tsbuildinfo
 *.log
 .DS_Store
 .env
