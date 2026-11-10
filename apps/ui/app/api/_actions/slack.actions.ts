@@ -14,7 +14,8 @@ import {
     type SlackConnection,
 } from '@/app/api/_services/slack.service'
 import { getAppOrigin } from '@/lib/app-origin'
-import { createAppUrl, createChannel, postMessage, type SlackChannel } from '@/lib/slack/api'
+import { createChannel, postMessage, type SlackChannel } from '@/lib/slack/api'
+import { createAppUrl } from '@/lib/slack/manifest'
 import { selectMaybeSingle } from '@/supabase/supabase-helpers'
 
 import type { ActionResult } from './space.actions'

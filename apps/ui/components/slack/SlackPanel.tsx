@@ -10,6 +10,7 @@ import { PanelRow } from '@/components/ui/panel-row'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
+import { createAppUrl, isReachableFromSlack } from '@/lib/slack/manifest'
 import { useIsWorkspaceAdmin } from '@/supabase/session/SessionProvider'
 import { CheckIcon, ExternalLinkIcon, PlusIcon, Trash2Icon } from '@/lib/icons'
 import { useCallback, useEffect, useState } from 'react'
@@ -67,6 +68,9 @@ function LoadingRows() {
 function ConnectSteps({ state, busy, setBusy, reload, isAdmin }: { state: SlackStateView; busy: Busy; setBusy: (b: Busy) => void; reload: () => Promise<void>; isAdmin: boolean }) {
     const [token, setToken] = useState('')
     const [secret, setSecret] = useState('')
+    // Where this app is served is not always where Slack can reach it: a local install is read on
+    // localhost and called through a tunnel.
+    const [requestUrl, setRequestUrl] = useState(state.requestUrl)
 
     const connect = async () => {
         setBusy('connect')
@@ -80,21 +84,31 @@ function ConnectSteps({ state, busy, setBusy, reload, isAdmin }: { state: SlackS
         await reload()
     }
 
+    const reachable = isReachableFromSlack(requestUrl)
+
     return (
         <>
             <p className="text-sm text-muted-foreground">
                 Your workspace creates its own Slack app, so the bot token stays here and Rerun never holds it. Two steps, about four minutes.
             </p>
 
-            <Step n={1} title="Create the app in Slack" description="Opens Slack with the scopes, the events and this server's address already filled in. Press Create, then Install to workspace.">
-                <Button asChild size="sm" className="gap-1.5">
-                    <a href={state.createAppUrl} target="_blank" rel="noreferrer noopener">
+            <Step n={1} title="Create the app in Slack" description="Opens Slack with the scopes, the events and your address already filled in. Press Create, then Install to workspace.">
+                <Field
+                    label="Where Slack sends its messages"
+                    htmlFor="slack-request-url"
+                    helperText={
+                        reachable
+                            ? 'Slack calls this address every time someone writes to a coworker.'
+                            : 'Slack cannot reach localhost. Put a public address here — a tunnel (ngrok, cloudflared) or your own domain — and keep using Rerun on localhost.'
+                    }
+                >
+                    <Input id="slack-request-url" value={requestUrl} onChange={e => setRequestUrl(e.target.value)} spellCheck={false} autoComplete="off" />
+                </Field>
+                <Button asChild size="sm" className="gap-1.5 self-start" disabled={!reachable}>
+                    <a href={createAppUrl(requestUrl)} target="_blank" rel="noreferrer noopener">
                         Create the Slack app <ExternalLinkIcon className="size-3.5" />
                     </a>
                 </Button>
-                <p className="text-xs text-muted-foreground">
-                    Slack will call <code className="rounded bg-muted px-1 py-0.5 text-[11px]">{state.requestUrl}</code> — it has to be reachable from the internet.
-                </p>
             </Step>
 
             <Step n={2} title="Paste its two secrets" description="Bot User OAuth Token from OAuth & Permissions, Signing Secret from Basic Information.">
