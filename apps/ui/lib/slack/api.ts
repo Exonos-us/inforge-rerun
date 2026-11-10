@@ -17,7 +17,7 @@ export class SlackApiError extends Error {
 // read: users.info, users.conversations and conversations.info answer `ok: true` with nothing in
 // it when handed JSON, having quietly ignored every argument. Two shapes, one per family, rather
 // than one that looks right and returns empty.
-const FORM_ENCODED = new Set(['auth.test', 'users.info', 'users.conversations', 'conversations.info', 'conversations.list'])
+const FORM_ENCODED = new Set(['auth.test', 'users.info', 'users.conversations', 'conversations.info', 'conversations.list', 'files.getUploadURLExternal'])
 
 async function call<T>(token: string, method: string, payload: Record<string, unknown>): Promise<T> {
     const form = FORM_ENCODED.has(method)
@@ -90,6 +90,25 @@ export type SlackChannel = { id: string; name: string; is_private?: boolean; is_
 export async function listChannels(token: string): Promise<SlackChannel[]> {
     const data = await call<{ channels: SlackChannel[] }>(token, 'users.conversations', { types: 'public_channel,private_channel', exclude_archived: true, limit: 200 })
     return data.channels ?? []
+}
+
+// Slack takes a file in three steps: ask for a URL, PUT the bytes there, then say where it goes.
+// The last call is what shares it, so a file uploaded without `channel_id` stays invisible.
+export async function uploadFile(
+    token: string,
+    params: { channel: string; threadTs?: string; filename: string; bytes: Uint8Array; title?: string; comment?: string },
+): Promise<void> {
+    const ticket = await call<{ upload_url: string; file_id: string }>(token, 'files.getUploadURLExternal', { filename: params.filename, length: params.bytes.byteLength })
+
+    const upload = await fetch(ticket.upload_url, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: params.bytes as BodyInit })
+    if (!upload.ok) throw new SlackApiError('files.upload', `http_${upload.status}`)
+
+    await call(token, 'files.completeUploadExternal', {
+        files: [{ id: ticket.file_id, title: params.title ?? params.filename }],
+        channel_id: params.channel,
+        ...(params.threadTs ? { thread_ts: params.threadTs } : {}),
+        ...(params.comment ? { initial_comment: params.comment } : {}),
+    })
 }
 
 export async function userName(token: string, userId: string): Promise<string> {

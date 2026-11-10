@@ -3,8 +3,9 @@ import 'server-only'
 import type { Database } from '@/app/api/database.types'
 import { ensureSessionRow } from '@/app/api/_services/chat.service'
 import { getWorkspaceConnection } from '@/app/api/_services/workspace-engine.service'
-import { chat, getRun, getRunTools } from '@/lib/engine/client'
-import { authTest, fitMessage, installedScopes, listChannels, postMessage, toMrkdwn, updateMessage, userName, type SlackIdentity } from '@/lib/slack/api'
+import { chat, getRun, getRunTools, listFiles, readFileBytes } from '@/lib/engine/client'
+import { authTest, fitMessage, installedScopes, listChannels, postMessage, toMrkdwn, updateMessage, uploadFile, userName, type SlackIdentity } from '@/lib/slack/api'
+import { attachmentComment, filesWorthPosting, type WorkspaceFile } from '@/lib/slack/attachments'
 import { createServiceRoleClient } from '@/supabase/serviceRole'
 import { selectMany, selectManyWithJoins, selectMaybeSingle } from '@/supabase/supabase-helpers'
 
@@ -281,6 +282,68 @@ async function waitForAnswer(params: { conn: Awaited<ReturnType<typeof getWorksp
     }
 }
 
+// What the coworker wrote while it was answering. Walked rather than watched: the engine has no
+// "files changed in this run", and one shallow pass over the workspace costs less than teaching
+// it one. Two levels deep is where a coworker puts a deliverable; anything buried further was
+// not meant for a chat.
+const WALK_DEPTH = 2
+const WALK_MAX_LISTINGS = 12
+
+async function filesWrittenDuring(conn: Awaited<ReturnType<typeof getWorkspaceConnection>>, engineAgentId: string, since: Date): Promise<WorkspaceFile[]> {
+    const base = `/agents/${encodeURIComponent(engineAgentId)}/files`
+    const found: WorkspaceFile[] = []
+    let folders = ['']
+    let listings = 0
+
+    for (let depth = 0; depth < WALK_DEPTH && folders.length > 0 && listings < WALK_MAX_LISTINGS; depth++) {
+        const batch = folders.slice(0, WALK_MAX_LISTINGS - listings)
+        listings += batch.length
+        const listed = await Promise.all(
+            batch.map(async folder => ({ folder, entries: await listFiles(conn, base, folder || '.').catch(() => []) })),
+        )
+        const next: string[] = []
+        for (const { folder, entries } of listed) {
+            for (const entry of entries) {
+                if (entry.name.startsWith('.')) continue
+                const path = folder ? `${folder}/${entry.name}` : entry.name
+                if (entry.type === 'dir') next.push(path)
+                else found.push({ path, name: entry.name, size: entry.size, modifiedAt: entry.modifiedAt ?? null })
+            }
+        }
+        folders = next
+    }
+
+    return filesWorthPosting(found, since)
+}
+
+// Posting is best-effort on purpose: the answer is already in the channel, and an install without
+// files:write (or a file that vanished between the walk and the read) must not turn a finished
+// run into an error in the thread.
+async function postAttachments(params: {
+    token: string
+    conn: Awaited<ReturnType<typeof getWorkspaceConnection>>
+    engineAgentId: string
+    channel: string
+    threadTs: string
+    since: Date
+}): Promise<number> {
+    const files = await filesWrittenDuring(params.conn, params.engineAgentId, params.since).catch(() => [] as WorkspaceFile[])
+    let posted = 0
+    for (const file of files) {
+        try {
+            const bytes = await readFileBytes(params.conn, `/agents/${encodeURIComponent(params.engineAgentId)}/files`, file.path)
+            await uploadFile(params.token, { channel: params.channel, threadTs: params.threadTs, filename: file.name, bytes, comment: attachmentComment(file) })
+            posted += 1
+        } catch (err) {
+            const why = err instanceof Error ? err.message : String(err)
+            console.warn(`[slack] could not post ${file.path}: ${why}`)
+            // A missing scope fails every file the same way, so stop rather than retry five times.
+            if (why.includes('missing_scope') || why.includes('not_allowed_token_type')) break
+        }
+    }
+    return posted
+}
+
 export async function handleSlackMessage(connection: SlackConnection, event: SlackMessageEvent, eventId: string): Promise<void> {
     const channelId = event.channel
     const text = event.text ?? ''
@@ -315,6 +378,7 @@ export async function handleSlackMessage(connection: SlackConnection, event: Sla
 
     const placeholder = await postMessage(token, { channel: channelId, threadTs, text: '_on it…_', identity })
 
+    const runStartedAt = new Date()
     try {
         const conn = await getWorkspaceConnection(connection.workspace_id)
         const author = { id: event.user ?? 'slack', name: event.user ? await userName(token, event.user).catch(() => 'a Slack teammate') : 'a Slack teammate' }
@@ -338,6 +402,11 @@ export async function handleSlackMessage(connection: SlackConnection, event: Sla
             onPulse: pulse => updateMessage(token, { channel: channelId, ts: placeholder.ts, text: pulse, identity }).catch(() => {}),
         })
         await updateMessage(token, { channel: channelId, ts: placeholder.ts, text: fitMessage(toMrkdwn(answer)), identity })
+
+        // Whatever it made while answering goes in under its own answer: a report, a sheet, a
+        // screen recording. Described in the text, handed over as a file.
+        const posted = await postAttachments({ token, conn, engineAgentId: binding.engineAgentId, channel: channelId, threadTs, since: runStartedAt })
+        if (posted) console.info(`[slack] ${binding.name} posted ${posted} file(s) to ${channelId}`)
     } catch (err) {
         const why = err instanceof Error ? err.message : String(err)
         console.error(`[slack] ${binding.name} could not answer:`, why)

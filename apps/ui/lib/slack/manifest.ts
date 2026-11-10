@@ -22,6 +22,8 @@ export function appManifest(requestUrl: string, name = 'Rerun'): Record<string, 
                     'chat:write',
                     // What lets each coworker answer under its own name and avatar.
                     'chat:write.customize',
+                    // Posting what a coworker made: a report, a sheet, a screen recording.
+                    'files:write',
                     'users:read',
                 ],
             },
