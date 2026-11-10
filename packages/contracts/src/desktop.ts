@@ -29,6 +29,7 @@ export const desktopStatusSchema = z.object({
     // `agentDriving` says a run of the agent has its hands on the screen.
     // `humanHolding` says a person explicitly took the screen; `recordingPaused` that they paused
     // its capture. Both default so an older engine reads as "nobody holds, nothing paused".
+    // `startedAt` / `uptimeSeconds` say how long the screen has been up; absent from older engines.
     screens: z.array(
         z.object({
             agentId: z.string(),
@@ -38,6 +39,8 @@ export const desktopStatusSchema = z.object({
             agentDriving: z.boolean().default(false),
             humanHolding: z.boolean().default(false),
             recordingPaused: z.boolean().default(false),
+            startedAt: z.string().optional(),
+            uptimeSeconds: z.number().optional(),
         })
     ),
 })

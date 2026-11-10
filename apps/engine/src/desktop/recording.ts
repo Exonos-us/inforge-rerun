@@ -2,7 +2,9 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import type { Dirent } from 'node:fs'
 import { mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { env } from '../config/env.js'
 import { workspaceDir } from '../config/paths.js'
+import { reapOnExit } from '../lib/child-reaper.js'
 import { logger } from '../lib/logger.js'
 import { newId } from '../lib/ids.js'
 import { controlScreen } from './control.js'
@@ -21,8 +23,6 @@ const KEYFRAME_EVERY_FRAMES = String(2 * RECORDING_FRAMERATE)
 // ffmpeg finalizes on SIGINT; one that wedges mid-write is killed, and the fragmented MP4 it leaves
 // behind still plays.
 const STOP_GRACE_MS = 2_000
-const MAX_RECORDING_MS = 15 * 60_000
-const KEPT_SESSIONS = 20
 
 type ScreenSession = {
     id: string
@@ -45,11 +45,8 @@ export type ScreenSessionHold = { id: string; saveFrame: (image: Buffer) => Prom
 export type ScreenSessionInfo = { id: string; startedAt: string; endedAt: string | null; frames: number; recording: boolean; recordings?: string[] }
 
 const sessions = new Map<string, ScreenSession>()
-// Read synchronously by the exit hook, where nothing can be awaited.
-const liveRecorders = new Set<ChildProcess>()
-let exitHooked = false
 
-export const recordingAvailable = (): boolean => onPath(RECORDING_BINARY)
+export const recordingAvailable = (): boolean => env().RERUN_COMPUTER_RECORDING === 'on' && onPath(RECORDING_BINARY)
 
 // Sortable and parseable back into a start time, so the listing needs no database.
 function sessionStamp(now = new Date()): string {
@@ -80,12 +77,6 @@ function sessionDir(agentId: string, session: ScreenSession): Promise<string> {
     return session.dirReady
 }
 
-function killRecordersOnExit(): void {
-    if (exitHooked) return
-    exitHooked = true
-    process.once('exit', () => liveRecorders.forEach(child => child.kill('SIGKILL')))
-}
-
 async function launchRecorder(agentId: string, session: ScreenSession): Promise<ChildProcess | null> {
     try {
         const control = await controlScreen(agentId)
@@ -113,10 +104,8 @@ async function launchRecorder(agentId: string, session: ScreenSession): Promise<
         ]
         const child = spawn(RECORDING_BINARY, args, { stdio: 'ignore', env: control.env })
         child.once('error', err => logger.warn({ err: String(err), agentId }, 'screen recording failed'))
-        child.once('exit', () => liveRecorders.delete(child))
-        liveRecorders.add(child)
-        killRecordersOnExit()
-        session.capTimer = setTimeout(() => void stopRecorder(session), MAX_RECORDING_MS)
+        reapOnExit(child)
+        session.capTimer = setTimeout(() => void stopRecorder(session), env().RERUN_COMPUTER_RECORDING_MAX_MINUTES * 60_000)
         session.capTimer.unref()
         return child
     } catch (err) {
@@ -147,12 +136,13 @@ async function pruneSessions(agentId: string): Promise<void> {
     const root = screenRoot(agentId)
     const entries = await readdir(root, { withFileTypes: true }).catch((): Dirent[] => [])
     const live = sessions.get(agentId)?.id
+    const kept = env().RERUN_COMPUTER_SESSIONS_KEPT
     const stale = entries
         .filter(entry => entry.isDirectory() && entry.name !== live)
         .map(entry => entry.name)
         .sort()
         .reverse()
-        .slice(live ? KEPT_SESSIONS - 1 : KEPT_SESSIONS)
+        .slice(live ? kept - 1 : kept)
     await Promise.all(stale.map(name => rm(resolve(root, name), { recursive: true, force: true }).catch(() => {})))
 }
 

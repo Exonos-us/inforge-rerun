@@ -69,10 +69,10 @@ export async function installBrowser(layout: Layout): Promise<void> {
     run(install.command, install.args, { cwd: install.cwd })
 }
 
-const DESKTOP_PACKAGES = ['openbox', 'x11vnc', 'xdotool', 'thunar', 'xfce4-terminal', 'adwaita-icon-theme', 'tint2', 'hsetroot', 'curl', 'maim']
+const DESKTOP_PACKAGES = ['openbox', 'x11vnc', 'xdotool', 'thunar', 'xfce4-terminal', 'adwaita-icon-theme', 'tint2', 'hsetroot', 'curl', 'maim', 'ffmpeg']
 
-// The dock, the wallpaper and the screen capture are checked too, so a box that got its desktop before they existed installs them.
-const desktopInstalled = (): boolean => ['openbox', 'x11vnc', 'xdotool', 'tint2', 'hsetroot', 'maim'].every(hasCommand)
+// The dock, the wallpaper, the screen capture and the recorder are checked too, so a box that got its desktop before they existed installs them.
+const desktopInstalled = (): boolean => ['openbox', 'x11vnc', 'xdotool', 'tint2', 'hsetroot', 'maim', 'ffmpeg'].every(hasCommand)
 
 const desktopInstallable = (): boolean => process.platform === 'linux' && hasCommand('apt-get')
 

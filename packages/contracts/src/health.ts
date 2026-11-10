@@ -38,6 +38,12 @@ export const ENGINE_CAPABILITY_DESKTOP = 'desktop'
 // pause its recording, so the app can offer "Take over" / "I'm done".
 export const ENGINE_CAPABILITY_DESKTOP_HOLD = 'desktop.hold'
 
+// The box can capture its screens (maim), so its agents get the `computer` tools.
+export const ENGINE_CAPABILITY_COMPUTER = 'computer'
+
+// The box records its screen sessions to MP4 (ffmpeg, and RERUN_COMPUTER_RECORDING not `off`).
+export const ENGINE_CAPABILITY_COMPUTER_RECORDING = 'computer.recording'
+
 // A schedule's PATCH takes a new `name` and writes it into the schedule's own file, its slug unchanged.
 export const ENGINE_CAPABILITY_SCHEDULE_RENAME = 'schedules.rename'
 

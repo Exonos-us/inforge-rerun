@@ -142,7 +142,7 @@ const { lastUpdatePath } = await import('../../config/paths.js')
 
 const INSTALL_BROWSER = `${process.execPath} ${resolve(import.meta.dirname, '../bin.js')} install-browser`
 const INSTALL_DESKTOP = `${process.execPath} ${resolve(import.meta.dirname, '../bin.js')} install-desktop`
-const DESKTOP_APT = 'env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends openbox x11vnc xdotool thunar xfce4-terminal adwaita-icon-theme tint2 hsetroot curl maim'
+const DESKTOP_APT = 'env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends openbox x11vnc xdotool thunar xfce4-terminal adwaita-icon-theme tint2 hsetroot curl maim ffmpeg'
 const UPDATE_CLI_TOOLS = `${process.execPath} ${resolve(import.meta.dirname, '../bin.js')} update-cli-tools`
 const CODEX = `@openai/codex@${CODEX_VERSION}`
 const CODEX_VERSION_CHECK = '/usr/bin/codex --version'
@@ -627,7 +627,7 @@ describe('installDesktop', () => {
     it('leaves a box that already has the desktop alone', () => {
         onLinux()
         installDesktop()
-        expect(state.calls).toEqual(['command -v apt-get', 'command -v openbox', 'command -v x11vnc', 'command -v xdotool', 'command -v tint2', 'command -v hsetroot', 'command -v maim'])
+        expect(state.calls).toEqual(['command -v apt-get', 'command -v openbox', 'command -v x11vnc', 'command -v xdotool', 'command -v tint2', 'command -v hsetroot', 'command -v maim', 'command -v ffmpeg'])
         expect(out).toContain('desktop already installed')
     })
 

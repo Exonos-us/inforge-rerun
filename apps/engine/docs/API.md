@@ -28,8 +28,13 @@ No auth. Liveness, number of agents currently loaded in memory, and the data-dir
 ladder: the version the folder is at against the one this build takes it to.
 
 ```json
-{ "status": "ok", "activeAgents": 2, "commit": "e70322d", "dataVersion": 1, "dataVersionTarget": 1 }
+{ "status": "ok", "activeAgents": 2, "commit": "e70322d", "dataVersion": 1, "dataVersionTarget": 1, "capabilities": ["files.stream", "desktop", "desktop.hold", "computer", "computer.recording"] }
 ```
+
+`capabilities` lists what this build and box can do. For the agents' screens: `desktop` and
+`desktop.hold` (the screens can be watched, driven and held), `computer` (`maim` is installed, so
+agents get the `computer` tools), `computer.recording` (`ffmpeg` is installed and
+`RERUN_COMPUTER_RECORDING` is not `off`).
 
 ### `GET /doctor`
 
@@ -54,9 +59,12 @@ readable. Nothing is migrated. `agentIds` is the engine's agent index.
 A screen per agent, for a person to watch and drive. Present when `/health` lists the `desktop`
 capability, which means `openbox`, `x11vnc` and `xdotool` are installed. Every agent has its own
 Xvfb display, so what one agent has open never shows on another's screen. Nothing runs until a
-session is asked for, and an agent's window manager and VNC server stop five minutes after its last
-viewer left, unless a takeover is still open. The screens are separate, the files are not: every
-app runs as the engine's user.
+session is asked for, and an agent's window manager and VNC server stop five minutes
+(`RERUN_DESKTOP_IDLE_STOP_MINUTES`) after its last viewer left, unless a takeover, a hold or a run
+still has it. The screens are separate, the files are not: every app runs as the engine's user.
+At most `RERUN_DESKTOP_MAX_SCREENS` (20) screens run at once: starting one more, from any route
+or from the `computer` tools, answers 503 with a message naming the variable. The other limits of
+the screens are in the Configuration table of the README.
 
 Where `tint2` and `hsetroot` are installed too, the screen is a small computer: a wallpaper, a top
 bar with the agent's name and the time, and a dock that opens the browser, the files and the
@@ -65,12 +73,14 @@ terminal. A screen reports it as `dock: true`; without it the caller draws its o
 ### `GET /desktop`
 
 ```json
-{ "available": true, "screens": [{ "agentId": "researcher", "viewers": 1, "takeover": false, "dock": true, "agentDriving": false, "humanHolding": false, "recordingPaused": false }] }
+{ "available": true, "screens": [{ "agentId": "researcher", "viewers": 1, "takeover": false, "dock": true, "agentDriving": false, "humanHolding": false, "recordingPaused": false, "startedAt": "2026-11-10T09:12:03.000Z", "uptimeSeconds": 412 }] }
 ```
 
 `screens` lists the desktops that are running. `agentDriving` is true while a run of the agent has its
 hands on the screen through the `computer` tools. `humanHolding` is true while a person has the
 explicit hold below; `recordingPaused` while they paused the capture of the running screen session.
+`startedAt` and `uptimeSeconds` say since when the screen has been up (absent from engines older than
+this field).
 
 ### `POST /agents/:id/desktop/session`
 
@@ -129,10 +139,11 @@ Closes that browser and returns the page it was on.
 The screen sessions an agent's workspace still holds, newest first. A session is one stretch of
 screen use — a run driving the `computer` tools, a takeover, or both sharing the screen — kept as a
 `screen/<session id>/` folder in the agent's workspace: the screenshot of every action as `NNN.jpg`,
-and `recording.mp4` when `ffmpeg` is installed and the agent's `tools.computerRecording` flag is on
-(the default). The list is derived from the filesystem; the files themselves are served by the
+and `recording.mp4` when `ffmpeg` is installed, the box does not set `RERUN_COMPUTER_RECORDING=off`
+and the agent's `tools.computerRecording` flag is on (the default). A recording stops after
+`RERUN_COMPUTER_RECORDING_MAX_MINUTES` (15). The list is derived from the filesystem; the files themselves are served by the
 agent's files routes (`GET /agents/:id/files/raw?path=screen/<session id>/recording.mp4`). At most
-the 20 most recent sessions are kept, pruned when a session ends. `endedAt` is null while the
+the 20 most recent sessions (`RERUN_COMPUTER_SESSIONS_KEPT`) are kept, pruned when a session ends. `endedAt` is null while the
 session is still being written. `recordings` lists the segment files of a capture that was paused
 and resumed, in order; it is absent when the session has no recording.
 

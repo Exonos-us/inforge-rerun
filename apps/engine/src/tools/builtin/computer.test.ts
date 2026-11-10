@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { vi } from 'vitest'
 
 const state = vi.hoisted(() => ({
+    env: {} as Record<string, unknown>,
     available: true,
     calls: [] as Array<[string, ...unknown[]]>,
     actedViews: [] as Array<{ x: number; y: number; width: number; height: number }>,
@@ -146,6 +147,11 @@ vi.mock('../../desktop/recording.js', () => ({
     },
 }))
 
+vi.mock('../../config/env.js', async importOriginal => {
+    const actual = await importOriginal<typeof import('../../config/env.js')>()
+    return { ...actual, env: () => ({ ...actual.env(), ...state.env }) }
+})
+
 const { afterEach, beforeEach, describe, expect, it } = await import('vitest')
 const { agentConfigSchema } = await import('../../agents/types.js')
 const { ControlRefusal } = await import('../../desktop/control.js')
@@ -168,6 +174,7 @@ const act = (built: Built, input: Record<string, unknown>) => (built.tools.compu
 const openApp = (built: Built, input: Record<string, unknown>) => (built.tools.computer_open_app as any).execute(input, { toolCallId: 'c', messages: [] })
 
 beforeEach(() => {
+    state.env = {}
     state.available = true
     state.calls.length = 0
     state.actedViews.length = 0
@@ -467,6 +474,17 @@ describe('computer', () => {
         const built = build(ctxWith())
         for (let i = 0; i < 200; i++) expect((await settled(act(built, { action: 'screenshot' }))).status).toBe('done')
         expect(await settled(act(built, { action: 'screenshot' }))).toMatchObject({ status: 'refused', reason: expect.stringContaining('200 screen actions') })
+    })
+
+    it('takes its action budgets from the box configuration', async () => {
+        state.env = { RERUN_COMPUTER_MAX_ACTIONS: 3, RERUN_COMPUTER_MAX_ACTIONS_CLI: 2 }
+        const api = build(ctxWith())
+        for (let i = 0; i < 3; i++) expect((await settled(act(api, { action: 'screenshot' }))).status).toBe('done')
+        expect(await settled(act(api, { action: 'screenshot' }))).toMatchObject({ status: 'refused', reason: expect.stringContaining('3 screen actions') })
+        api.release()
+        const cli = build(ctxWith('claude-agent', {}, { provider: 'claude' }))
+        for (let i = 0; i < 2; i++) expect((await settled(act(cli, { action: 'screenshot' }))).status).toBe('done')
+        expect(await settled(act(cli, { action: 'screenshot' }))).toMatchObject({ status: 'refused', reason: expect.stringContaining('2 screen actions') })
     })
 })
 

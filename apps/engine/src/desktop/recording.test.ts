@@ -179,6 +179,41 @@ describe('screen session recording', () => {
         hold.release()
     })
 
+    it('records nothing on a box with recording off, whatever the agent asks, and keeps the frames', async () => {
+        vi.stubEnv('RERUN_COMPUTER_RECORDING', 'off')
+        const recording = await freshModule()
+        const hold = recording.holdScreenSession('a1', { record: true })
+        await hold.saveFrame(Buffer.from('one'))
+        hold.release()
+        expect(state.spawns).toEqual([])
+        expect(readdirSync(join(workspaceScreenDir('a1'), hold.id))).toEqual(['001.jpg'])
+    })
+
+    it('caps a recording at the minutes the box is configured with', async () => {
+        vi.stubEnv('RERUN_COMPUTER_RECORDING_MAX_MINUTES', '2')
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+        const recording = await freshModule()
+        const hold = recording.holdScreenSession('a1')
+        await vi.waitFor(() => expect(state.spawns).toHaveLength(1))
+        await vi.advanceTimersByTimeAsync(60_000)
+        expect(children()[0]!.signals).toEqual([])
+        await vi.advanceTimersByTimeAsync(60_000)
+        expect(children()[0]!.signals).toEqual(['SIGINT'])
+        hold.release()
+    })
+
+    it('keeps as many sessions as the box is configured to', async () => {
+        vi.stubEnv('RERUN_COMPUTER_SESSIONS_KEPT', '3')
+        const recording = await freshModule()
+        const root = workspaceScreenDir('a1')
+        for (let i = 10; i < 15; i++) mkdirSync(join(root, `2026-01-01T00-00-${i}-old`), { recursive: true })
+        const hold = recording.holdScreenSession('a1', { record: false })
+        await hold.saveFrame(Buffer.from('new'))
+        hold.release()
+        await vi.waitFor(() => expect(readdirSync(root)).toHaveLength(3))
+        expect(readdirSync(root).sort()).toEqual(['2026-01-01T00-00-13-old', '2026-01-01T00-00-14-old', hold.id])
+    })
+
     it('pauses the capture into a finalized segment and resumes into the next file', async () => {
         const recording = await freshModule()
         const hold = recording.holdScreenSession('a1')

@@ -135,6 +135,20 @@ docker compose exec engine curl -s http://localhost:3000/health
 `app` and `engine` are running, and both answer. If not, read `docker compose logs --tail 200 app
 engine`, fix what it says, and check https://docs.rerun.build/self-host/troubleshooting.
 
+### The agent's computer
+
+The engine image already holds the coworkers' screens (a Linux desktop per coworker that people
+watch and drive in the app, and coworkers drive with their `computer` tools). Check it:
+
+```bash
+docker compose exec engine curl -s http://localhost:3000/health | jq .capabilities
+```
+
+`desktop`, `computer` and `computer.recording` should be listed. On a server without Docker, the
+package list, what each one enables and the security model are in the "The agent's computer"
+section of `apps/engine/README.md`. Tell them plainly: each coworker has its own screen, but every
+coworker on one server shares its files and system user.
+
 ## 8. Hand over
 
 Tell them to open `NEXT_PUBLIC_APP_URL`, sign in with their email and the 6-digit code, and say

@@ -147,6 +147,47 @@ the data-dir migrates itself on start.
 Docker: `docker build -f apps/engine/Dockerfile .` from the repository root builds an image with
 Chromium, the desktop packages and the Codex CLI. Its data-dir is `/data`.
 
+## The agent's computer
+
+Every agent can get a Linux screen of its own on the box: a person watches and drives it from the
+app, and the agent drives it through the `computer` tools. The Docker image ships everything; an
+engine installed by hand on a Debian/Ubuntu server gets the packages from `rerun update` (or
+`rerun install-desktop`) when it has passwordless sudo. Otherwise install them yourself:
+
+```bash
+sudo apt-get install -y --no-install-recommends xvfb openbox x11vnc xdotool maim tint2 hsetroot curl thunar xfce4-terminal adwaita-icon-theme ffmpeg
+```
+
+| Package | What it enables | Without it |
+| --- | --- | --- |
+| `xvfb` | One virtual display per agent (1920x1080); also installed with the browser's system dependencies | No screen; the browser runs headless |
+| `openbox` | The window manager of each screen | No desktop at all (required) |
+| `x11vnc` | The live view and drive mode in the app | No desktop at all (required) |
+| `xdotool` | Clicks, keys and typing, the agent's and the dock's | No desktop at all (required) |
+| `maim` | Screenshots, so the agent's `computer` tools exist | People can watch and drive, agents cannot use the screen |
+| `tint2`, `curl` | The dock and the top bar | A bare screen; the app draws its own launcher |
+| `hsetroot` | The wallpaper | A black background |
+| `thunar`, `xfce4-terminal`, `adwaita-icon-theme` | The file manager and terminal of the dock and `computer_open_app` | Those apps fail to open; the browser still works |
+| `ffmpeg` | The MP4 recording of each screen session | Sessions keep their screenshots only |
+
+Check what a box can do with its health route:
+
+```bash
+curl -s localhost:3000/health | jq .capabilities
+```
+
+`desktop` (and `desktop.hold`) means people can watch and drive the screens, `computer` that agents
+can use them, `computer.recording` that screen sessions are recorded. `RERUN_DESKTOP=off` turns all
+of it off.
+
+**Security model.** Screens are per agent: each agent has its own display, VNC port, window manager
+and browser profile, and what one has open never shows on another's screen. Files and the system user
+are per box: every app on every screen runs as the engine's user, the file manager and the terminal
+can reach the other agents' folders, the same way a VM per account is shared by everything on that
+account. The VNC servers listen on localhost only; the app reaches them through the engine's
+ticket-authenticated WebSocket. Put agents that must not see each other's files on different boxes.
+The design notes and the options for stronger isolation are in [`docs/COMPUTER.md`](docs/COMPUTER.md).
+
 ## Configuration
 
 | Variable | Default | Purpose |
@@ -157,3 +198,12 @@ Chromium, the desktop packages and the Codex CLI. Its data-dir is `/data`.
 | `RERUN_API_KEY` | _unset_ | Bearer token for the API (open if unset); also used to authenticate to the UI's `/api/embed` |
 | `RERUN_HUB_BASE_URL` | _unset_ | Public UI base URL for embeddings and agent notifications |
 | `RERUN_LOG_LEVEL` | `info` | pino log level |
+| `RERUN_DESKTOP` | on | `off` turns off the screens and the computer tools of the box |
+| `RERUN_DESKTOP_MAX_SCREENS` | `20` | Agent screens running at once; one more is refused with a 503 naming this variable |
+| `RERUN_DESKTOP_IDLE_STOP_MINUTES` | `5` | Minutes a screen nobody watches, holds or drives stays up |
+| `RERUN_COMPUTER_RECORDING` | `on` | `off` records no screen session on the box, whatever each agent's `computerRecording` switch says |
+| `RERUN_COMPUTER_RECORDING_MAX_MINUTES` | `15` | Length cap of one screen session's recording |
+| `RERUN_COMPUTER_SESSIONS_KEPT` | `20` | Screen session folders (`screen/<id>/`) kept per agent workspace |
+| `RERUN_COMPUTER_MAX_ACTIONS` | `200` | Screen actions one run may take |
+| `RERUN_COMPUTER_MAX_ACTIONS_CLI` | `60` | The same on the `claude` and `codex` providers, which keep every picture in context |
+| `RERUN_COMPUTER_SCREENSHOTS_IN_CONTEXT` | `6` | Screenshots a run keeps attached to its model calls before dropping to half of them |

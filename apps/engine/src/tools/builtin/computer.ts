@@ -35,6 +35,7 @@ import { computerAvailable, holdDesktop, humanDriving, humanHolding, humanTouche
 import { currentBrowserSite, holdBrowser, holdOpenBrowser } from '../../desktop/takeover.js'
 import { screenSecretMeta, secretUseDecision, typeSecretApprovalAction } from '../../desktop/screen-secrets.js'
 import { readAgentEnv } from '../../agents/env.js'
+import { env } from '../../config/env.js'
 import { siteMatches } from '@rerun/contracts'
 import { withKeyedLock } from '../../lib/lock.js'
 import type { RunContext } from '../../runtime/context.js'
@@ -56,8 +57,6 @@ const DEFAULT_SCROLL_AMOUNT = 3
 const DEFAULT_WAIT_SECONDS = 1
 // Nothing else ends a model that keeps clicking: the loop only stops on its own final answer. A CLI
 // keeps every picture of the run in its context, where the engine cannot drop the old ones.
-const MAX_ACTIONS_PER_RUN = 200
-const MAX_ACTIONS_PER_CLI_RUN = 60
 const VIEW_IMAGE_NOTE = 'Open screenshotPath with view_image to see your screen before the next action.'
 
 const coordinate = z.array(z.number()).length(2)
@@ -251,7 +250,7 @@ type NativeInput = {
 export function computerTools(ctx: RunContext): { tools: ToolSet; release: () => void } {
     const id = ctx.agent.id
     const releases: Array<() => void> = []
-    const maxActions = CLI_PROVIDERS.has(ctx.provider) ? MAX_ACTIONS_PER_CLI_RUN : MAX_ACTIONS_PER_RUN
+    const maxActions = CLI_PROVIDERS.has(ctx.provider) ? env().RERUN_COMPUTER_MAX_ACTIONS_CLI : env().RERUN_COMPUTER_MAX_ACTIONS
     let actions = 0
     let evidence: ScreenSessionHold | null = null
     // When a person drove or held the screen between two of this run's actions, the next result says
