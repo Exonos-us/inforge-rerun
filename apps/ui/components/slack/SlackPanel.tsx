@@ -1,6 +1,6 @@
 'use client'
 
-import { bindCoworkerAction, connectSlackAction, createSlackChannelAction, disconnectSlackAction, getSlackStateAction, unbindCoworkerAction, type SlackStateView } from '@/app/api/_actions/slack.actions'
+import { bindCoworkerAction, connectSlackAction, createSlackChannelAction, disconnectSlackAction, getSlackStateAction, unbindCoworkerAction, type SlackHealth, type SlackStateView } from '@/app/api/_actions/slack.actions'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@rerun/ui/primitives'
 import { Field } from '@/components/ui/field'
@@ -175,9 +175,6 @@ function Connected({ state, busy, setBusy, reload, isAdmin }: { state: SlackStat
                     <CheckIcon className="size-3" /> Connected
                 </Badge>
                 <span className="text-sm font-medium">{connection?.teamName ?? connection?.teamId}</span>
-                {connection && !connection.canCustomizeIdentity && (
-                    <Badge tone="orange">Coworkers post as the app — add chat:write.customize in Slack</Badge>
-                )}
                 {isAdmin && (
                     <Button variant="ghost" size="sm" className="ml-auto text-muted-foreground" disabled={busy === 'disconnect'} onClick={disconnect}>
                         Disconnect
@@ -186,6 +183,8 @@ function Connected({ state, busy, setBusy, reload, isAdmin }: { state: SlackStat
             </div>
 
             {state.slackError && <p className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-xs text-destructive">{state.slackError}</p>}
+
+            <HealthNotice health={state.health} requestUrl={state.requestUrl} />
 
             <CreateChannel state={state} busy={busy} setBusy={setBusy} reload={reload} />
 
@@ -332,4 +331,62 @@ function AddToChannel({ state, busy, setBusy, reload }: { state: SlackStateView;
             </div>
         </section>
     )
+}
+
+// The two silences a connected Slack falls into — a Request URL that was never saved, and a
+// signing secret copied off the wrong line — look identical from the channel: a coworker that
+// does not answer. Both are visible here, with the page to go to.
+function HealthNotice({ health, requestUrl }: { health: SlackHealth | null; requestUrl: string }) {
+    if (!health) return null
+
+    if (health.state === 'bad_signature') {
+        return (
+            <div className="flex flex-col gap-1.5 rounded-xl border border-destructive/40 bg-destructive/5 p-3">
+                <p className="text-sm font-medium text-destructive">Slack is calling, and every message is being refused</p>
+                <p className="text-xs text-muted-foreground">
+                    The signing secret saved here is not this app&apos;s, so nothing a coworker is told ever reaches it — last refused {relative(health.at)}. Copy it again from
+                    <b> Basic Information → App Credentials → Signing Secret</b> (32 characters, digits and a–f), then disconnect and connect again. The bot token is fine.
+                </p>
+            </div>
+        )
+    }
+
+    if (health.state === 'never_called') {
+        return (
+            <div className="flex flex-col gap-1.5 rounded-xl border border-amber-500/40 bg-amber-500/5 p-3">
+                <p className="text-sm font-medium">Slack has never called this server</p>
+                <p className="text-xs text-muted-foreground">
+                    Until it does, coworkers cannot hear anything. In the Slack app, under <b>Event Subscriptions</b>, the Request URL has to be
+                    <code className="mx-1 rounded bg-muted px-1 py-0.5 text-[11px]">{requestUrl}</code>
+                    and the page saved once it verifies.
+                </p>
+            </div>
+        )
+    }
+
+    if (health.state === 'no_identity') {
+        return (
+            <div className="flex flex-col gap-1.5 rounded-xl border border-amber-500/40 bg-amber-500/5 p-3">
+                <p className="text-sm font-medium">Every coworker is posting as the app</p>
+                <p className="text-xs text-muted-foreground">
+                    The install is missing <b>chat:write.customize</b>, so Slack ignores the name and avatar each coworker was given. Add the scope under OAuth &amp; Permissions and reinstall the app.
+                </p>
+            </div>
+        )
+    }
+
+    if (health.state === 'delivering') {
+        return <p className="text-xs text-muted-foreground">Slack last reached this server {relative(health.at)}.</p>
+    }
+
+    return null
+}
+
+function relative(at: string): string {
+    const seconds = Math.max(0, Math.round((Date.now() - new Date(at).getTime()) / 1000))
+    if (seconds < 90) return 'just now'
+    const minutes = Math.round(seconds / 60)
+    if (minutes < 60) return `${minutes} minutes ago`
+    const hours = Math.round(minutes / 60)
+    return hours < 24 ? `${hours} hour${hours > 1 ? 's' : ''} ago` : `${Math.round(hours / 24)} day${hours >= 48 ? 's' : ''} ago`
 }

@@ -31,8 +31,18 @@ export type SlackCoworkerView = { id: string; name: string; disabled: boolean }
 
 export type SlackBindingView = { id: string; channelId: string; channelName: string | null; agentId: string; name: string; iconEmoji: string | null }
 
+// What is wrong, in the terms of the thing to go and fix. Both silences a connected Slack can
+// fall into are invisible from the channel, so the screen has to name them.
+export type SlackHealth =
+    | { state: 'never_called'; since: string }
+    | { state: 'bad_signature'; at: string }
+    | { state: 'no_identity' }
+    | { state: 'delivering'; at: string }
+    | { state: 'idle' }
+
 export type SlackStateView = {
     connection: { teamName: string | null; teamId: string; canCustomizeIdentity: boolean; status: string } | null
+    health: SlackHealth | null
     // Where Slack must send its events, and the one-click link that creates an app already
     // pointed at it. Both depend on the origin the app is actually served from.
     requestUrl: string
@@ -42,6 +52,18 @@ export type SlackStateView = {
     coworkers: SlackCoworkerView[]
     // Set when Slack itself refused a call: an uninstalled app, a revoked token.
     slackError?: string
+}
+
+// A refusal beats silence: if the last thing Slack did was fail a signature, say that, even if a
+// message got through earlier — nothing is getting through now.
+function slackHealth(view: { last_event_at: string | null; last_signature_error_at: string | null; can_customize_identity: boolean; created_at?: string }): SlackHealth {
+    const delivered = view.last_event_at ? new Date(view.last_event_at).getTime() : 0
+    const refused = view.last_signature_error_at ? new Date(view.last_signature_error_at).getTime() : 0
+
+    if (refused > delivered) return { state: 'bad_signature', at: view.last_signature_error_at as string }
+    if (!view.last_event_at) return { state: 'never_called', since: view.created_at ?? '' }
+    if (!view.can_customize_identity) return { state: 'no_identity' }
+    return { state: 'delivering', at: view.last_event_at }
 }
 
 function bindingView(binding: Awaited<ReturnType<typeof listBindings>>[number]): SlackBindingView {
@@ -59,18 +81,19 @@ export async function getSlackStateAction(): Promise<ActionResult<{ state: Slack
         const coworkers = (await workspaceCoworkers(ctx.workspace.id)).map(agent => ({ id: agent.id, name: agent.name, disabled: Boolean(agent.disabled_at) }))
         const base = { requestUrl, createAppUrl: createAppUrl(requestUrl), coworkers, channels: [] as SlackChannel[], bindings: [] as SlackBindingView[] }
 
-        if (!connection || !view) return { ok: true, state: { ...base, connection: null } }
+        if (!connection || !view) return { ok: true, state: { ...base, connection: null, health: null } }
 
         const connectionView = { teamName: view.team_name, teamId: view.team_id, canCustomizeIdentity: view.can_customize_identity, status: view.status }
+        const health = slackHealth(view)
         const bindings = (await listBindings(connection.id)).map(bindingView)
 
         try {
             const channels = await slackChannels(connection)
-            return { ok: true, state: { ...base, connection: connectionView, channels, bindings } }
+            return { ok: true, state: { ...base, connection: connectionView, health, channels, bindings } }
         } catch (err) {
             // The app was uninstalled or the token revoked: the bindings are still worth showing,
             // with the reason the channel list is empty.
-            return { ok: true, state: { ...base, connection: connectionView, bindings, slackError: err instanceof Error ? err.message : 'Slack refused the call' } }
+            return { ok: true, state: { ...base, connection: connectionView, health, bindings, slackError: err instanceof Error ? err.message : 'Slack refused the call' } }
         }
     } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : 'Could not read the Slack settings' }

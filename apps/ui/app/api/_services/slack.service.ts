@@ -18,7 +18,7 @@ type ThreadUpdate = Database['public']['Tables']['slack_threads']['Update']
 type EventInsert = Database['public']['Tables']['slack_events']['Insert']
 type EventUpdate = Database['public']['Tables']['slack_events']['Update']
 
-const CONNECTION_COLUMNS = ['id', 'workspace_id', 'team_id', 'team_name', 'bot_user_id', 'bot_token', 'signing_secret', 'can_customize_identity', 'status'] as const
+const CONNECTION_COLUMNS = ['id', 'workspace_id', 'team_id', 'team_name', 'bot_user_id', 'bot_token', 'signing_secret', 'can_customize_identity', 'status', 'last_event_at', 'last_signature_error_at'] as const
 
 export type SlackConnection = Pick<Database['public']['Tables']['slack_connections']['Row'], (typeof CONNECTION_COLUMNS)[number]>
 // The same row minus the two secrets, which never travel to a browser.
@@ -54,6 +54,8 @@ export function publicView(connection: SlackConnection | null): PublicSlackConne
         bot_user_id: connection.bot_user_id,
         can_customize_identity: connection.can_customize_identity,
         status: connection.status,
+        last_event_at: connection.last_event_at,
+        last_signature_error_at: connection.last_signature_error_at,
     }
 }
 
@@ -102,6 +104,16 @@ export async function connectSlack(params: { workspaceId: number; userId: string
 
 export async function disconnectSlack(workspaceId: number): Promise<void> {
     await createServiceRoleClient().from('slack_connections').delete().eq('workspace_id', workspaceId)
+}
+
+// Stamped by the webhook so the Slack screen can say what is happening instead of leaving the
+// user with a coworker that does not answer. A refused delivery is almost always the signing
+// secret: Slack found the workspace, so the team id was right, and only the signature failed.
+export async function noteSignatureFailure(connectionId: string): Promise<void> {
+    await createServiceRoleClient()
+        .from('slack_connections')
+        .update<ConnectionUpdate>({ last_signature_error_at: new Date().toISOString() })
+        .eq('id', connectionId)
 }
 
 export async function slackChannels(connection: SlackConnection) {
@@ -421,7 +433,7 @@ export async function handleSlackMessage(connection: SlackConnection, event: Sla
         await updateMessage(token, { channel: channelId, ts: placeholder.ts, text: `:warning: ${why}`, identity }).catch(() => {})
     } finally {
         await markEventProcessed(eventId)
-        await createServiceRoleClient().from('slack_connections').update<ConnectionUpdate>({ last_event_at: new Date().toISOString() }).eq('id', connection.id)
+        await createServiceRoleClient().from('slack_connections').update<ConnectionUpdate>({ last_event_at: new Date().toISOString(), last_signature_error_at: null }).eq('id', connection.id)
     }
 }
 

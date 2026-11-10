@@ -1,19 +1,19 @@
 import { createHmac } from 'node:crypto'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { claimEvent, connectionForTeam, handleSlackMessage } from '@/app/api/_services/slack.service'
+import { claimEvent, connectionForTeam, handleSlackMessage, noteSignatureFailure } from '@/app/api/_services/slack.service'
 import { POST } from './route'
 
 const afterTasks = vi.hoisted(() => [] as Promise<unknown>[])
 vi.mock('next/server', async importOriginal => ({ ...(await importOriginal<typeof import('next/server')>()), after: (task: () => Promise<unknown>) => void afterTasks.push(task()) }))
-vi.mock('@/app/api/_services/slack.service', () => ({ connectionForTeam: vi.fn(), claimEvent: vi.fn(), handleSlackMessage: vi.fn() }))
+vi.mock('@/app/api/_services/slack.service', () => ({ connectionForTeam: vi.fn(), claimEvent: vi.fn(), handleSlackMessage: vi.fn(), noteSignatureFailure: vi.fn() }))
 
 // The coworker answers after the response, so a test reads the handler once those tasks settled.
 const afterResponse = () => Promise.all(afterTasks.splice(0))
 
 const SECRET = 'signing-secret'
 const TEAM = 'T_EXONOS'
-const CONNECTION = { id: 'conn-1', workspace_id: 7, team_id: TEAM, team_name: 'Exonos', bot_user_id: 'U_RERUN', bot_token: 'xoxb-token', signing_secret: SECRET, can_customize_identity: true, status: 'connected' }
+const CONNECTION = { id: 'conn-1', workspace_id: 7, team_id: TEAM, team_name: 'Exonos', bot_user_id: 'U_RERUN', bot_token: 'xoxb-token', signing_secret: SECRET, can_customize_identity: true, status: 'connected', last_event_at: null, last_signature_error_at: null }
 
 function deliver(body: unknown, options: { secret?: string; timestamp?: number; headers?: Record<string, string> } = {}): Request {
     const raw = JSON.stringify(body)
@@ -41,6 +41,7 @@ beforeEach(() => {
     vi.mocked(connectionForTeam).mockResolvedValue(CONNECTION)
     vi.mocked(claimEvent).mockResolvedValue(true)
     vi.mocked(handleSlackMessage).mockResolvedValue()
+    vi.mocked(noteSignatureFailure).mockResolvedValue()
 })
 
 describe('POST /api/webhooks/slack', () => {
@@ -75,12 +76,15 @@ describe('POST /api/webhooks/slack', () => {
         expect(handleSlackMessage).toHaveBeenCalledWith(CONNECTION, expect.objectContaining({ text: 'engineer-1 the build is red' }), `${TEAM}:C_MDC:1794330002.000005`)
     })
 
-    it('refuses a delivery signed with the wrong secret', async () => {
+    it('refuses a delivery signed with the wrong secret, and records why it was refused', async () => {
         const res = await POST(deliver(message(), { secret: 'not-the-secret' }))
 
         expect(res.status).toBe(401)
         await afterResponse()
         expect(handleSlackMessage).not.toHaveBeenCalled()
+        // Slack found the workspace, so the team is right and only the secret is wrong: the
+        // Slack screen reads this back and names the fix.
+        expect(noteSignatureFailure).toHaveBeenCalledWith(CONNECTION.id)
     })
 
     it('refuses a correctly signed delivery replayed an hour later', async () => {

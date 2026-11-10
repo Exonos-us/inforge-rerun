@@ -1,5 +1,5 @@
 import { after } from 'next/server'
-import { claimEvent, connectionForTeam, handleSlackMessage, type SlackMessageEvent } from '@/app/api/_services/slack.service'
+import { claimEvent, connectionForTeam, handleSlackMessage, noteSignatureFailure, type SlackMessageEvent } from '@/app/api/_services/slack.service'
 import { verifySlackSignature } from '@/lib/slack/signature'
 
 // Slack's door. Public and unauthenticated, so the signature is the whole gate: it is checked
@@ -56,7 +56,10 @@ export async function POST(req: Request): Promise<Response> {
         signingSecret: connection.signing_secret,
     })
     if (!verified) {
+        // Slack knew which workspace to call, so the team is right and only the signature is
+        // wrong: the stored signing secret is not the app's. Recorded, so the screen can say so.
         console.warn('[slack] refused a delivery with a bad signature')
+        after(() => noteSignatureFailure(connection.id))
         return Response.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
