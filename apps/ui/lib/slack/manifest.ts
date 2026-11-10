@@ -24,6 +24,8 @@ export function appManifest(requestUrl: string, name = 'Rerun'): Record<string, 
                     'chat:write.customize',
                     // Posting what a coworker made: a report, a sheet, a screen recording.
                     'files:write',
+                    // Reading one back: what the coworker itself was handed in the channel.
+                    'files:read',
                     'users:read',
                 ],
             },

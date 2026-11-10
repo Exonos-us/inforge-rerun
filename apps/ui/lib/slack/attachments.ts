@@ -45,10 +45,37 @@ export function filesWorthPosting(files: WorkspaceFile[], since: Date): Workspac
         .slice(0, MAX_ATTACHMENTS)
 }
 
-// Said in the thread above the file, so the channel knows why it is there.
-export function attachmentComment(file: WorkspaceFile): string {
+// A coworker that says "here is build-status.html" means it. The file may well have been written
+// in an earlier run — "send me that page you made" is a normal thing to ask — so naming it in the
+// answer is as good a reason to attach it as having just written it.
+export function filesNamedIn(text: string, files: WorkspaceFile[]): WorkspaceFile[] {
+    const named = new Set((text.match(/[\w.-]+\.[a-z0-9]{2,5}\b/gi) ?? []).map(match => match.toLowerCase()))
+    if (named.size === 0) return []
+    return files.filter(file => named.has(file.name.toLowerCase()) && isShareable(file.name) && file.size > 0 && file.size <= MAX_ATTACHMENT_BYTES).slice(0, MAX_ATTACHMENTS)
+}
+
+// What goes into the thread under one answer: what the run just made, and what the answer says it
+// is handing over. Written first, because that is the thing most likely to be the point.
+export function attachmentsFor(params: { answer: string; files: WorkspaceFile[]; since: Date }): WorkspaceFile[] {
+    const picked: WorkspaceFile[] = []
+    for (const file of [...filesWorthPosting(params.files, params.since), ...filesNamedIn(params.answer, params.files)]) {
+        if (picked.length >= MAX_ATTACHMENTS) break
+        if (!picked.some(already => already.path === file.path)) picked.push(file)
+    }
+    return picked
+}
+
+// Said in the thread above the file, so the channel knows why it is there — and who sent it.
+//
+// Slack's upload has no `username`: a file always lands under the app itself, whatever name the
+// message above it carried. Nothing to be done about that from here, so the coworker signs the
+// line instead, and the thread still reads as one voice.
+export function attachmentComment(file: WorkspaceFile, from?: string): string {
     const kind = extensionOf(file.name)
-    if (['mp4', 'mov', 'webm'].includes(kind)) return `Here is the recording: *${file.name}*`
-    if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(kind)) return `*${file.name}*`
-    return `Here is *${file.name}*`
+    const body = ['mp4', 'mov', 'webm'].includes(kind)
+        ? `Here is the recording: *${file.name}*`
+        : ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(kind)
+          ? `*${file.name}*`
+          : `Here is *${file.name}*`
+    return from ? `_from ${from}_ · ${body}` : body
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { attachmentComment, filesWorthPosting, isShareable, MAX_ATTACHMENT_BYTES, type WorkspaceFile } from './attachments'
+import { attachmentComment, attachmentsFor, filesNamedIn, filesWorthPosting, isShareable, MAX_ATTACHMENT_BYTES, type WorkspaceFile } from './attachments'
 
 const RUN_STARTED = new Date('2026-11-10T15:00:00Z')
 
@@ -47,6 +47,46 @@ describe('filesWorthPosting', () => {
     })
 })
 
+describe('filesNamedIn', () => {
+    const files = [file('work/build-status.html'), file('work/notes.md'), file('old/report.pdf')]
+
+    it('hands over the file the answer says it is handing over', () => {
+        expect(filesNamedIn('Here is build-status.html, attached below.', files).map(f => f.name)).toEqual(['build-status.html'])
+    })
+
+    it('matches however the answer capitalises it', () => {
+        expect(filesNamedIn('See Build-Status.HTML', files).map(f => f.name)).toEqual(['build-status.html'])
+    })
+
+    it('ignores a name that is not a file of this coworker', () => {
+        expect(filesNamedIn('I looked at example.com and report.xlsx', files)).toEqual([])
+    })
+
+    it('still refuses what does not belong in a channel', () => {
+        expect(filesNamedIn('see notes.md', files)).toEqual([])
+    })
+})
+
+describe('attachmentsFor', () => {
+    const since = RUN_STARTED
+
+    it('posts what the run wrote and what the answer names, once each', () => {
+        const files = [file('fresh.pdf'), file('old.html', { modifiedAt: '2026-11-09T09:00:00Z' })]
+        const picked = attachmentsFor({ answer: 'Built fresh.pdf, and here is old.html again', files, since })
+        expect(picked.map(f => f.name)).toEqual(['fresh.pdf', 'old.html'])
+    })
+
+    it('answers a "send me that file" about something written days ago', () => {
+        const files = [file('report.pdf', { modifiedAt: '2026-11-01T09:00:00Z' })]
+        expect(attachmentsFor({ answer: 'Here is report.pdf', files, since }).map(f => f.name)).toEqual(['report.pdf'])
+    })
+
+    it('never goes past the cap, whichever side the files come from', () => {
+        const files = ['a.pdf', 'b.pdf', 'c.pdf', 'd.pdf'].map(name => file(name))
+        expect(attachmentsFor({ answer: 'a.pdf b.pdf c.pdf d.pdf', files, since })).toHaveLength(3)
+    })
+})
+
 describe('attachmentComment', () => {
     it('names a recording as one', () => {
         expect(attachmentComment(file('screen/2026-11-10/recording.mp4'))).toContain('recording')
@@ -58,5 +98,9 @@ describe('attachmentComment', () => {
 
     it('introduces a document', () => {
         expect(attachmentComment(file('october.pdf'))).toBe('Here is *october.pdf*')
+    })
+
+    it('signs the line, because Slack posts a file under the app whatever the message said', () => {
+        expect(attachmentComment(file('october.pdf'), 'engineer-1')).toBe('_from engineer-1_ · Here is *october.pdf*')
     })
 })

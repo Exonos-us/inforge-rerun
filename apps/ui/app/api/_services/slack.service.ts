@@ -5,7 +5,7 @@ import { ensureSessionRow } from '@/app/api/_services/chat.service'
 import { getWorkspaceConnection } from '@/app/api/_services/workspace-engine.service'
 import { chat, getRun, getRunTools, listFiles, readFileBytes } from '@/lib/engine/client'
 import { authTest, fitMessage, installedScopes, listChannels, postMessage, toMrkdwn, updateMessage, uploadFile, userName, type SlackIdentity } from '@/lib/slack/api'
-import { attachmentComment, filesWorthPosting, type WorkspaceFile } from '@/lib/slack/attachments'
+import { attachmentComment, attachmentsFor, type WorkspaceFile } from '@/lib/slack/attachments'
 import { createServiceRoleClient } from '@/supabase/serviceRole'
 import { selectMany, selectManyWithJoins, selectMaybeSingle } from '@/supabase/supabase-helpers'
 
@@ -289,7 +289,7 @@ async function waitForAnswer(params: { conn: Awaited<ReturnType<typeof getWorksp
 const WALK_DEPTH = 2
 const WALK_MAX_LISTINGS = 12
 
-async function filesWrittenDuring(conn: Awaited<ReturnType<typeof getWorkspaceConnection>>, engineAgentId: string, since: Date): Promise<WorkspaceFile[]> {
+async function walkWorkspace(conn: Awaited<ReturnType<typeof getWorkspaceConnection>>, engineAgentId: string): Promise<WorkspaceFile[]> {
     const base = `/agents/${encodeURIComponent(engineAgentId)}/files`
     const found: WorkspaceFile[] = []
     let folders = ['']
@@ -313,7 +313,7 @@ async function filesWrittenDuring(conn: Awaited<ReturnType<typeof getWorkspaceCo
         folders = next
     }
 
-    return filesWorthPosting(found, since)
+    return found
 }
 
 // Posting is best-effort on purpose: the answer is already in the channel, and an install without
@@ -326,13 +326,16 @@ async function postAttachments(params: {
     channel: string
     threadTs: string
     since: Date
+    answer: string
+    from: string
 }): Promise<number> {
-    const files = await filesWrittenDuring(params.conn, params.engineAgentId, params.since).catch(() => [] as WorkspaceFile[])
+    const walked = await walkWorkspace(params.conn, params.engineAgentId).catch(() => [] as WorkspaceFile[])
+    const files = attachmentsFor({ answer: params.answer, files: walked, since: params.since })
     let posted = 0
     for (const file of files) {
         try {
             const bytes = await readFileBytes(params.conn, `/agents/${encodeURIComponent(params.engineAgentId)}/files`, file.path)
-            await uploadFile(params.token, { channel: params.channel, threadTs: params.threadTs, filename: file.name, bytes, comment: attachmentComment(file) })
+            await uploadFile(params.token, { channel: params.channel, threadTs: params.threadTs, filename: file.name, bytes, comment: attachmentComment(file, params.from) })
             posted += 1
         } catch (err) {
             const why = err instanceof Error ? err.message : String(err)
@@ -405,7 +408,7 @@ export async function handleSlackMessage(connection: SlackConnection, event: Sla
 
         // Whatever it made while answering goes in under its own answer: a report, a sheet, a
         // screen recording. Described in the text, handed over as a file.
-        const posted = await postAttachments({ token, conn, engineAgentId: binding.engineAgentId, channel: channelId, threadTs, since: runStartedAt })
+        const posted = await postAttachments({ token, conn, engineAgentId: binding.engineAgentId, channel: channelId, threadTs, since: runStartedAt, answer, from: binding.name })
         if (posted) console.info(`[slack] ${binding.name} posted ${posted} file(s) to ${channelId}`)
     } catch (err) {
         const why = err instanceof Error ? err.message : String(err)

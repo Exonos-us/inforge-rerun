@@ -8,6 +8,12 @@ describe('appManifest', () => {
         expect(scopes).toContain('channels:manage')
     })
 
+    it('asks for what posting a file needs, and reading one back', () => {
+        const scopes = (appManifest('https://rerun.example.com/api/webhooks/slack') as { oauth_config: { scopes: { bot: string[] } } }).oauth_config.scopes.bot
+        expect(scopes).toContain('files:write')
+        expect(scopes).toContain('files:read')
+    })
+
     it('points Slack at the address it was given', () => {
         const manifest = appManifest('https://tunnel.example.dev/api/webhooks/slack') as { settings: { event_subscriptions: { request_url: string; bot_events: string[] } } }
         expect(manifest.settings.event_subscriptions.request_url).toBe('https://tunnel.example.dev/api/webhooks/slack')
