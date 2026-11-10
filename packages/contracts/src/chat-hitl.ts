@@ -24,6 +24,9 @@ export type SecretRequestItem = {
     label: string
     help?: string
     docsUrl?: string
+    // The site a screen secret signs in to (a password typed with the computer's type_secret).
+    // Absent for ordinary credentials referenced as ${KEY} in configs and commands.
+    site?: string
 }
 
 export type ServiceSuggestionItem = { slug: string; reason?: string }
@@ -181,12 +184,13 @@ export function pendingSecrets(input: Record<string, unknown>): SecretRequestIte
     if (!Array.isArray(secrets)) return []
     return secrets
         .map(value => {
-            const item = (value ?? {}) as { key?: unknown; label?: unknown; help?: unknown; docsUrl?: unknown }
+            const item = (value ?? {}) as { key?: unknown; label?: unknown; help?: unknown; docsUrl?: unknown; site?: unknown }
             return {
                 key: String(item.key ?? ''),
                 label: String(item.label ?? item.key ?? 'Credential'),
                 help: typeof item.help === 'string' ? item.help : undefined,
                 docsUrl: typeof item.docsUrl === 'string' ? item.docsUrl : undefined,
+                site: typeof item.site === 'string' && item.site.trim() ? item.site.trim() : undefined,
             }
         })
         .filter(item => item.key.length > 0)

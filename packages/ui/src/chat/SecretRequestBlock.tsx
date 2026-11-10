@@ -1,6 +1,6 @@
 'use client'
 
-import { Button, Icon, ScrollFade } from '../primitives'
+import { Button, Icon, ScrollFade, Switch } from '../primitives'
 import { Input } from '../forms'
 import { BorderBeam } from '../BorderBeam'
 import { cn } from '../cn'
@@ -15,7 +15,9 @@ export type SecretRequestBlockProps = {
     secrets: SecretRequestItem[]
     reason?: string
     existingKeys?: string[]
-    onSubmit: (values: Record<string, string>) => Promise<void> | void
+    // `allowAlways` holds the keys of the site-labeled secrets the user allowed the coworker to
+    // type on their site without asking each run.
+    onSubmit: (values: Record<string, string>, allowAlways: string[]) => Promise<void> | void
     onSkip?: () => void
     // The close button, when it must mean something else than Skip. Falls back to Skip.
     onDismiss?: () => void
@@ -32,6 +34,7 @@ export function SecretRequestBlock({ secrets, reason, existingKeys = [], onSubmi
     const [saving, setSaving] = useState(false)
     const [submitted, setSubmitted] = useState(false)
     const [error, setError] = useState<string | null>(null)
+    const [allowAlways, setAllowAlways] = useState<Record<string, boolean>>({})
 
     // The states above only drive the disabled styling. Answering the agent twice starts two runs
     // on the same conversation, so the latch that guards it has to be a ref: two callbacks fired
@@ -47,7 +50,10 @@ export function SecretRequestBlock({ secrets, reason, existingKeys = [], onSubmi
         setSaving(true)
         setError(null)
         try {
-            await onSubmit(Object.fromEntries(filled.map(item => [item.key, values[item.key].trim()])))
+            await onSubmit(
+                Object.fromEntries(filled.map(item => [item.key, values[item.key].trim()])),
+                filled.filter(item => item.site && allowAlways[item.key]).map(item => item.key),
+            )
             // The values only ever live in this form: drop them as soon as the engine has them.
             form.reset(blankValues)
             setSubmitted(true)
@@ -99,13 +105,19 @@ export function SecretRequestBlock({ secrets, reason, existingKeys = [], onSubmi
                                     {...form.register(item.key)}
                                     type="password"
                                     label={item.label}
-                                    helperText={[item.help, `Stored as ${item.key}`].filter(Boolean).join(' · ')}
+                                    helperText={[item.help, item.site && `Sign-in for ${item.site}`, `Stored as ${item.key}`].filter(Boolean).join(' · ')}
                                     placeholder={alreadySet ? 'Already saved. Enter a value to replace it' : 'Paste the value'}
                                     autoComplete="off"
                                     spellCheck={false}
                                     disabled={locked}
                                     data-hitl={`secret-${item.key}`}
                                 />
+                                {item.site && (
+                                    <label className="flex cursor-pointer items-center justify-between gap-3 py-0.5">
+                                        <span className="min-w-0 text-xs leading-snug text-muted-foreground">Let it sign in on {item.site} without asking each time</span>
+                                        <Switch checked={allowAlways[item.key] ?? false} onCheckedChange={checked => setAllowAlways(prev => ({ ...prev, [item.key]: checked }))} disabled={locked} data-hitl={`allow-${item.key}`} className="shrink-0" />
+                                    </label>
+                                )}
                                 {item.docsUrl && (
                                     <a href={item.docsUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline">
                                         Where to find it

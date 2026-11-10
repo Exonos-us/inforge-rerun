@@ -23,6 +23,11 @@ const state = vi.hoisted(() => ({
     drivingAfterTyped: null as number | null,
     drivingForPolls: 0,
     parkLongSleeps: false,
+    env: {} as Record<string, string>,
+    secretMeta: {} as Record<string, { site: string; allowAlways: boolean }>,
+    decisions: [] as Array<[string, string, string, string]>,
+    decision: null as 'approved' | 'declined' | null,
+    browserSite: null as string | null,
 }))
 
 vi.mock('node:timers/promises', () => ({
@@ -46,7 +51,7 @@ vi.mock('../../desktop/control.js', () => {
         }
     return {
         ControlRefusal,
-        controlScreen: async (agentId: string, signal?: AbortSignal) => ({ agentId, signal }),
+        controlScreen: async (agentId: string, signal?: AbortSignal) => ({ agentId, signal, width: 1920, height: 1080, scale: 1.5 }),
         captureScreen: async () => ({ image: Buffer.from(`shot-${++state.captures}`), mediaType: 'image/jpeg', width: 1280, height: 720 }),
         click: record('click'),
         drag: record('drag'),
@@ -70,7 +75,21 @@ vi.mock('../../desktop/session.js', () => ({
     },
 }))
 
+vi.mock('../../agents/env.js', () => ({
+    readAgentEnv: async () => ({ ...state.env }),
+}))
+
+vi.mock('../../desktop/screen-secrets.js', () => ({
+    screenSecretMeta: async (_agentId: string, key: string) => state.secretMeta[key] ?? null,
+    secretUseDecision: async (agentId: string, sessionId: string, key: string, site: string) => {
+        state.decisions.push([agentId, sessionId, key, site])
+        return state.decision
+    },
+    typeSecretApprovalAction: (key: string, site: string) => `Type the saved secret ${key} into ${site}`,
+}))
+
 vi.mock('../../desktop/takeover.js', () => ({
+    currentBrowserSite: async () => state.browserSite,
     holdOpenBrowser: () => {
         if (!state.openBrowser) return () => {}
         state.openBrowserHolds++
@@ -150,6 +169,11 @@ beforeEach(() => {
     state.drivingForPolls = 0
     state.openBrowser = false
     state.parkLongSleeps = false
+    state.env = {}
+    state.secretMeta = {}
+    state.decisions.length = 0
+    state.decision = null
+    state.browserSite = null
 })
 
 afterEach(() => {
@@ -424,6 +448,155 @@ describe('computer', () => {
         const built = build(ctxWith())
         for (let i = 0; i < 200; i++) expect((await settled(act(built, { action: 'screenshot' }))).status).toBe('done')
         expect(await settled(act(built, { action: 'screenshot' }))).toMatchObject({ status: 'refused', reason: expect.stringContaining('200 screen actions') })
+    })
+})
+
+describe('type_secret', () => {
+    const VALUE = 'hunter2-plaintext-value'
+    const armed = () => {
+        state.env.GH_PASSWORD = VALUE
+        state.secretMeta.GH_PASSWORD = { site: 'github.com', allowAlways: true }
+        state.browserSite = 'github.com'
+    }
+    const typeSecret = (built: Built, secret = 'GH_PASSWORD') => settled(act(built, { action: 'type_secret', secret }))
+    const clickFirst = async (built: Built) => {
+        await settled(act(built, { action: 'left_click', coordinate: [10, 10] }))
+    }
+
+    it('types the saved value and answers without any screenshot, the value nowhere in the result', async () => {
+        armed()
+        const ctx = ctxWith()
+        const built = build(ctx)
+        await clickFirst(built)
+        const capturesBefore = state.captures
+        const framesBefore = state.frames.length
+        const result = await typeSecret(built)
+        expect(result).toEqual({ status: 'done', screen: [1280, 720], screenSession: 'session-a1-1', next: expect.stringContaining('withheld for a secret') })
+        expect(state.calls).toContainEqual(['type', VALUE])
+        expect(JSON.stringify(result)).not.toContain(VALUE)
+        expect(state.captures).toBe(capturesBefore)
+        expect(state.frames.length).toBe(framesBefore)
+        expect(result.screenshotId).toBeUndefined()
+        expect(result.screenshotPath).toBeUndefined()
+    })
+
+    it('keeps the secret out of the evidence frames and the codex screenshot files too', async () => {
+        armed()
+        const ctx = ctxWith('codex-agent', {}, { provider: 'codex' })
+        const built = build(ctx)
+        await clickFirst(built)
+        const result = await typeSecret(built)
+        expect(result.screenshotPath).toBeUndefined()
+        expect(JSON.stringify(result)).not.toContain(VALUE)
+        expect(state.frames.join()).not.toContain(VALUE)
+    })
+
+    it('refuses as the first screen action of a run', async () => {
+        armed()
+        const result = await typeSecret(build(ctxWith()))
+        expect(result).toMatchObject({ status: 'refused', reason: expect.stringContaining('click the password field') })
+        expect(state.calls.filter(([name]) => name === 'type')).toEqual([])
+    })
+
+    it('needs the secret name', async () => {
+        const built = build(ctxWith())
+        await clickFirst(built)
+        expect(await settled(act(built, { action: 'type_secret' }))).toEqual({ status: 'refused', reason: 'type_secret needs secret.' })
+    })
+
+    it('refuses a secret that was never saved', async () => {
+        armed()
+        delete state.env.GH_PASSWORD
+        const built = build(ctxWith())
+        await clickFirst(built)
+        expect(await typeSecret(built)).toMatchObject({ status: 'refused', reason: expect.stringContaining('no saved secret named GH_PASSWORD') })
+    })
+
+    it('refuses a secret saved without a site', async () => {
+        armed()
+        delete state.secretMeta.GH_PASSWORD
+        const built = build(ctxWith())
+        await clickFirst(built)
+        expect(await typeSecret(built)).toMatchObject({ status: 'refused', reason: expect.stringContaining('not saved for screen use') })
+    })
+
+    it('refuses when the engine cannot tell what site the screen shows', async () => {
+        armed()
+        state.browserSite = null
+        const built = build(ctxWith())
+        await clickFirst(built)
+        expect(await typeSecret(built)).toMatchObject({ status: 'refused', reason: expect.stringContaining('whose site the engine can verify') })
+        expect(state.calls.filter(([name]) => name === 'type')).toEqual([])
+    })
+
+    it('refuses to type on another site, naming both', async () => {
+        armed()
+        state.browserSite = 'phishing.example'
+        const built = build(ctxWith())
+        await clickFirst(built)
+        const result = await typeSecret(built)
+        expect(result).toMatchObject({ status: 'refused', reason: expect.stringContaining('phishing.example') })
+        expect(result.reason).toContain('github.com')
+        expect(state.calls.filter(([name]) => name === 'type')).toEqual([])
+    })
+
+    it('types on a subdomain of the saved site, never on a lookalike suffix', async () => {
+        armed()
+        state.browserSite = 'gist.github.com'
+        const built = build(ctxWith())
+        await clickFirst(built)
+        expect((await typeSecret(built)).status).toBe('done')
+        state.browserSite = 'not-github.com'
+        expect(await typeSecret(built)).toMatchObject({ status: 'refused' })
+    })
+
+    it('asks for the exact approval line when the user has not pre-authorized nor approved yet', async () => {
+        armed()
+        state.secretMeta.GH_PASSWORD = { site: 'github.com', allowAlways: false }
+        const built = build(ctxWith())
+        await clickFirst(built)
+        const result = await typeSecret(built)
+        expect(result).toMatchObject({ status: 'refused', reason: expect.stringContaining('request_approval') })
+        expect(result.reason).toContain('"Type the saved secret GH_PASSWORD into github.com"')
+        expect(state.decisions).toEqual([['a1', 's', 'GH_PASSWORD', 'github.com']])
+        expect(state.calls.filter(([name]) => name === 'type')).toEqual([])
+    })
+
+    it('types once the user approved it in this run', async () => {
+        armed()
+        state.secretMeta.GH_PASSWORD = { site: 'github.com', allowAlways: false }
+        state.decision = 'approved'
+        const built = build(ctxWith())
+        await clickFirst(built)
+        expect((await typeSecret(built)).status).toBe('done')
+        expect(state.calls).toContainEqual(['type', VALUE])
+    })
+
+    it('refuses for good what the user declined', async () => {
+        armed()
+        state.secretMeta.GH_PASSWORD = { site: 'github.com', allowAlways: false }
+        state.decision = 'declined'
+        const built = build(ctxWith())
+        await clickFirst(built)
+        expect(await typeSecret(built)).toMatchObject({ status: 'refused', reason: expect.stringContaining('declined') })
+        expect(state.calls.filter(([name]) => name === 'type')).toEqual([])
+    })
+
+    it('never asks for a decision when the user pre-authorized the site', async () => {
+        armed()
+        const built = build(ctxWith())
+        await clickFirst(built)
+        expect((await typeSecret(built)).status).toBe('done')
+        expect(state.decisions).toEqual([])
+    })
+
+    it('stops mid-secret when a person takes the screen', async () => {
+        armed()
+        state.env.GH_PASSWORD = 'x'.repeat(100)
+        const built = build(ctxWith())
+        await clickFirst(built)
+        state.drivingAfterTyped = 1
+        expect(await typeSecret(built)).toMatchObject({ status: 'refused', reason: expect.stringContaining('driving your screen') })
     })
 })
 

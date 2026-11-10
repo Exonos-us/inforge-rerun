@@ -104,6 +104,10 @@ describe('sqlite ladders', () => {
               4,
               "paid-sources",
             ],
+            [
+              5,
+              "screen-secrets",
+            ],
           ]
         `)
         expect(SHARED_DB_MIGRATIONS.map(s => [s.version, s.id])).toMatchInlineSnapshot(`

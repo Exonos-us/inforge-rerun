@@ -258,7 +258,7 @@ export async function getAgentContextAction(agentId: string): Promise<AgentConte
     }
 }
 
-export async function updateAgentKeysAction(agentId: string, body: { set?: Record<string, string>; remove?: string[] }): Promise<{ success: boolean; error?: string }> {
+export async function updateAgentKeysAction(agentId: string, body: { set?: Record<string, string>; remove?: string[]; screen?: Record<string, { site: string; allowAlways: boolean }> }): Promise<{ success: boolean; error?: string }> {
     try {
         const { conn, engineAgentId } = await getAgentChatTarget(agentId, 'manage')
         await engineUpdateAgentKeys(conn, engineAgentId, body)
@@ -273,17 +273,22 @@ const SECRET_NOT_REQUESTED = 'This coworker did not ask for these credentials'
 // A coworker asking for a credential in the chat is answered by whoever can talk to it, so this path
 // takes `use` only. What makes that safe is that it writes nothing but the keys the pending request
 // of that conversation names, read back from the engine rather than from the caller. Any other key
-// goes through updateAgentKeysAction, which takes `manage`.
-export async function answerSecretRequestAction(sessionId: string, values: Record<string, string>): Promise<{ success: boolean; error?: string }> {
+// goes through updateAgentKeysAction, which takes `manage`. The site a screen secret is pinned to
+// comes from that same pending request, never from the caller: `allowAlways` only says which of the
+// requested keys the user ticked "use it there without asking" for.
+export async function answerSecretRequestAction(sessionId: string, values: Record<string, string>, allowAlways: string[] = []): Promise<{ success: boolean; error?: string }> {
     try {
         const session = await assertSessionInWorkspace(sessionId)
         const { conn, engineAgentId } = await getAgentChatTarget(session.agent_id)
         const messages = session.engine_session_id ? transformEngineMessages(await engineGetSessionMessages(conn, engineAgentId, session.engine_session_id)) : []
         const pending = findPendingHitl(messages)
-        const requested = new Set(pending?.kind === 'secret' ? pendingSecrets(pending.input).map(secret => secret.key) : [])
+        const requested = pending?.kind === 'secret' ? pendingSecrets(pending.input) : []
+        const requestedKeys = new Set(requested.map(secret => secret.key))
         const keys = Object.keys(values)
-        if (keys.length === 0 || keys.some(key => !requested.has(key))) throw new AccessDeniedError(SECRET_NOT_REQUESTED)
-        await engineUpdateAgentKeys(conn, engineAgentId, { set: values })
+        if (keys.length === 0 || keys.some(key => !requestedKeys.has(key))) throw new AccessDeniedError(SECRET_NOT_REQUESTED)
+        const allowed = new Set(allowAlways)
+        const screen = Object.fromEntries(requested.filter(secret => secret.site && keys.includes(secret.key)).map(secret => [secret.key, { site: secret.site as string, allowAlways: allowed.has(secret.key) }]))
+        await engineUpdateAgentKeys(conn, engineAgentId, { set: values, ...(Object.keys(screen).length ? { screen } : {}) })
         return { success: true }
     } catch (err) {
         return { success: false, error: err instanceof Error ? err.message : 'Could not save the credentials' }

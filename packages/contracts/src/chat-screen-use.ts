@@ -79,6 +79,25 @@ export function siteOf(url: string): string | null {
     return host ? host.toLowerCase().replace(/^www\./, '') : null
 }
 
+const BARE_HOST = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/
+
+// A site label as people and agents write it: a bare host ("github.com"), with www, with a path,
+// or a full URL. Null when nothing that names a site is left.
+export function normalizeSite(value: string): string | null {
+    const trimmed = value.trim().toLowerCase()
+    if (!trimmed) return null
+    const fromUrl = siteOf(trimmed)
+    if (fromUrl) return fromUrl
+    const host = trimmed.replace(/^www\./, '').replace(/[/?#].*$/, '')
+    return BARE_HOST.test(host) ? host : null
+}
+
+// Cookie-style scope: a secret saved for github.com types on accounts.github.com too, never the
+// other way round, and never on not-github.com.
+export function siteMatches(saved: string, current: string): boolean {
+    return current === saved || current.endsWith(`.${saved}`)
+}
+
 // The site the screen is on, as far as the thread can tell: the one a takeover asks for, otherwise the
 // last page the run opened in its browser.
 export function screenSite(messages: readonly MessageLike[], takeoverUrl: string | null): string | null {

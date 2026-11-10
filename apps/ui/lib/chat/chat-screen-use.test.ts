@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { runUsesScreen, screenSessionsByTurn, screenSite, serializeTakeoverResult } from '@rerun/contracts'
+import { normalizeSite, runUsesScreen, screenSessionsByTurn, screenSite, serializeTakeoverResult, siteMatches } from '@rerun/contracts'
 
 const user = (text: string) => ({ role: 'user', parts: [{ type: 'text', text }] })
 let nextId = 0
@@ -60,5 +60,31 @@ describe('screenSessionsByTurn', () => {
         expect(screenSessionsByTurn([user('go'), bridged]).get(bridged.id)).toEqual(['s3'])
         expect(screenSessionsByTurn([user('go'), reloaded]).get(reloaded.id)).toEqual(['s4'])
         expect(screenSessionsByTurn([user('go'), silent]).size).toBe(0)
+    })
+})
+
+describe('normalizeSite', () => {
+    it('reads a site out of whatever shape people write it in', () => {
+        expect(normalizeSite('github.com')).toBe('github.com')
+        expect(normalizeSite(' WWW.GitHub.com ')).toBe('github.com')
+        expect(normalizeSite('https://www.github.com/login?next=/')).toBe('github.com')
+        expect(normalizeSite('accounts.google.com')).toBe('accounts.google.com')
+        expect(normalizeSite('github.com/login')).toBe('github.com')
+    })
+
+    it('refuses what names no site', () => {
+        expect(normalizeSite('')).toBeNull()
+        expect(normalizeSite('not a site')).toBeNull()
+        expect(normalizeSite('localhost')).toBeNull()
+        expect(normalizeSite('-bad-.com')).toBeNull()
+    })
+})
+
+describe('siteMatches', () => {
+    it('covers the saved site and its subdomains, never a lookalike suffix', () => {
+        expect(siteMatches('github.com', 'github.com')).toBe(true)
+        expect(siteMatches('github.com', 'gist.github.com')).toBe(true)
+        expect(siteMatches('github.com', 'not-github.com')).toBe(false)
+        expect(siteMatches('gist.github.com', 'github.com')).toBe(false)
     })
 })

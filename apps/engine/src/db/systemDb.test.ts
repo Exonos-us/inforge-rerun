@@ -103,6 +103,25 @@ describe('getSystemDb pooling', () => {
     })
 })
 
+describe('screen-secrets migration (step 5)', () => {
+    it('adds the table to a file already at version 4, keeping what it holds', async () => {
+        const agentId = 'at-v4'
+        const first = await getSystemDb(agentId)
+        await first.client.execute("INSERT INTO sessions (id, agent_id, created_at, updated_at) VALUES ('kept', 'at-v4', 'x', 'x')")
+        await first.client.executeMultiple('DROP TABLE screen_secrets; PRAGMA user_version = 4')
+        closeSystemDb(agentId)
+
+        const second = await getSystemDb(agentId)
+        await second.client.execute("INSERT INTO screen_secrets (key, site, created_at) VALUES ('K', 'site.example', 'x')")
+        const secrets = await second.client.execute('SELECT key, site, approved_always FROM screen_secrets')
+        expect(secrets.rows[0]).toMatchObject({ key: 'K', site: 'site.example', approved_always: 0 })
+        const sessions = await second.client.execute('SELECT id FROM sessions')
+        expect(sessions.rows.map(row => row.id)).toEqual(['kept'])
+        const version = await second.client.execute('PRAGMA user_version')
+        expect(Number(version.rows[0].user_version)).toBeGreaterThanOrEqual(5)
+    })
+})
+
 describe('systemDbExists', () => {
     it('is false until the first open creates the file', async () => {
         expect(systemDbExists('fresh')).toBe(false)

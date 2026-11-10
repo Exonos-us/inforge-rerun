@@ -2,11 +2,11 @@ import { mkdirSync, existsSync } from 'node:fs'
 import { createClient, type Client } from '@libsql/client'
 import { drizzle, type LibSQLDatabase } from 'drizzle-orm/libsql'
 import { agentDataDir, systemDbPath } from '../config/paths.js'
-import { sessions, messages, runs, runSteps, toolCalls, compactionCheckpoints, skillProposals } from './schema.js'
+import { sessions, messages, runs, runSteps, toolCalls, compactionCheckpoints, skillProposals, screenSecrets } from './schema.js'
 import { latestVersion, migrateSqlite, type SqliteMigration } from './ladder.js'
 import { scheduleBackfillPaidSources } from '../paid-data/backfill.js'
 
-const schema = { sessions, messages, runs, runSteps, toolCalls, compactionCheckpoints, skillProposals }
+const schema = { sessions, messages, runs, runSteps, toolCalls, compactionCheckpoints, skillProposals, screenSecrets }
 
 export type SystemDb = { client: Client; db: LibSQLDatabase<typeof schema> }
 
@@ -223,6 +223,15 @@ CREATE TABLE IF NOT EXISTS paid_keys (
 );
 `
 
+const SCREEN_SECRETS_DDL = `
+CREATE TABLE IF NOT EXISTS screen_secrets (
+    key TEXT PRIMARY KEY,
+    site TEXT NOT NULL,
+    approved_always INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+`
+
 // A schema change is a new step at the end, never an edit to a shipped one: see `db/ladder.ts`.
 export const SYSTEM_DB_MIGRATIONS: SqliteMigration[] = [
     {
@@ -255,6 +264,16 @@ export const SYSTEM_DB_MIGRATIONS: SqliteMigration[] = [
         id: 'paid-sources',
         up: async client => {
             await client.executeMultiple(PAID_SOURCES_DDL)
+        },
+    },
+    {
+        // The site each screen secret signs in to and whether the user pre-authorized typing it
+        // there. The values themselves stay in the agent's .env; a data-dir restored from before
+        // this step simply has no screen secrets yet.
+        version: 5,
+        id: 'screen-secrets',
+        up: async client => {
+            await client.executeMultiple(SCREEN_SECRETS_DDL)
         },
     },
 ]

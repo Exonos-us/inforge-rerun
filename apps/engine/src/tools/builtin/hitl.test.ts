@@ -255,8 +255,13 @@ describe('request_secret input schema', () => {
     })
 
     it('accepts a credential whose optional fields are explicit nulls', () => {
-        const result = requestSecretSchema().safeParse({ secrets: [{ key: 'API_KEY', label: 'API key', help: null, docsUrl: null }], reason: null })
+        const result = requestSecretSchema().safeParse({ secrets: [{ key: 'API_KEY', label: 'API key', help: null, docsUrl: null, site: null }], reason: null })
         expect(result.success).toBe(true)
+    })
+
+    it('accepts a screen secret labeled with its site, and rejects an empty site', () => {
+        expect(requestSecretSchema().safeParse({ secrets: [{ key: 'GH_PASSWORD', label: 'GitHub password', site: 'github.com' }] }).success).toBe(true)
+        expect(requestSecretSchema().safeParse({ secrets: [{ key: 'GH_PASSWORD', label: 'GitHub password', site: '' }] }).success).toBe(false)
     })
 
     it('accepts a stringified secrets array', () => {

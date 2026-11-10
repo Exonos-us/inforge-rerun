@@ -38,8 +38,11 @@ export function SecretRequestBlock({ agentId, sessionId, secrets, reason, onDone
             reason={reason}
             existingKeys={existingKeys}
             inline={inline}
-            onSubmit={async values => {
-                const result = sessionId ? await answerSecretRequestAction(sessionId, values) : await updateAgentKeysAction(agentId, { set: values })
+            onSubmit={async (values, allowAlways) => {
+                // Without a conversation to read the request back from, the site rides along from the
+                // same card input the user just read and answered.
+                const screen = Object.fromEntries(secrets.filter(item => item.site && values[item.key]).map(item => [item.key, { site: item.site as string, allowAlways: allowAlways.includes(item.key) }]))
+                const result = sessionId ? await answerSecretRequestAction(sessionId, values, allowAlways) : await updateAgentKeysAction(agentId, { set: values, ...(Object.keys(screen).length ? { screen } : {}) })
                 if (!result.success) throw new Error(result.error ?? 'Could not save the credentials')
                 onDone(serializeSecretResult(secrets, Object.keys(values)))
             }}

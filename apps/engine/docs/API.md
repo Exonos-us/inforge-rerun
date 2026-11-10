@@ -386,20 +386,26 @@ Return an agent's config, soul and install prompt (no keys). `404` if unknown.
 
 ### `GET /agents/:id/keys`
 
-The names of the agent's own env variables, never their values.
+The names of the agent's own env variables, never their values. `screen` lists the keys saved as
+screen secrets with the site each one signs in to and whether the user allowed typing it there
+without asking each run.
 
 ```json
-{ "keys": ["STRIPE_API_KEY"] }
+{ "keys": ["GH_PASSWORD", "STRIPE_API_KEY"], "screen": { "GH_PASSWORD": { "site": "github.com", "allowAlways": false } } }
 ```
 
 ### `PATCH /agents/:id/keys`
 
 ```json
-{ "set": { "STRIPE_API_KEY": "sk_test_..." }, "remove": ["OLD_KEY"] }
+{ "set": { "GH_PASSWORD": "..." }, "remove": ["OLD_KEY"], "screen": { "GH_PASSWORD": { "site": "github.com", "allowAlways": true } } }
 ```
 
 Merged into the agent's `.env` and hot-reloaded; returns the resulting key names. Provider
-credentials do not belong here — use `PATCH /connections/:id/keys`.
+credentials do not belong here — use `PATCH /connections/:id/keys`. `screen` marks a key as a
+screen secret: the site label (normalized to a bare host) pins where the `computer` tool's
+`type_secret` action may type it, and `allowAlways` skips the per-run approval there. Metadata is
+only stored for a key that holds a value (sent in this `set` or already present); removing a key
+drops its metadata.
 
 ### `PATCH /agents/:id`
 

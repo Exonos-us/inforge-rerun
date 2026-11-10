@@ -109,6 +109,7 @@ import {
     engineAgentDetailSchema,
     engineActivatedAutomationsSchema,
     engineAgentKeysListSchema,
+    type EngineScreenSecretMeta,
     boxConnectionSchema,
     boxConnectionsListSchema,
     connectionUsageSchema,
@@ -268,14 +269,14 @@ export async function getAgent(conn: EngineConnection, id: string): Promise<Engi
 // names are ever returned (values stay server-side); updates merge set/remove.
 // `engineKeys` are the RERUN_* names the engine resolves from its own process env;
 // engines predating the field simply omit it.
-export async function getAgentKeys(conn: EngineConnection, id: string): Promise<{ keys: string[]; engineKeys: string[] }> {
+export async function getAgentKeys(conn: EngineConnection, id: string): Promise<{ keys: string[]; engineKeys: string[]; screen: Record<string, EngineScreenSecretMeta> }> {
     return request(conn, `/agents/${encodeURIComponent(id)}/keys`, { method: 'GET' }, d => {
         const parsed = engineAgentKeysListSchema.parse(d)
-        return { keys: parsed.keys, engineKeys: parsed.engineKeys ?? [] }
+        return { keys: parsed.keys, engineKeys: parsed.engineKeys ?? [], screen: parsed.screen ?? {} }
     })
 }
 
-export async function updateAgentKeys(conn: EngineConnection, id: string, body: { set?: Record<string, string>; remove?: string[] }): Promise<string[]> {
+export async function updateAgentKeys(conn: EngineConnection, id: string, body: { set?: Record<string, string>; remove?: string[]; screen?: Record<string, EngineScreenSecretMeta> }): Promise<string[]> {
     return request(conn, `/agents/${encodeURIComponent(id)}/keys`, { method: 'PATCH', body: JSON.stringify(body) }, d => engineAgentKeysListSchema.parse(d).keys)
 }
 

@@ -172,6 +172,13 @@ describe('pendingSecrets', () => {
     it('returns nothing when the input holds no secrets', () => {
         expect(pendingSecrets({})).toEqual([])
     })
+
+    it('keeps the site of a screen secret and drops a blank one', () => {
+        expect(pendingSecrets({ secrets: [{ key: 'GH_PASSWORD', label: 'GitHub password', site: ' github.com ' }, { key: 'PLAIN', label: 'Plain', site: '  ' }] })).toEqual([
+            { key: 'GH_PASSWORD', label: 'GitHub password', help: undefined, docsUrl: undefined, site: 'github.com' },
+            { key: 'PLAIN', label: 'Plain', help: undefined, docsUrl: undefined, site: undefined },
+        ])
+    })
 })
 
 describe('serializeSecretResult', () => {

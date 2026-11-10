@@ -56,6 +56,7 @@ import type {
     AgentSetup,
     AgentDetail,
     AgentKeysList,
+    ScreenSecretMeta,
     Session,
     SessionSource,
     Message,
@@ -149,6 +150,7 @@ export type EngineAgentConfigPatch = Partial<Omit<AgentConfig, 'tools' | 'selfIm
 export type EngineAgentDetail = AgentDetail
 export type EngineAgentSetup = AgentSetup
 export type EngineAgentKeysList = AgentKeysList
+export type EngineScreenSecretMeta = ScreenSecretMeta
 // An AI provider credential held by a box: what an agent points at through `config.connectionId`.
 export type BoxConnection = ConnectionSummary
 export type BoxConnectionUsage = ConnectionUsage

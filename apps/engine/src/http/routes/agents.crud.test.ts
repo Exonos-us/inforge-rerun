@@ -162,4 +162,38 @@ describe('PATCH /agents/:id/keys', () => {
         expect(await res.json()).toEqual({ keys: ['BOTH', 'KEEP'] })
         expect(await readAgentEnv(id)).toEqual({ BOTH: 'new', KEEP: 'y' })
     })
+
+    it('saves screen-secret metadata beside a value and lists it back, never the value', async () => {
+        const id = await createAgent('ScreenKeys')
+        const res = await send('PATCH', `/agents/${id}/keys`, { set: { GH_PASSWORD: 'hunter2', PLAIN: 'x' }, screen: { GH_PASSWORD: { site: 'https://www.GitHub.com/login', allowAlways: true } } })
+        expect(res.status).toBe(200)
+        const listed = (await (await send('GET', `/agents/${id}/keys`)).json()) as { keys: string[]; screen: Record<string, unknown> }
+        expect(listed.keys).toEqual(['GH_PASSWORD', 'PLAIN'])
+        expect(listed.screen).toEqual({ GH_PASSWORD: { site: 'github.com', allowAlways: true } })
+        expect(JSON.stringify(listed)).not.toContain('hunter2')
+    })
+
+    it('drops the metadata with the key and ignores metadata for a key that holds no value', async () => {
+        const id = await createAgent('ScreenKeysDrop')
+        await send('PATCH', `/agents/${id}/keys`, { set: { GH_PASSWORD: 'v' }, screen: { GH_PASSWORD: { site: 'site.example' } } })
+        const res = await send('PATCH', `/agents/${id}/keys`, { remove: ['GH_PASSWORD'], screen: { NEVER_SET: { site: 'evil.example' } } })
+        expect(res.status).toBe(200)
+        const listed = (await (await send('GET', `/agents/${id}/keys`)).json()) as { screen: Record<string, unknown> }
+        expect(listed.screen).toEqual({})
+    })
+
+    it('labels an already-stored key without re-sending its value', async () => {
+        const id = await createAgent('ScreenKeysLate')
+        await send('PATCH', `/agents/${id}/keys`, { set: { EXISTING: 'v' } })
+        const res = await send('PATCH', `/agents/${id}/keys`, { screen: { EXISTING: { site: 'late.example' } } })
+        expect(res.status).toBe(200)
+        const listed = (await (await send('GET', `/agents/${id}/keys`)).json()) as { screen: Record<string, unknown> }
+        expect(listed.screen).toEqual({ EXISTING: { site: 'late.example', allowAlways: false } })
+    })
+
+    it('refuses metadata whose site is not a site', async () => {
+        const id = await createAgent('ScreenKeysBadSite')
+        const res = await send('PATCH', `/agents/${id}/keys`, { set: { KEY: 'v' }, screen: { KEY: { site: 'not a site' } } })
+        expect(res.status).toBe(400)
+    })
 })

@@ -1,5 +1,5 @@
-import type { BrowserContext } from 'patchright'
-import type { TakeoverResult } from '@rerun/contracts'
+import type { BrowserContext, Page } from 'patchright'
+import { siteOf, type TakeoverResult } from '@rerun/contracts'
 import { readAgentConfig } from '../agents/loader.js'
 import { browserProfileDir } from '../config/paths.js'
 import { withKeyedLock } from '../lib/lock.js'
@@ -203,3 +203,30 @@ export function joinableBrowser(agentId: string): Promise<BrowserContext | null>
 }
 
 export const activeTakeovers = (): string[] => [...active.keys()]
+
+const VISIBILITY_PROBE_MS = 1_500
+
+// A page that cannot answer quickly (crashed, navigating) is not the one in front of the user.
+async function pageVisible(page: Page): Promise<boolean> {
+    const probe = page.evaluate(() => document.visibilityState === 'visible').catch(() => false)
+    const late = new Promise<boolean>(resolve => setTimeout(() => resolve(false), VISIBILITY_PROBE_MS).unref())
+    return Promise.race([probe, late])
+}
+
+// The site of the page the agent's screen shows, read live from the browser window the engine
+// opened on it: the visible tab when one answers, the last open page otherwise. Null when no
+// engine-opened browser is on the screen, which is the one honest answer — the engine cannot tell
+// what another app shows.
+export async function currentBrowserSite(agentId: string): Promise<string | null> {
+    const takeover = active.get(agentId)
+    const context = takeover && !takeover.closing ? takeover.context : null
+    if (!context) return null
+    const pages = context.pages()
+    for (let i = pages.length - 1; i >= 0; i--) {
+        if (!(await pageVisible(pages[i]))) continue
+        const url = pages[i].url()
+        return url && url !== 'about:blank' ? siteOf(url) : null
+    }
+    const url = lastUrl(context)
+    return url ? siteOf(url) : null
+}
