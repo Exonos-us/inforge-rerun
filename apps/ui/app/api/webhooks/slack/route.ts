@@ -36,6 +36,12 @@ export async function POST(req: Request): Promise<Response> {
         return Response.json({ error: 'Invalid JSON' }, { status: 400 })
     }
 
+    // The handshake Slack runs the moment a Request URL is saved, and the only call that cannot be
+    // authenticated: it carries no team, and the app pasting the URL may not be installed anywhere
+    // yet, so there is no signing secret to check it against. Echoing Slack's own random string
+    // back tells a caller nothing it did not already send.
+    if (envelope.type === 'url_verification' && envelope.challenge) return ok({ challenge: envelope.challenge })
+
     const connection = envelope.team_id ? await connectionForTeam(envelope.team_id) : null
     if (!connection) {
         // Same answer as a bad signature: an unknown team must not learn whether it is known.
@@ -54,8 +60,6 @@ export async function POST(req: Request): Promise<Response> {
         return Response.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // The handshake Slack runs the moment the Request URL is pasted into the app.
-    if (envelope.type === 'url_verification' && envelope.challenge) return ok({ challenge: envelope.challenge })
     if (envelope.type !== 'event_callback' || !envelope.event) return ok()
 
     const event = envelope.event

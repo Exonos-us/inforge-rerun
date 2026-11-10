@@ -44,11 +44,24 @@ beforeEach(() => {
 })
 
 describe('POST /api/webhooks/slack', () => {
-    it('answers the challenge Slack sends when the URL is pasted', async () => {
+    it('answers the challenge Slack sends when the URL is saved', async () => {
         const res = await POST(deliver({ type: 'url_verification', team_id: TEAM, challenge: 'abc123' }))
 
         expect(res.status).toBe(200)
         await expect(res.json()).resolves.toEqual({ challenge: 'abc123' })
+    })
+
+    // Slack's handshake carries no team and is not signed against any workspace: the app saving
+    // the URL may not be installed anywhere yet. Looking the team up first answered 401 and left
+    // the Request URL permanently red.
+    it('answers the challenge before knowing the team, and unsigned', async () => {
+        vi.mocked(connectionForTeam).mockResolvedValue(null)
+        const body = JSON.stringify({ type: 'url_verification', token: 'verification', challenge: 'xyz789' })
+        const res = await POST(new Request('https://app.rerun.build/api/webhooks/slack', { method: 'POST', headers: { 'content-type': 'application/json' }, body }))
+
+        expect(res.status).toBe(200)
+        await expect(res.json()).resolves.toEqual({ challenge: 'xyz789' })
+        expect(connectionForTeam).not.toHaveBeenCalled()
     })
 
     it('hands a message to the coworker, after answering Slack', async () => {
