@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { desktopAppRequestSchema, desktopSessionRequestSchema, takeoverRequestSchema, type DesktopStatus } from '@rerun/contracts'
 import { agentExists } from '../../agents/loader.js'
 import { openDesktopApp } from '../../desktop/apps.js'
+import { listScreenSessions } from '../../desktop/recording.js'
 import { desktopAvailable, ensureDesktop, runningDesktops } from '../../desktop/session.js'
 import { activeTakeovers, finishTakeover, handBackTakeover, startTakeover } from '../../desktop/takeover.js'
 import { notFound } from '../../lib/errors.js'
@@ -47,3 +48,14 @@ agentDesktopRoutes.delete('/takeover', async c => {
     const id = c.req.param('id')!
     return c.json(await (c.req.query('keepOpen') === '1' ? handBackTakeover(id) : finishTakeover(id)))
 })
+
+// The evidence of what happened on the agent's screen, derived from its workspace `screen/` folder.
+// The frames and the recording themselves are served by the agent's files routes.
+export const agentScreenRoutes = new Hono()
+
+agentScreenRoutes.use('*', async (c, next) => {
+    if (!agentExists(c.req.param('id')!)) throw notFound('agent')
+    await next()
+})
+
+agentScreenRoutes.get('/sessions', async c => c.json({ sessions: await listScreenSessions(c.req.param('id')!) }))

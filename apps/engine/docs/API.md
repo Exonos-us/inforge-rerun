@@ -106,6 +106,21 @@ Closes that browser and returns the page it was on.
 { "url": "https://www.linkedin.com/feed/" }
 ```
 
+### `GET /agents/:id/screen/sessions`
+
+The screen sessions an agent's workspace still holds, newest first. A session is one stretch of
+screen use — a run driving the `computer` tools, a takeover, or both sharing the screen — kept as a
+`screen/<session id>/` folder in the agent's workspace: the screenshot of every action as `NNN.jpg`,
+and `recording.mp4` when `ffmpeg` is installed and the agent's `tools.computerRecording` flag is on
+(the default). The list is derived from the filesystem; the files themselves are served by the
+agent's files routes (`GET /agents/:id/files/raw?path=screen/<session id>/recording.mp4`). At most
+the 20 most recent sessions are kept, pruned when a session ends. `endedAt` is null while the
+session is still being written.
+
+```json
+{ "sessions": [{ "id": "2026-11-09T14-30-22-ab1c", "startedAt": "2026-11-09T14:30:22.000Z", "endedAt": "2026-11-09T14:33:10.000Z", "frames": 12, "recording": true }] }
+```
+
 ### `GET /desktop/ws?ticket=…` (WebSocket)
 
 The VNC stream of one agent's screen, as a WebSocket a noVNC client speaks to directly. It is the only route

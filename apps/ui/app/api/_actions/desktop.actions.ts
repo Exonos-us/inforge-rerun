@@ -1,12 +1,13 @@
 'use server'
 
-import { desktopAppSchema, desktopViewModeSchema, takeoverUrlSchema, type DesktopApp, type DesktopViewMode, type TakeoverResult } from '@rerun/contracts'
+import { desktopAppSchema, desktopViewModeSchema, takeoverUrlSchema, type DesktopApp, type DesktopViewMode, type ScreenSession, type TakeoverResult } from '@rerun/contracts'
 
 import { assertAgentInWorkspace, deniedCode, type DeniedCode } from '@/app/api/_auth/access'
 import { requireWorkspaceContext } from '@/app/api/_auth/ownership'
 import { DesktopUnavailableError, desktopSocketUrl, resolveWorkspaceDesktop, type WorkspaceDesktop } from '@/app/api/_services/desktop.service'
+import { resolveRunTarget } from '@/app/api/_services/chat.service'
 import { NoEngineError } from '@/app/api/_services/workspace-engine.service'
-import { finishTakeover, openDesktopApp, startDesktop, startTakeover } from '@/lib/engine/client'
+import { finishTakeover, listScreenSessions, openDesktopApp, startDesktop, startTakeover } from '@/lib/engine/client'
 
 type Failure = { ok: false; error: string; code?: DeniedCode }
 
@@ -67,6 +68,18 @@ export async function startTakeoverAction(agentId: string, url?: string): Promis
         return { ok: true }
     } catch (err) {
         return failure(err)
+    }
+}
+
+// The evidence a coworker's screen work left in its workspace. Reads like the files routes do, so it
+// needs no running desktop; a coworker without any answers an empty list.
+export async function listScreenSessionsAction(agentId: string): Promise<ScreenSession[]> {
+    try {
+        const target = await resolveRunTarget(agentId)
+        return await listScreenSessions(target.conn, target.engineAgentId)
+    } catch (err) {
+        console.error('[desktop] screen sessions', err)
+        return []
     }
 }
 

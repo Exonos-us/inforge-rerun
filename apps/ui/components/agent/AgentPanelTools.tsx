@@ -8,7 +8,7 @@ import { useCanManageAgent } from '@/hooks/useBoxAccess'
 import { BOX_MANAGE_REASON } from '@/lib/board/box-access'
 import { ENGINE_SELF_IMPROVEMENT_KEYS } from '@/lib/engine/constants'
 import type { EngineSelfImprovement, EngineToolFamily } from '@/lib/engine/types'
-import { ActivityIcon, BrainIcon, CalendarClockIcon, CardsIcon, CircleCheckIcon, CoinsIcon, DatabaseIcon, FolderIcon, GlobeIcon, InfoIcon, LayersIcon, Loader2Icon, LockIcon, type LucideIcon, MessageCircleQuestionIcon, MonitorIcon, QuickReplyIcon, TerminalIcon, UsersIcon, WandSparklesIcon, WebhookIcon, WrenchIcon } from '@/lib/icons'
+import { ActivityIcon, BrainIcon, CalendarClockIcon, CardsIcon, CircleCheckIcon, CoinsIcon, DatabaseIcon, FilmIcon, FolderIcon, GlobeIcon, InfoIcon, LayersIcon, Loader2Icon, LockIcon, type LucideIcon, MessageCircleQuestionIcon, MonitorIcon, QuickReplyIcon, TerminalIcon, UsersIcon, WandSparklesIcon, WebhookIcon, WrenchIcon } from '@/lib/icons'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PanelGrid, PanelListHeader, PanelScroller } from '@/components/ui/panel-list'
 import { PANEL_CARD, PANEL_CARD_INTERACTIVE } from '@/components/ui/panel-row'
@@ -56,6 +56,7 @@ export const CAPABILITY_META: Record<string, CapabilityMeta> = {
     cards: { icon: CardsIcon, label: 'Show cards in chat', blurb: 'Preview a table or a file inline', help: 'Lets the coworker drop a preview card in the conversation: the first rows of one of its tables, or a file from its workspace, that you can open in one click.' },
     quickReplies: { icon: QuickReplyIcon, label: 'Suggest replies', blurb: 'Offer one-click answers', help: 'Lets the coworker end a message with up to three short replies you can send in one click, such as "Find 100 more".' },
     computer: { icon: MonitorIcon, label: 'Use its computer', blurb: 'See and drive its own screen', help: 'Lets the coworker look at its own desktop and click, type and scroll in its browser, its files and its terminal, for work that has to be done by hand in an app or a site. You can watch it live, and it pauses while you drive the screen yourself.' },
+    computerRecording: { icon: FilmIcon, label: 'Record its screen', blurb: 'Keep a video of screen work', help: 'Keeps the evidence of every screen session in the screen folder of the coworker workspace: a video recording and the screenshot of each action, shown as the screen activity of the conversation. The 20 most recent sessions are kept.' },
     paidData: { icon: CoinsIcon, label: 'Leads, SEO & social data', blurb: 'Paid from your Rerun credits', help: 'Lets the coworker find prospects, their work emails and phone numbers and company data, check search volumes, keyword ideas and backlinks, read Google results and local businesses, and read public profiles and posts on LinkedIn, TikTok, Instagram, X, YouTube, Facebook and Reddit, without an Apollo, Semrush or scraping subscription. Each call is paid from your Rerun credits, spent by the coworker when a task needs it.' },
     requestSecret: { icon: LockIcon, label: 'Ask for a credential', blurb: 'Pause for a key, entered securely', help: 'Lets the coworker pause and ask you for an API key or token in a masked form. The value is stored as a coworker variable and never enters the conversation.' },
 }

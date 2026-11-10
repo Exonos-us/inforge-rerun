@@ -73,7 +73,7 @@ import { isPremiumModelEntitled } from '@rerun/cloud/billing'
 import { createClient } from '@/supabase/client'
 import { selectMaybeSingle } from '@/supabase/supabase-helpers'
 import { useChat } from '@ai-sdk/react'
-import { COWORKER_STARTER_SUGGESTIONS, paidDataSourcesByTurn, RERUN_CONNECTION_ID, runUsesScreen, screenSite } from '@rerun/contracts'
+import { COWORKER_STARTER_SUGGESTIONS, paidDataSourcesByTurn, RERUN_CONNECTION_ID, runUsesScreen, screenSessionsByTurn, screenSite } from '@rerun/contracts'
 import { track } from '@rerun/analytics/client'
 import { AnimatePresence, motion } from 'motion/react'
 import { DefaultChatTransport } from 'ai'
@@ -890,6 +890,7 @@ export function AgentChat({ uid, active, agentId, agentName, sessionId, onSessio
     const errorKind = displayedError === null ? null : classifyChatError(displayedError)
     const outOfPaidCredit = useMemo(() => turnRanOutOfPaidCredit(messages), [messages])
     const paidSourcesByTurn = useMemo(() => paidDataSourcesByTurn(messages), [messages])
+    const screenTurns = useMemo(() => screenSessionsByTurn(messages), [messages])
 
     // The queued message leaves as soon as the conversation is free again. The engine only drops
     // its session claim once the run has torn its provider down, well after this stream closed, so
@@ -988,6 +989,7 @@ export function AgentChat({ uid, active, agentId, agentName, sessionId, onSessio
                                         mentions={mentionTokens}
                                         createdAt={messageTimes[mi]}
                                         paidSources={paidSourcesByTurn.get(message.id)}
+                                        screenSessions={screenTurns.get(message.id)}
                                     />
                                 )
                                 if (!branches?.length) return view

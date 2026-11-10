@@ -22,6 +22,9 @@ const state = vi.hoisted(() => ({
     viewers: 0,
     onGoto: null as ((context: unknown) => void) | null,
     beforeLaunch: null as (() => void) | null,
+    sessionHolds: 0,
+    sessionRecords: [] as boolean[],
+    recordingFlag: true,
 }))
 
 vi.mock('../tools/builtin/browser.js', () => ({
@@ -64,6 +67,24 @@ vi.mock('./session.js', () => ({
 }))
 vi.mock('../lib/logger.js', () => ({ logger: { info() {}, warn() {} } }))
 
+vi.mock('../agents/loader.js', () => ({
+    readAgentConfig: async () => ({ tools: { computerRecording: state.recordingFlag } }),
+}))
+
+vi.mock('./recording.js', () => ({
+    holdScreenSession: (_agentId: string, { record = true } = {}) => {
+        state.sessionHolds++
+        state.sessionRecords.push(record)
+        return {
+            id: 'session-1',
+            saveFrame: async () => {},
+            release: () => {
+                state.sessionHolds--
+            },
+        }
+    },
+}))
+
 const { afterEach, beforeEach, describe, expect, it } = await import('vitest')
 const { withKeyedLock } = await import('../lib/lock.js')
 const { activeTakeovers, finishTakeover, handBackTakeover, holdBrowser, holdOpenBrowser, joinableBrowser, startTakeover } = await import('./takeover.js')
@@ -82,6 +103,9 @@ beforeEach(() => {
     state.viewers = 0
     state.onGoto = null
     state.beforeLaunch = null
+    state.sessionHolds = 0
+    state.sessionRecords.length = 0
+    state.recordingFlag = true
 })
 
 afterEach(async () => {
@@ -95,6 +119,20 @@ describe('takeover', () => {
         expect(state.launches).toHaveLength(1)
         expect(state.url).toBe('about:blank')
         expect(activeTakeovers()).toEqual(['a1'])
+    })
+
+    it('holds a screen session while the takeover is open, recording when the agent allows it', async () => {
+        await startTakeover('a1')
+        expect(state.sessionHolds).toBe(1)
+        expect(state.sessionRecords).toEqual([true])
+        await finishTakeover('a1')
+        expect(state.sessionHolds).toBe(0)
+
+        state.recordingFlag = false
+        await startTakeover('a2')
+        expect(state.sessionRecords).toEqual([true, false])
+        await finishTakeover('a2')
+        expect(state.sessionHolds).toBe(0)
     })
 
     it('does not open a tab on a private host in a window already open', async () => {

@@ -1,11 +1,12 @@
 import { parseHitlReply } from './chat-hitl.js'
 import { stripBridgePrefix } from './chat-tool-name.js'
+import { parseHubOutput } from './tool-output.js'
 
 const SCREEN_TOOLS = new Set(['computer', 'computer_open_app'])
 const NAVIGATE_TOOL = 'browser_navigate'
 
-type ToolPart = { type: string; toolName?: string; input?: unknown; text?: string }
-type MessageLike = { role: string; parts: readonly { type: string }[] }
+type ToolPart = { type: string; toolName?: string; input?: unknown; output?: unknown; text?: string }
+type MessageLike = { id?: string; role: string; parts: readonly { type: string }[] }
 
 const toolNameOf = (part: ToolPart) => stripBridgePrefix(part.toolName ?? (part.type.startsWith('tool-') ? part.type.slice('tool-'.length) : ''))
 
@@ -24,6 +25,49 @@ const runParts = (messages: readonly MessageLike[]) => currentRunMessages(messag
 
 export function runUsesScreen(messages: readonly MessageLike[]): boolean {
     return runParts(messages).some(part => SCREEN_TOOLS.has(toolNameOf(part)))
+}
+
+// The result arrives in whatever wrapper the path put around it: the plain value live, an AI-SDK
+// envelope on reload, a JSON text from a CLI bridge. parseHubOutput unwraps them all.
+function screenSessionOf(output: unknown): string | null {
+    const id = parseHubOutput<{ screenSession?: unknown }>(output)?.screenSession
+    return typeof id === 'string' ? id : null
+}
+
+function sessionsOfParts(parts: readonly ToolPart[]): string[] {
+    const sessions = new Set<string>()
+    for (const part of parts) {
+        if (!SCREEN_TOOLS.has(toolNameOf(part))) continue
+        const id = screenSessionOf(part.output)
+        if (id) sessions.add(id)
+    }
+    return [...sessions]
+}
+
+// The screen sessions each turn worked in, keyed by the id of the turn's last assistant message:
+// under that message the chat shows the "screen activity" card replaying them. A turn is everything
+// since a user message, like paidDataSourcesByTurn.
+export function screenSessionsByTurn(messages: readonly MessageLike[]): Map<string, string[]> {
+    const byTurn = new Map<string, string[]>()
+    let turn: ToolPart[] = []
+    let lastAssistantId: string | null = null
+    const close = () => {
+        const sessions = lastAssistantId ? sessionsOfParts(turn) : []
+        if (sessions.length && lastAssistantId) byTurn.set(lastAssistantId, sessions)
+        turn = []
+        lastAssistantId = null
+    }
+    for (const message of messages) {
+        if (message.role === 'user') {
+            close()
+            continue
+        }
+        if (message.role !== 'assistant') continue
+        turn.push(...(message.parts as readonly ToolPart[]))
+        if (message.id) lastAssistantId = message.id
+    }
+    close()
+    return byTurn
 }
 
 // Read by hand: React Native's `URL` has no `hostname`. Userinfo and port are set aside, so

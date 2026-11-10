@@ -11,6 +11,7 @@ import { CLI_PROVIDERS, type AgentConfig } from '../../agents/types.js'
 import type { Provider } from '@rerun/contracts'
 import { openDesktopApp } from '../../desktop/apps.js'
 import { ControlRefusal, captureScreen, click, controlScreen, drag, movePointer, pressKeys, scroll, typeText, type ScreenControl, type Screenshot } from '../../desktop/control.js'
+import { holdScreenSession, type ScreenSessionHold } from '../../desktop/recording.js'
 import { computerAvailable, holdDesktop, humanDriving } from '../../desktop/session.js'
 import { holdBrowser, holdOpenBrowser } from '../../desktop/takeover.js'
 import { withKeyedLock } from '../../lib/lock.js'
@@ -48,7 +49,9 @@ type ComputerInput = z.infer<typeof computerInput>
 
 type Refused = { status: 'refused'; reason: string }
 type Failed = { status: 'failed'; reason: string }
-type Done = { status: 'done'; screen: [number, number] } & ({ screenshotId: string } | { screenshotPath: string; next: string })
+// screenSession names the workspace folder (screen/<id>) where this action's screenshot is kept,
+// which is how the chat finds the evidence of a finished run.
+type Done = { status: 'done'; screen: [number, number]; screenSession?: string } & ({ screenshotId: string } | { screenshotPath: string; next: string })
 
 const refused = (reason: string): Refused => ({ status: 'refused', reason })
 
@@ -161,6 +164,7 @@ export function computerTools(ctx: RunContext): { tools: ToolSet; release: () =>
     const releases: Array<() => void> = []
     const maxActions = CLI_PROVIDERS.has(ctx.provider) ? MAX_ACTIONS_PER_CLI_RUN : MAX_ACTIONS_PER_RUN
     let actions = 0
+    let evidence: ScreenSessionHold | null = null
 
     // Codex's bridge carries text only, and Codex reads a picture from a file with a tool of its
     // own. Every other provider gets the picture attached by the run, under the id returned here.
@@ -187,8 +191,10 @@ export function computerTools(ctx: RunContext): { tools: ToolSet; release: () =>
             if (owner === ctx) return true
             if (!owner) {
                 screenOwners.set(id, ctx)
+                evidence = holdScreenSession(id, { record: ctx.agent.config.tools.computerRecording })
                 // A browser already on the screen (handed back after a sign-in) is what the run looks at.
-                releases.push(holdDesktop(id), holdOpenBrowser(id), () => {
+                releases.push(holdDesktop(id), holdOpenBrowser(id), evidence.release, () => {
+                    evidence = null
                     if (screenOwners.get(id) === ctx) freeScreen(id)
                 })
                 return true
@@ -217,7 +223,8 @@ export function computerTools(ctx: RunContext): { tools: ToolSet; release: () =>
                 await act(control, signal)
                 if (settleMs > 0) await sleep(settleMs, undefined, { signal })
                 const screenshot = await captureScreen(control)
-                return { status: 'done' as const, screen: [screenshot.width, screenshot.height] as [number, number], ...(await keep(screenshot)) }
+                await evidence?.saveFrame(screenshot.image)
+                return { status: 'done' as const, screen: [screenshot.width, screenshot.height] as [number, number], ...(evidence ? { screenSession: evidence.id } : {}), ...(await keep(screenshot)) }
             } catch (err) {
                 if (signal?.aborted) throw err
                 if (err instanceof ControlRefusal) return refused(err.message)

@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { runUsesScreen, screenSite, serializeTakeoverResult } from '@rerun/contracts'
+import { runUsesScreen, screenSessionsByTurn, screenSite, serializeTakeoverResult } from '@rerun/contracts'
 
 const user = (text: string) => ({ role: 'user', parts: [{ type: 'text', text }] })
-const assistant = (...parts: { type: string; toolName?: string; input?: unknown }[]) => ({ role: 'assistant', parts })
+let nextId = 0
+const assistant = (...parts: { type: string; toolName?: string; input?: unknown; output?: unknown }[]) => ({ id: `m${++nextId}`, role: 'assistant', parts })
 const click = { type: 'tool-computer', input: { action: 'left_click' } }
 const navigate = (url: string) => ({ type: 'tool-browser_navigate', input: { url } })
 
@@ -36,5 +37,28 @@ describe('screenSite', () => {
     it('has nothing to say about a run that opened no page', () => {
         expect(screenSite([user('go'), assistant(click)], null)).toBeNull()
         expect(screenSite(messages, 'not a url')).toBeNull()
+    })
+})
+
+describe('screenSessionsByTurn', () => {
+    const acted = (session: string) => ({ type: 'tool-computer', input: { action: 'left_click' }, output: { status: 'done', screenSession: session } })
+
+    it('keys each turn by its last assistant message, with the sessions its screen tools named', () => {
+        const first = assistant(acted('s1'), acted('s1'))
+        const tail = assistant({ type: 'text' })
+        const second = assistant(acted('s2'))
+        const byTurn = screenSessionsByTurn([user('go'), first, tail, user('again'), second])
+        expect(byTurn.get(tail.id)).toEqual(['s1'])
+        expect(byTurn.get(first.id)).toBeUndefined()
+        expect(byTurn.get(second.id)).toEqual(['s2'])
+    })
+
+    it('reads a result whatever wrapped it on the way, and skips outputs that name no session', () => {
+        const bridged = assistant({ type: 'dynamic-tool', toolName: 'mcp__rerun__computer', output: JSON.stringify({ status: 'done', screenSession: 's3' }) })
+        const reloaded = assistant({ type: 'tool-computer', output: { type: 'json', value: { status: 'done', screenSession: 's4' } } })
+        const silent = assistant(click, { type: 'tool-computer', output: 'not json' })
+        expect(screenSessionsByTurn([user('go'), bridged]).get(bridged.id)).toEqual(['s3'])
+        expect(screenSessionsByTurn([user('go'), reloaded]).get(reloaded.id)).toEqual(['s4'])
+        expect(screenSessionsByTurn([user('go'), silent]).size).toBe(0)
     })
 })

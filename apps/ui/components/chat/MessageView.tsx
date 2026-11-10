@@ -19,6 +19,7 @@ import { ExpandableMessage } from '@/components/chat/ExpandableMessage'
 import { MessageBubbles } from '@/components/chat/MessageBubbles'
 import { MessageTimeTooltip } from '@/components/chat/MessageTimeTooltip'
 import { PaidSourcesPill } from '@/components/chat/PaidSourcesPill'
+import { ScreenActivityCard } from '@/components/chat/ScreenActivityCard'
 import { USER_BUBBLE_INK, USER_BUBBLE_SHAPE } from '@/components/chat/bubble-styles'
 import { ReasoningStep } from '@/components/chat/ReasoningBlock'
 import { ScheduledRunBlock } from '@/components/chat/ScheduledRunBlock'
@@ -151,6 +152,9 @@ export type MessageViewProps = {
     createdAt?: string
     // Where the paid data of the turn came from, on the turn's last assistant message only.
     paidSources?: PaidTurnSources
+    // The screen sessions the turn worked in, on the turn's last assistant message only: the card
+    // that replays the kept screenshots and the recording.
+    screenSessions?: string[]
 }
 
 export type ToolPartLike = { toolName: string; toolCallId: string; state: string; input?: unknown; output?: unknown; errorText?: string }
@@ -161,7 +165,7 @@ export function UnderText({ children }: { children: ReactNode }) {
     return children
 }
 
-function MessageViewInner({ message, isActive = false, isLastAssistant = false, agentId, pendingHitlToolCallId, pendingMcpSignIn, hitlCall, pendingAlertToolCallId, activeRunId, onStopTask: stopTaskOverride, onSendMessage, onDraftReply, showQuickReplies = false, onRegenerate, onRateMessage, feedbackRating = null, rawUrlFor, readFile, sharedFiles, skillProposals, decidingProposalId, onDecideProposal, pinnedProposalIds, renderToolPart, installing, mentions, assistantLayout, createdAt, paidSources }: MessageViewProps) {
+function MessageViewInner({ message, isActive = false, isLastAssistant = false, agentId, pendingHitlToolCallId, pendingMcpSignIn, hitlCall, pendingAlertToolCallId, activeRunId, onStopTask: stopTaskOverride, onSendMessage, onDraftReply, showQuickReplies = false, onRegenerate, onRateMessage, feedbackRating = null, rawUrlFor, readFile, sharedFiles, skillProposals, decidingProposalId, onDecideProposal, pinnedProposalIds, renderToolPart, installing, mentions, assistantLayout, createdAt, paidSources, screenSessions }: MessageViewProps) {
     const toolDisplay = useToolDisplay(agentId)
     const publishedAccess = usePublishedAccessEnabled()
     const sources = message.role === 'assistant' ? messageSources(message) : []
@@ -369,7 +373,8 @@ function MessageViewInner({ message, isActive = false, isLastAssistant = false, 
     // The SDK pushes the assistant message before its first token, so its empty shell would
     // eat one of the conversation gaps and open a band above the loader.
     const showPaidSources = !!paidSources && !isActive
-    if (assistantSteps && assistantSteps.length === 0 && sources.length === 0 && !showPaidSources) return null
+    const showScreenActivity = !!agentId && !!screenSessions?.length && !isActive
+    if (assistantSteps && assistantSteps.length === 0 && sources.length === 0 && !showPaidSources && !showScreenActivity) return null
 
     // Not the user speaking, so no bubble: a divider across the thread marks where the install, the
     // routine or the webhook began.
@@ -404,6 +409,7 @@ function MessageViewInner({ message, isActive = false, isLastAssistant = false, 
                     </SourcesContent>
                 </Sources>
             )}
+            {showScreenActivity && <ScreenActivityCard agentId={agentId} sessionIds={screenSessions} />}
             {showPaidSources && <PaidSourcesPill sources={paidSources} />}
             {quickReplies.length > 0 && (
                 <Suggestions className="animate-in fade-in duration-300">

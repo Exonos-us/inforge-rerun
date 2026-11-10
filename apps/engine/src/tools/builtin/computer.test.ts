@@ -7,6 +7,10 @@ const state = vi.hoisted(() => ({
     captures: 0,
     failure: null as Error | null,
     screenHolds: 0,
+    sessionHolds: 0,
+    sessionCount: 0,
+    sessionRecords: [] as boolean[],
+    frames: [] as string[],
     browserHolds: 0,
     openBrowser: false,
     openBrowserHolds: 0,
@@ -85,6 +89,23 @@ vi.mock('../../desktop/apps.js', () => ({
     },
 }))
 
+vi.mock('../../desktop/recording.js', () => ({
+    holdScreenSession: (agentId: string, { record = true } = {}) => {
+        state.sessionHolds++
+        state.sessionRecords.push(record)
+        const id = `session-${agentId}-${++state.sessionCount}`
+        return {
+            id,
+            saveFrame: async (image: Buffer) => {
+                state.frames.push(`${id}:${image.toString()}`)
+            },
+            release: () => {
+                state.sessionHolds--
+            },
+        }
+    },
+}))
+
 const { afterEach, beforeEach, describe, expect, it } = await import('vitest')
 const { agentConfigSchema } = await import('../../agents/types.js')
 const { ControlRefusal } = await import('../../desktop/control.js')
@@ -111,6 +132,10 @@ beforeEach(() => {
     state.calls.length = 0
     state.captures = 0
     state.failure = null
+    state.sessionHolds = 0
+    state.sessionCount = 0
+    state.sessionRecords.length = 0
+    state.frames.length = 0
     state.browserUrls.length = 0
     state.apps.length = 0
     state.sleeps.length = 0
@@ -147,10 +172,29 @@ describe('computer', () => {
     it('looks at the screen and names the picture it kept for the model', async () => {
         const ctx = ctxWith()
         const result = await settled(act(build(ctx), { action: 'screenshot' }))
-        expect(result).toEqual({ status: 'done', screenshotId: expect.any(String), screen: [1280, 720] })
+        expect(result).toEqual({ status: 'done', screenshotId: expect.any(String), screen: [1280, 720], screenSession: 'session-a1-1' })
         expect(ctx.screenshots.get(result.screenshotId).image.toString()).toBe('shot-1')
         expect(state.calls).toEqual([])
         expect(state.sleeps).toEqual([])
+    })
+
+    it('keeps every action screenshot in the screen session of the run, released with the screen', async () => {
+        const built = build(ctxWith())
+        expect(state.sessionHolds).toBe(0)
+        await settled(act(built, { action: 'screenshot' }))
+        await settled(act(built, { action: 'left_click', coordinate: [1, 1] }))
+        expect(state.sessionHolds).toBe(1)
+        expect(state.sessionRecords).toEqual([true])
+        expect(state.frames).toEqual(['session-a1-1:shot-1', 'session-a1-1:shot-2'])
+        built.release()
+        expect(state.sessionHolds).toBe(0)
+    })
+
+    it('opens no recording for an agent that switched it off', async () => {
+        const built = build(ctxWith('a1', { computerRecording: false }))
+        await settled(act(built, { action: 'screenshot' }))
+        expect(state.sessionRecords).toEqual([false])
+        expect(state.frames).toEqual(['session-a1-1:shot-1'])
     })
 
     it('maps every action onto the screen', async () => {
@@ -328,7 +372,7 @@ describe('computer', () => {
         const built = build(ctx)
         const first = await settled(act(built, { action: 'screenshot' }))
         const second = await settled(act(built, { action: 'screenshot' }))
-        expect(first).toEqual({ status: 'done', screen: [1280, 720], screenshotPath: expect.stringMatching(/rerun-desktop\/screens\/codex-agent\/.+\.jpg$/), next: expect.stringContaining('view_image') })
+        expect(first).toEqual({ status: 'done', screen: [1280, 720], screenSession: 'session-codex-agent-1', screenshotPath: expect.stringMatching(/rerun-desktop\/screens\/codex-agent\/.+\.jpg$/), next: expect.stringContaining('view_image') })
         expect(readFileSync(first.screenshotPath).toString()).toBe('shot-1')
         expect(second.screenshotPath).not.toBe(first.screenshotPath)
         expect(ctx.screenshots).toBeUndefined()

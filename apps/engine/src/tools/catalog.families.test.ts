@@ -30,12 +30,13 @@ describe('toolCatalog', () => {
         expect(toolCatalog().map(f => f.family).sort()).toEqual([...TOOL_KEYS, 'self'].sort())
     })
 
-    // The quick replies are a block of the message the engine reads, not a tool: the family is
-    // the switch alone.
-    it('builds every family with described tools, the quick replies switch aside', () => {
+    // The quick replies are a block of the message the engine reads, not a tool, and the screen
+    // recording is a behaviour of the computer tools: those families are the switch alone.
+    it('builds every family with described tools, the switch-only families aside', () => {
+        const switchOnly = new Set(['quickReplies', 'computerRecording'])
         for (const family of toolCatalog()) {
             expect(family.description.length, family.family).toBeGreaterThan(0)
-            if (family.family === 'quickReplies') expect(family.tools).toEqual([])
+            if (switchOnly.has(family.family)) expect(family.tools).toEqual([])
             else expect(family.tools.length, family.family).toBeGreaterThan(0)
             for (const tool of family.tools) expect(tool.description.length, tool.name).toBeGreaterThan(0)
         }

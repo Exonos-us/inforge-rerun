@@ -7,6 +7,8 @@ import {
     type CustomProbeInput,
     type CustomProbeResult,
     takeoverResultSchema,
+    screenSessionsSchema,
+    type ScreenSession,
     type DesktopApp,
     type DesktopStatus,
     type TakeoverResult,
@@ -705,6 +707,16 @@ export async function startTakeover(conn: EngineConnection, agentId: string, url
 // it ignores the flag, closes the window and says nothing of `open`.
 export async function finishTakeover(conn: EngineConnection, agentId: string, { keepOpen = false } = {}): Promise<TakeoverResult> {
     return request(conn, `/agents/${encodeURIComponent(agentId)}/desktop/takeover${keepOpen ? '?keepOpen=1' : ''}`, { method: 'DELETE', signal: AbortSignal.timeout(DESKTOP_TIMEOUT_MS) }, d => takeoverResultSchema.parse(d))
+}
+
+// The screen sessions an agent's workspace keeps (screenshots + recording per session). An engine
+// that predates the route answers 404, which reads as "no evidence kept".
+export async function listScreenSessions(conn: EngineConnection, agentId: string): Promise<ScreenSession[]> {
+    try {
+        return (await request(conn, `/agents/${encodeURIComponent(agentId)}/screen/sessions`, {}, d => screenSessionsSchema.parse(d))).sessions
+    } catch {
+        return []
+    }
 }
 
 export function forgetEngineCapabilities(conn: EngineConnection): void {

@@ -1,10 +1,12 @@
 import type { BrowserContext } from 'patchright'
 import type { TakeoverResult } from '@rerun/contracts'
+import { readAgentConfig } from '../agents/loader.js'
 import { browserProfileDir } from '../config/paths.js'
 import { withKeyedLock } from '../lib/lock.js'
 import { logger } from '../lib/logger.js'
 import { assertPublicUrl } from '../lib/public-fetch.js'
 import { dropProfileCaches, launchContext } from '../tools/builtin/browser.js'
+import { holdScreenSession } from './recording.js'
 import { ensureDesktop, holdDesktop, viewersOf } from './session.js'
 
 const MAX_TAKEOVER_MS = 15 * 60_000
@@ -35,6 +37,12 @@ function lastUrl(context: BrowserContext): string | null {
     return url && url !== 'about:blank' ? url : null
 }
 
+const recordingWanted = (agentId: string): Promise<boolean> =>
+    readAgentConfig(agentId).then(
+        config => config.tools.computerRecording,
+        () => true,
+    )
+
 // A refused page leaves the window on about:blank rather than on a LAN or local address.
 async function openable(url: string): Promise<boolean> {
     try {
@@ -57,10 +65,14 @@ export async function startTakeover(agentId: string, url?: string, { endWhenUnwa
     const already = open()
     if (already) return already
     const { display } = await ensureDesktop(agentId)
+    const record = await recordingWanted(agentId)
     // Asked again synchronously: a second start may have opened the browser while the screen came up.
     const meanwhile = open()
     if (meanwhile) return meanwhile
     const release = holdDesktop(agentId)
+    // The sign-in is part of the story the recording tells. A run already on the screen holds the
+    // same session, so the takeover lands in that run's folder.
+    const evidence = holdScreenSession(agentId, { record })
     let finished!: () => void
     const finishing = new Promise<void>(done => (finished = done))
     const finish = () => {
@@ -113,6 +125,7 @@ export async function startTakeover(agentId: string, url?: string, { endWhenUnwa
             await context?.close().catch(() => {})
             await dropProfileCaches(agentId).catch(() => {})
             if (active.get(agentId) === takeover) active.delete(agentId)
+            evidence.release()
             release()
         }
     })

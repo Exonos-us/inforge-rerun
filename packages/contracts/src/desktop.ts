@@ -40,6 +40,20 @@ export const takeoverRequestSchema = z.object({ url: takeoverUrlSchema.optional(
 export const takeoverResultSchema = z.object({ url: z.string().nullable(), open: z.boolean().optional() })
 export type TakeoverResult = z.infer<typeof takeoverResultSchema>
 
+// One screen session of an agent: the workspace folder `screen/<id>` holding the screenshots of a
+// run's actions and the MP4 of the whole session. `endedAt` is null while it is still being written.
+export const screenSessionSchema = z.object({
+    id: z.string(),
+    startedAt: z.string(),
+    endedAt: z.string().nullable(),
+    frames: z.number().int().nonnegative(),
+    recording: z.boolean(),
+})
+export type ScreenSession = z.infer<typeof screenSessionSchema>
+
+export const screenSessionsSchema = z.object({ sessions: z.array(screenSessionSchema) })
+export type ScreenSessions = z.infer<typeof screenSessionsSchema>
+
 // An app's request for a socket to one agent's screen. The ticket in the URL is spent after a minute:
 // a reconnect asks again.
 export const desktopSocketRequestSchema = desktopSessionRequestSchema.extend({ mode: desktopViewModeSchema })
