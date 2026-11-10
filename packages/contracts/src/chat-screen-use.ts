@@ -2,7 +2,8 @@ import { parseHitlReply } from './chat-hitl.js'
 import { stripBridgePrefix } from './chat-tool-name.js'
 import { parseHubOutput } from './tool-output.js'
 
-const SCREEN_TOOLS = new Set(['computer', 'computer_open_app'])
+// `type_secret` is a tool of its own on runs that get the provider-native computer toolset.
+const SCREEN_TOOLS = new Set(['computer', 'computer_open_app', 'type_secret'])
 const NAVIGATE_TOOL = 'browser_navigate'
 
 type ToolPart = { type: string; toolName?: string; input?: unknown; output?: unknown; text?: string }

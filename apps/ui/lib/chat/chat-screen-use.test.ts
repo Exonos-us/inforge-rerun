@@ -21,6 +21,10 @@ describe('runUsesScreen', () => {
     it('knows the screen tools the CLI bridge prefixed', () => {
         expect(runUsesScreen([user('go'), assistant({ type: 'dynamic-tool', toolName: 'mcp__rerun__computer_open_app' })])).toBe(true)
     })
+
+    it('counts the type_secret tool of the provider-native toolset as screen use', () => {
+        expect(runUsesScreen([user('sign in'), assistant({ type: 'tool-type_secret', input: { secret: 'GH_PASSWORD' } })])).toBe(true)
+    })
 })
 
 describe('screenSite', () => {

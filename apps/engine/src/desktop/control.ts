@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import { setTimeout as sleep } from 'node:timers/promises'
 import { BAR_WINDOW_NAME, DOCK_WINDOW_NAME } from './panels.js'
 import { SCREEN_CAPTURE_BINARY, desktopEnv, ensureDesktop } from './session.js'
 
@@ -10,7 +11,7 @@ const CAPTURE_MAX_BYTES = 64 * 1024 * 1024
 const TYPE_DELAY_MS = '12'
 const DOUBLE_CLICK_DELAY_MS = '80'
 const PANEL_WINDOW_NAMES = new Set([DOCK_WINDOW_NAME, BAR_WINDOW_NAME])
-const BUTTONS = { left: '1', right: '3' } as const
+const BUTTONS = { left: '1', middle: '2', right: '3' } as const
 const SCROLL_BUTTONS = { up: '4', down: '5', left: '6', right: '7' } as const
 const KEY_COMBO = /^[A-Za-z0-9_]+(\+[A-Za-z0-9_]+)*$/
 const FUNCTION_KEY = /^f\d{1,2}$/
@@ -52,12 +53,17 @@ const KEY_ALIASES: Record<string, string> = {
 }
 
 export type ViewPoint = readonly [number, number]
+export type ViewRegion = readonly [number, number, number, number]
 export type MouseButton = keyof typeof BUTTONS
 export type ScrollDirection = keyof typeof SCROLL_BUTTONS
 export type Screenshot = { image: Buffer; mediaType: 'image/jpeg'; width: number; height: number }
 
-// The agent points at what it saw, which is the capture, not the screen: `scale` is the way back.
-export type ScreenControl = { env: NodeJS.ProcessEnv; width: number; height: number; scale: number; signal?: AbortSignal }
+// The part of the screen the latest screenshot showed, in screen pixels.
+export type ViewRect = { x: number; y: number; width: number; height: number }
+
+// The agent points at what it saw, which is the capture, not the screen: `view` names the screen
+// region that capture showed and `scale` how far it was shrunk, together the way back.
+export type ScreenControl = { env: NodeJS.ProcessEnv; width: number; height: number; view: ViewRect; scale: number; signal?: AbortSignal }
 
 // Something the agent may not do on its screen, as opposed to something that broke.
 export class ControlRefusal extends Error {}
@@ -73,26 +79,46 @@ function run(command: string, args: string[], env: NodeJS.ProcessEnv, { signal, 
 
 const xdotool = (control: ScreenControl, args: string[], options: RunOptions = {}): Promise<Buffer> => run('xdotool', args, control.env, { signal: control.signal, ...options })
 
+const viewScale = (width: number, height: number): number => Math.max(1, width / VIEW_MAX_WIDTH, height / VIEW_MAX_HEIGHT)
+
 export async function controlScreen(agentId: string, signal?: AbortSignal): Promise<ScreenControl> {
     const { display } = await ensureDesktop(agentId)
     const env = desktopEnv(display)
     const [width = 0, height = 0] = (await run('xdotool', ['getdisplaygeometry'], env, { signal })).toString().trim().split(/\s+/).map(Number)
     if (!width || !height) throw new Error('The screen did not report its size.')
-    return { env, width, height, scale: Math.max(1, width / VIEW_MAX_WIDTH, height / VIEW_MAX_HEIGHT), signal }
+    return { env, width, height, view: { x: 0, y: 0, width, height }, scale: viewScale(width, height), signal }
 }
 
+// The region is in pixels of the current view, like every coordinate. The zoomed view is captured
+// at native resolution up to the same box a full screenshot fits in, so a small region comes back
+// magnified compared to the shrunk full-screen picture.
+export function zoomedControl(control: ScreenControl, [x, y, width, height]: ViewRegion): ScreenControl {
+    if (!(width > 0) || !(height > 0)) throw new ControlRefusal('zoom needs a region with a positive width and height.')
+    const left = Math.max(0, Math.min(control.width - 1, Math.round(control.view.x + x * control.scale)))
+    const top = Math.max(0, Math.min(control.height - 1, Math.round(control.view.y + y * control.scale)))
+    const right = Math.min(control.width, Math.round(control.view.x + (x + width) * control.scale))
+    const bottom = Math.min(control.height, Math.round(control.view.y + (y + height) * control.scale))
+    if (right - left < 1 || bottom - top < 1) throw new ControlRefusal('That zoom region falls outside the screen.')
+    const view = { x: left, y: top, width: right - left, height: bottom - top }
+    return { ...control, view, scale: viewScale(view.width, view.height) }
+}
+
+const fullScreenView = (control: ScreenControl): boolean => control.view.x === 0 && control.view.y === 0 && control.view.width === control.width && control.view.height === control.height
+
 export async function captureScreen(control: ScreenControl): Promise<Screenshot> {
-    const png = await run(SCREEN_CAPTURE_BINARY, ['--format', 'png'], control.env, { signal: control.signal })
+    const { view } = control
+    const geometry = fullScreenView(control) ? [] : ['--geometry', `${view.width}x${view.height}+${view.x}+${view.y}`]
+    const png = await run(SCREEN_CAPTURE_BINARY, ['--format', 'png', ...geometry], control.env, { signal: control.signal })
     const { default: sharp } = await import('sharp')
-    const width = Math.round(control.width / control.scale)
-    const height = Math.round(control.height / control.scale)
+    const width = Math.round(view.width / control.scale)
+    const height = Math.round(view.height / control.scale)
     const image = await sharp(png).resize(width, height, { fit: 'fill' }).jpeg({ quality: JPEG_QUALITY }).toBuffer()
     return { image, mediaType: 'image/jpeg', width, height }
 }
 
 function onScreen(control: ScreenControl, [x, y]: ViewPoint): [string, string] {
-    const clamp = (value: number, size: number) => String(Math.min(size - 1, Math.max(0, Math.round(value * control.scale))))
-    return [clamp(x, control.width), clamp(y, control.height)]
+    const clamp = (value: number, offset: number, size: number) => String(Math.min(offset + size - 1, Math.max(offset, offset + Math.round(value * control.scale))))
+    return [clamp(x, control.view.x, control.view.width), clamp(y, control.view.y, control.view.height)]
 }
 
 // The dock opens the terminal and the files whatever the agent's own switches say, so it is the
@@ -112,10 +138,22 @@ export async function movePointer(control: ScreenControl, point: ViewPoint): Pro
     await xdotool(control, ['mousemove', '--sync', ...onScreen(control, point)])
 }
 
-export async function click(control: ScreenControl, point: ViewPoint, { button = 'left', double = false }: { button?: MouseButton; double?: boolean } = {}): Promise<void> {
+export async function click(control: ScreenControl, point: ViewPoint, { button = 'left', clicks = 1 }: { button?: MouseButton; clicks?: number } = {}): Promise<void> {
     await movePointer(control, point)
     await refusePanel(control)
-    await xdotool(control, ['click', ...(double ? ['--repeat', '2', '--delay', DOUBLE_CLICK_DELAY_MS] : []), BUTTONS[button]])
+    await xdotool(control, ['click', ...(clicks > 1 ? ['--repeat', String(clicks), '--delay', DOUBLE_CLICK_DELAY_MS] : []), BUTTONS[button]])
+}
+
+export async function mouseDown(control: ScreenControl, point: ViewPoint): Promise<void> {
+    await movePointer(control, point)
+    await refusePanel(control)
+    await xdotool(control, ['mousedown', BUTTONS.left])
+}
+
+export async function mouseUp(control: ScreenControl, point?: ViewPoint): Promise<void> {
+    if (point) await movePointer(control, point)
+    // Without the run's signal: a stop between a mouse_down and its mouse_up must still let go.
+    await run('xdotool', ['mouseup', BUTTONS.left], control.env)
 }
 
 export async function drag(control: ScreenControl, from: ViewPoint, to: ViewPoint): Promise<void> {
@@ -165,5 +203,17 @@ export async function pressKeys(control: ScreenControl, keys: string): Promise<v
             await run('xdotool', ['keyup', '--', combo], control.env).catch(() => {})
             throw err
         }
+    }
+}
+
+export async function holdKey(control: ScreenControl, keys: string, durationSeconds: number): Promise<void> {
+    const combos = keyCombos(keys)
+    if (combos.length > 1) throw new ControlRefusal('hold_key holds one key or combination at a time.')
+    try {
+        await xdotool(control, ['keydown', '--', combos[0]])
+        await sleep(durationSeconds * 1000, undefined, { signal: control.signal })
+    } finally {
+        // Without the run's signal: a stop in the middle of a hold must still release the key.
+        await run('xdotool', ['keyup', '--', combos[0]], control.env).catch(() => {})
     }
 }
