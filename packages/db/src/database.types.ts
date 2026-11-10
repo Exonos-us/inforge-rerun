@@ -2441,6 +2441,7 @@ export type Database = {
           id: string
           last_event_at: string | null
           last_signature_error_at: string | null
+          request_url: string | null
           signing_secret: string
           status: string
           team_id: string
@@ -2457,6 +2458,7 @@ export type Database = {
           id?: string
           last_event_at?: string | null
           last_signature_error_at?: string | null
+          request_url?: string | null
           signing_secret: string
           status?: string
           team_id: string
@@ -2473,6 +2475,7 @@ export type Database = {
           id?: string
           last_event_at?: string | null
           last_signature_error_at?: string | null
+          request_url?: string | null
           signing_secret?: string
           status?: string
           team_id?: string

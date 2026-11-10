@@ -18,7 +18,7 @@ type ThreadUpdate = Database['public']['Tables']['slack_threads']['Update']
 type EventInsert = Database['public']['Tables']['slack_events']['Insert']
 type EventUpdate = Database['public']['Tables']['slack_events']['Update']
 
-const CONNECTION_COLUMNS = ['id', 'workspace_id', 'team_id', 'team_name', 'bot_user_id', 'bot_token', 'signing_secret', 'can_customize_identity', 'status', 'last_event_at', 'last_signature_error_at'] as const
+const CONNECTION_COLUMNS = ['id', 'workspace_id', 'team_id', 'team_name', 'bot_user_id', 'bot_token', 'signing_secret', 'can_customize_identity', 'status', 'last_event_at', 'last_signature_error_at', 'request_url'] as const
 
 export type SlackConnection = Pick<Database['public']['Tables']['slack_connections']['Row'], (typeof CONNECTION_COLUMNS)[number]>
 // The same row minus the two secrets, which never travel to a browser.
@@ -56,6 +56,7 @@ export function publicView(connection: SlackConnection | null): PublicSlackConne
         status: connection.status,
         last_event_at: connection.last_event_at,
         last_signature_error_at: connection.last_signature_error_at,
+        request_url: connection.request_url,
     }
 }
 
@@ -64,7 +65,7 @@ export type ConnectResult = { ok: true; teamName: string; canCustomizeIdentity: 
 // Saving the two values the user copied out of their new Slack app. The token is checked against
 // Slack before anything is written: a typo here would otherwise only surface as silence in a
 // channel days later.
-export async function connectSlack(params: { workspaceId: number; userId: string; botToken: string; signingSecret: string }): Promise<ConnectResult> {
+export async function connectSlack(params: { workspaceId: number; userId: string; botToken: string; signingSecret: string; requestUrl?: string | null }): Promise<ConnectResult> {
     const token = params.botToken.trim()
     const secret = params.signingSecret.trim()
     if (!token.startsWith('xoxb-')) return { ok: false, error: 'That is not a bot token — it should start with xoxb-. Copy it from OAuth & Permissions → Bot User OAuth Token.' }
@@ -94,6 +95,9 @@ export async function connectSlack(params: { workspaceId: number; userId: string
             can_customize_identity: scopes.includes('chat:write.customize'),
             connected_by: params.userId,
             status: 'connected',
+            // The address the Slack app was created with: the one Slack calls, not necessarily
+            // the one this app is read on. Kept so the screen can probe it later.
+            request_url: params.requestUrl?.trim() || null,
             updated_at: new Date().toISOString(),
         },
         { onConflict: 'workspace_id' },
@@ -112,6 +116,16 @@ export async function replaceSigningSecret(workspaceId: number, signingSecret: s
     const { error } = await createServiceRoleClient()
         .from('slack_connections')
         .update<ConnectionUpdate>({ signing_secret: secret, last_signature_error_at: null, updated_at: new Date().toISOString() })
+        .eq('workspace_id', workspaceId)
+    return error ? { ok: false, error: error.message } : { ok: true }
+}
+
+// The delivery address alone, for the connection that predates it being stored or whose tunnel
+// changed. Nothing else moves: token, secret and channels stay exactly as they are.
+export async function saveRequestUrl(workspaceId: number, requestUrl: string): Promise<{ ok: true } | { ok: false; error: string }> {
+    const { error } = await createServiceRoleClient()
+        .from('slack_connections')
+        .update<ConnectionUpdate>({ request_url: requestUrl, updated_at: new Date().toISOString() })
         .eq('workspace_id', workspaceId)
     return error ? { ok: false, error: error.message } : { ok: true }
 }
@@ -249,16 +263,49 @@ export type SlackMessageEvent = {
     subtype?: string
 }
 
-// Who the message is for. A thread already belongs to a coworker, so a follow-up needs no name;
-// a channel with one coworker needs none either. Otherwise the first name mentioned wins.
-export function pickBinding(bindings: ChannelBinding[], text: string, boundAgentId?: string | null): ChannelBinding | null {
+// Who, if anyone, a channel message is for. Answering is earned, never the default: people talk
+// to each other in these channels too, and a bot that butts in reads as a machine. A coworker
+// speaks when it is named, when the thread is already its conversation, or when it is alone in
+// the channel and nobody else was addressed. "Who should take this" is only worth asking when the
+// app itself was mentioned: the person called, and several could pick up.
+export type SlackRouting = { kind: 'answer'; binding: ChannelBinding } | { kind: 'ask_who' } | { kind: 'silent' }
+
+export function routeMessage(params: {
+    bindings: ChannelBinding[]
+    text: string
+    // The coworker already holding this thread, from its slack_threads row.
+    threadAgentId?: string | null
+    // The message sits in a thread no coworker ever answered in: someone else's conversation.
+    inForeignThread?: boolean
+    botUserId?: string | null
+}): SlackRouting {
+    const { bindings, text } = params
+
     // `(?![\w-])` rather than `\b`: a name can end in a character that is not a word character
     // ("c++"), where `\b` would never match, and it still keeps "engineer-1" from matching
     // "engineer-10".
     const named = bindings.find(b => new RegExp(`(^|[^\\w-])@?${b.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w-])`, 'i').test(text))
-    if (named) return named
-    if (boundAgentId) return bindings.find(b => b.agentId === boundAgentId) ?? null
-    return bindings.length === 1 ? bindings[0] : null
+    if (named) return { kind: 'answer', binding: named }
+
+    const threadBinding = params.threadAgentId ? (bindings.find(b => b.agentId === params.threadAgentId) ?? null) : null
+
+    if (params.botUserId && text.includes(`<@${params.botUserId}>`)) {
+        if (threadBinding) return { kind: 'answer', binding: threadBinding }
+        if (bindings.length === 1) return { kind: 'answer', binding: bindings[0] }
+        return { kind: 'ask_who' }
+    }
+
+    // "Mira ese thread <@U_JAHIR>": a person was pulled in, and the message is theirs to answer —
+    // even inside a coworker's own thread, and even when that coworker is alone in the channel.
+    const mentionsAPerson = [...text.matchAll(/<@([A-Z0-9_]+)>/g)].some(mention => mention[1] !== params.botUserId)
+    if (mentionsAPerson) return { kind: 'silent' }
+
+    // A thread row whose owner is no longer bound here: that conversation left with it. The other
+    // coworkers were never part of it, so nobody picks it up uninvited.
+    if (params.threadAgentId) return threadBinding ? { kind: 'answer', binding: threadBinding } : { kind: 'silent' }
+    if (params.inForeignThread) return { kind: 'silent' }
+    if (bindings.length === 1) return { kind: 'answer', binding: bindings[0] }
+    return { kind: 'silent' }
 }
 
 // The app mention and the coworker's name are how you address someone, not part of what you asked.
@@ -387,9 +434,21 @@ export async function handleSlackMessage(connection: SlackConnection, event: Sla
     const [bindings, thread] = await Promise.all([bindingsOf(connection.id, channelId), threadOf(connection.id, channelId, threadTs)])
     if (bindings.length === 0) return
 
-    const binding = pickBinding(bindings, text, thread?.agent_id)
+    const routing = routeMessage({
+        bindings,
+        text,
+        threadAgentId: thread?.agent_id ?? null,
+        inForeignThread: Boolean(event.thread_ts) && !thread,
+        botUserId: connection.bot_user_id,
+    })
     const token = connection.bot_token
-    if (!binding) {
+
+    if (routing.kind === 'silent') {
+        await markEventProcessed(eventId)
+        return
+    }
+
+    if (routing.kind === 'ask_who') {
         await postMessage(token, {
             channel: channelId,
             threadTs,
@@ -399,6 +458,8 @@ export async function handleSlackMessage(connection: SlackConnection, event: Sla
         await markEventProcessed(eventId)
         return
     }
+
+    const binding = routing.binding
 
     const message = cleanMessage(text, binding.name)
     if (!message) return
@@ -460,4 +521,13 @@ export async function workspaceCoworkers(workspaceId: number) {
 
 export async function touchThreadAgent(connectionId: string, channelId: string, threadTs: string, agentId: string): Promise<void> {
     await createServiceRoleClient().from('slack_threads').update<ThreadUpdate>({ agent_id: agentId, updated_at: new Date().toISOString() }).eq('connection_id', connectionId).eq('channel_id', channelId).eq('thread_ts', threadTs)
+}
+
+// When each channel last moved, from the threads the coworkers answered in. Read newest first and
+// bounded, so a long history costs one small page: the first time a channel appears is its answer.
+export async function lastThreadActivity(connectionId: string): Promise<Record<string, string>> {
+    const { data } = await selectMany(createServiceRoleClient(), 'slack_threads', ['channel_id', 'updated_at'] as const, { connection_id: connectionId }, { column: 'updated_at', ascending: false }, 500)
+    const latest: Record<string, string> = {}
+    for (const thread of data ?? []) latest[thread.channel_id] ??= thread.updated_at
+    return latest
 }

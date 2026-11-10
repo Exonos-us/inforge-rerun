@@ -27,7 +27,7 @@ export const AGENT_SHEET_VIEW_LABELS: Record<AgentSheetView, string> = {
     files: 'Files',
     data: 'Database',
     routines: 'Routines',
-    channels: 'Channels',
+    channels: 'Chats',
     activity: 'Activity',
     settings: 'Settings',
 }
@@ -43,7 +43,7 @@ export const AGENT_VIEW_TAB_LABELS: Record<AgentViewTab, string> = {
     data: 'Database',
     scheduled: 'Scheduled',
     triggers: 'Triggers',
-    channels: 'Channels',
+    channels: 'Chats',
     monitoring: 'Monitoring',
     logs: 'Logs',
     settings: 'General',

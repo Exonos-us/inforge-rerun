@@ -13,7 +13,7 @@ import { useCanManageAgent } from '@/hooks/useBoxAccess'
 import { BOX_MANAGE_REASON } from '@/lib/board/box-access'
 import type { AgentViewTab } from '@/lib/board/agent-sheet-views'
 import { type IsoAgent, UNNAMED_BOX_LABEL } from '@/lib/board/types'
-import { BlocksIcon, BrainIcon, CalendarClockIcon, ChevronRightIcon, FolderIcon, GaugeIcon, HashIcon, Layers, Link2, SettingsIcon, TableIcon, Trash2Icon, XIcon } from '@/lib/icons'
+import { BlocksIcon, BrainIcon, CalendarClockIcon, ChevronRightIcon, FolderIcon, GaugeIcon, Layers, Link2, MessagesSquare, SettingsIcon, TableIcon, Trash2Icon, XIcon } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 import { useBoardStore } from '@/stores/board.store'
 
@@ -29,7 +29,7 @@ const DESTINATIONS: Record<CardDestination, { label: string; icon: IconType }> =
     skills: { label: 'Skills', icon: Layers },
     memories: { label: 'Knowledge', icon: BrainIcon },
     scheduled: { label: 'Routines', icon: CalendarClockIcon },
-    channels: { label: 'Channels', icon: HashIcon },
+    channels: { label: 'Chats', icon: MessagesSquare },
     files: { label: 'Files', icon: FolderIcon },
     data: { label: 'Database', icon: TableIcon },
     monitoring: { label: 'Activity', icon: GaugeIcon },

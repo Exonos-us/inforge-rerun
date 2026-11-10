@@ -55,3 +55,13 @@ export function isReachableFromSlack(url: string): boolean {
         return false
     }
 }
+
+// A development tunnel in front of a local install. Named because its URL rotates: when events
+// stop arriving, the first suspect is a tunnel that restarted under a new address.
+export function isLocalTunnel(url: string): boolean {
+    try {
+        return /(^|\.)(ngrok(-free)?\.(app|dev|io)|trycloudflare\.com|loca\.lt|localtunnel\.me)$/i.test(new URL(url).hostname)
+    } catch {
+        return false
+    }
+}

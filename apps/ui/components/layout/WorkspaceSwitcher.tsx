@@ -6,7 +6,8 @@ import { AccountDialog } from '@/components/dialogs/AccountDialog'
 import { AiProvidersDialog } from '@/components/dialogs/AiProvidersDialog'
 import { ApiKeysDialog } from '@/components/dialogs/ApiKeysDialog'
 import { ServersDialog } from '@/components/dialogs/ServersDialog'
-import { SlackDialog } from '@/components/dialogs/SlackDialog'
+import { ChatAppsConnectedHint } from '@/components/chat-apps/ChatAppsConnectedHint'
+import { ChatAppsDialog } from '@/components/dialogs/ChatAppsDialog'
 import { ADMIN_URL } from '@rerun/cloud/admin'
 import { RERUN_CLOUD } from '@rerun/cloud/edition'
 import { SERVERS_ENABLED } from '@rerun/cloud/servers'
@@ -40,7 +41,7 @@ import { useForemanStore } from '@/stores/foreman.store'
 import { useNotificationsStore } from '@/stores/notifications.store'
 import { useWorkspaceSettingsStore } from '@/stores/workspace-settings.store'
 import { useIsWorkspaceAdmin, useSession } from '@/supabase/session/SessionProvider'
-import { BadgeCheck, BellIcon, BrainIcon, CheckIcon, CreditCardIcon, FlaskConical, GaugeIcon, GridIcon, HashIcon, IdCardIcon, KeyIcon, LayersIcon, Loader2Icon, LockKeyholeIcon, LogOutIcon, PlusIcon, ServerIcon, SettingsIcon, ShieldCheckIcon, UserRoundIcon, UsersIcon } from '@/lib/icons'
+import { BadgeCheck, BellIcon, BrainIcon, CheckIcon, CreditCardIcon, FlaskConical, GaugeIcon, GridIcon, IdCardIcon, KeyIcon, LayersIcon, Loader2Icon, LockKeyholeIcon, LogOutIcon, MessagesSquare, PlusIcon, ServerIcon, SettingsIcon, ShieldCheckIcon, UserRoundIcon, UsersIcon } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 import { abortWorkspaceSwitch, beginWorkspaceSwitch, enterActiveWorkspace } from '@/lib/workspace/workspace-switch'
 import Link from 'next/link'
@@ -236,9 +237,10 @@ export function WorkspaceSwitcher() {
                 <LockKeyholeIcon className="size-4" />
                 AI providers
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => openWorkspacePanel('slack')} className="gap-2 text-muted-foreground">
-                <HashIcon className="size-4" />
-                Slack
+            <DropdownMenuItem onSelect={() => openWorkspacePanel('chat_apps')} className="gap-2 text-muted-foreground">
+                <MessagesSquare className="size-4" />
+                Chat apps
+                <ChatAppsConnectedHint />
             </DropdownMenuItem>
             {apiKeysItem}
             {SERVERS_ENABLED && (
@@ -423,7 +425,7 @@ export function WorkspaceSwitcher() {
             <ApiKeysDialog open={panel === 'api_keys'} onOpenChange={open => setPanel(open ? 'api_keys' : null)} />
             {SERVERS_ENABLED && <ServersDialog open={serversOpen} onOpenChange={setServersOpen} />}
             <AiProvidersDialog open={panel === 'ai_providers'} onOpenChange={open => setPanel(open ? 'ai_providers' : null)} />
-            <SlackDialog open={panel === 'slack'} onOpenChange={open => setPanel(open ? 'slack' : null)} />
+            <ChatAppsDialog open={panel === 'chat_apps'} onOpenChange={open => setPanel(open ? 'chat_apps' : null)} />
             <KnowledgeBaseDialog open={panel === 'knowledge_base'} onOpenChange={open => setPanel(open ? 'knowledge_base' : null)} />
             <PaidAppDialogs apps={paidApps} />
             <WorkspacePowerDialog action={powerAction} onOpenChange={open => setPowerAction(open ? powerAction : null)} />

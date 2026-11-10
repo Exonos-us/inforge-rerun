@@ -13,7 +13,7 @@ const afterResponse = () => Promise.all(afterTasks.splice(0))
 
 const SECRET = 'signing-secret'
 const TEAM = 'T_EXONOS'
-const CONNECTION = { id: 'conn-1', workspace_id: 7, team_id: TEAM, team_name: 'Exonos', bot_user_id: 'U_RERUN', bot_token: 'xoxb-token', signing_secret: SECRET, can_customize_identity: true, status: 'connected', last_event_at: null, last_signature_error_at: null }
+const CONNECTION = { id: 'conn-1', workspace_id: 7, team_id: TEAM, team_name: 'Exonos', bot_user_id: 'U_RERUN', bot_token: 'xoxb-token', signing_secret: SECRET, can_customize_identity: true, status: 'connected', last_event_at: null, last_signature_error_at: null, request_url: null }
 
 function deliver(body: unknown, options: { secret?: string; timestamp?: number; headers?: Record<string, string> } = {}): Request {
     const raw = JSON.stringify(body)

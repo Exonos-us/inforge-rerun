@@ -126,7 +126,7 @@ export const AGENT_TAB_LABELS: Record<AgentFocusTab, string> = {
     files: 'Files',
     published: 'Published',
     scheduled: 'Routines',
-    channels: 'Channels',
+    channels: 'Chats',
     triggers: 'Triggers',
     tools: 'Capabilities',
     monitoring: 'Monitoring',
