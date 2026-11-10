@@ -33,12 +33,16 @@ type ScreenSession = {
     // Stays true once a recording ran: a holder joining after the 15 min cap must not start a
     // second ffmpeg that would overwrite the finalized file.
     recorded: boolean
+    // Each explicit pause/resume closes a segment file and opens the next: recording.mp4, then
+    // recording-2.mp4, so what the person typed while paused is in no file at all.
+    segments: number
+    paused: boolean
     capTimer: NodeJS.Timeout | null
 }
 
 export type ScreenSessionHold = { id: string; saveFrame: (image: Buffer) => Promise<void>; release: () => void }
 
-export type ScreenSessionInfo = { id: string; startedAt: string; endedAt: string | null; frames: number; recording: boolean }
+export type ScreenSessionInfo = { id: string; startedAt: string; endedAt: string | null; frames: number; recording: boolean; recordings?: string[] }
 
 const sessions = new Map<string, ScreenSession>()
 // Read synchronously by the exit hook, where nothing can be awaited.
@@ -60,6 +64,12 @@ export function sessionStartedAt(id: string): string | null {
 }
 
 const screenRoot = (agentId: string): string => resolve(workspaceDir(agentId), SCREEN_DIR)
+
+export const recordingFileName = (segment: number): string => (segment <= 1 ? RECORDING_FILE : `recording-${segment}.mp4`)
+
+const segmentOf = (file: string): number => (file === RECORDING_FILE ? 1 : Number(/^recording-(\d+)\.mp4$/.exec(file)?.[1] ?? 0))
+
+const isRecordingFile = (file: string): boolean => segmentOf(file) > 0
 
 function sessionDir(agentId: string, session: ScreenSession): Promise<string> {
     session.dirReady ??= (async () => {
@@ -99,7 +109,7 @@ async function launchRecorder(agentId: string, session: ScreenSession): Promise<
             '-pix_fmt', 'yuv420p',
             '-movflags', '+frag_keyframe+empty_moov',
             '-flush_packets', '1',
-            resolve(dir, RECORDING_FILE),
+            resolve(dir, recordingFileName(session.segments)),
         ]
         const child = spawn(RECORDING_BINARY, args, { stdio: 'ignore', env: control.env })
         child.once('error', err => logger.warn({ err: String(err), agentId }, 'screen recording failed'))
@@ -161,7 +171,7 @@ async function writeFrame(agentId: string, session: ScreenSession, frame: number
 export function holdScreenSession(agentId: string, { record = true } = {}): ScreenSessionHold {
     let session = sessions.get(agentId)
     if (!session) {
-        session = { id: sessionStamp(), holds: 0, frames: 0, dirReady: null, recorder: null, recorded: false, capTimer: null }
+        session = { id: sessionStamp(), holds: 0, frames: 0, dirReady: null, recorder: null, recorded: false, segments: 1, paused: false, capTimer: null }
         sessions.set(agentId, session)
     }
     session.holds++
@@ -189,6 +199,26 @@ export function holdScreenSession(agentId: string, { record = true } = {}): Scre
 
 export const activeScreenSession = (agentId: string): string | null => sessions.get(agentId)?.id ?? null
 
+// The person about to type a credential pauses the capture: the current segment is finalized, and
+// what they type while paused lands in no file. A session that never recorded has nothing to pause.
+export async function pauseScreenRecording(agentId: string): Promise<void> {
+    const session = sessions.get(agentId)
+    if (!session || !session.recorded || session.paused) return
+    session.paused = true
+    await stopRecorder(session)
+}
+
+export function resumeScreenRecording(agentId: string): void {
+    const session = sessions.get(agentId)
+    if (!session || !session.paused) return
+    session.paused = false
+    if (!session.recorded || !recordingAvailable()) return
+    session.segments++
+    session.recorder = launchRecorder(agentId, session)
+}
+
+export const screenRecordingPaused = (agentId: string): boolean => sessions.get(agentId)?.paused ?? false
+
 async function endedAtOf(dir: string, files: string[]): Promise<string | null> {
     const stats = await Promise.all([dir, ...files.map(file => resolve(dir, file))].map(path => stat(path).catch(() => null)))
     const newest = Math.max(...stats.map(entry => entry?.mtimeMs ?? 0))
@@ -207,12 +237,14 @@ export async function listScreenSessions(agentId: string): Promise<ScreenSession
             .map(async entry => {
                 const dir = resolve(root, entry.name)
                 const files = await readdir(dir).catch((): string[] => [])
+                const recordings = files.filter(isRecordingFile).sort((a, b) => segmentOf(a) - segmentOf(b))
                 return {
                     id: entry.name,
                     startedAt: sessionStartedAt(entry.name) ?? (await stat(dir).then(s => s.birthtime.toISOString()).catch(() => new Date(0).toISOString())),
                     endedAt: entry.name === live ? null : await endedAtOf(dir, files),
                     frames: files.filter(file => file.endsWith('.jpg')).length,
-                    recording: files.includes(RECORDING_FILE),
+                    recording: recordings.length > 0,
+                    ...(recordings.length ? { recordings } : {}),
                 }
             })
     )

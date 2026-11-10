@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { ENGINE_CAPABILITY_ARTIFACT_UPDATE, ENGINE_CAPABILITY_CUSTOM, ENGINE_CAPABILITY_OPENCODE, ENGINE_CAPABILITY_DESKTOP, ENGINE_CAPABILITY_FILES_STREAM, ENGINE_CAPABILITY_FOREMAN_FILES, ENGINE_CAPABILITY_SCHEDULE_RENAME } from '@rerun/contracts'
+import { ENGINE_CAPABILITY_ARTIFACT_UPDATE, ENGINE_CAPABILITY_CUSTOM, ENGINE_CAPABILITY_OPENCODE, ENGINE_CAPABILITY_DESKTOP, ENGINE_CAPABILITY_DESKTOP_HOLD, ENGINE_CAPABILITY_FILES_STREAM, ENGINE_CAPABILITY_FOREMAN_FILES, ENGINE_CAPABILITY_SCHEDULE_RENAME } from '@rerun/contracts'
 import { activeAgentCount } from '../../agents/registry.js'
 import { activeRunCount, sessionClaimCount } from '../../runtime/run-control.js'
 import { buildCommit, processStartedAt } from '../../runtime/build-info.js'
@@ -28,7 +28,7 @@ healthRoutes.get('/health', c =>
             ENGINE_CAPABILITY_ARTIFACT_UPDATE,
             ENGINE_CAPABILITY_OPENCODE,
             ENGINE_CAPABILITY_CUSTOM,
-            ...(desktopAvailable() ? [ENGINE_CAPABILITY_DESKTOP] : []),
+            ...(desktopAvailable() ? [ENGINE_CAPABILITY_DESKTOP, ENGINE_CAPABILITY_DESKTOP_HOLD] : []),
         ],
         commit: buildCommit(),
         startedAt: processStartedAt(),

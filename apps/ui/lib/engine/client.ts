@@ -703,6 +703,22 @@ export async function startTakeover(conn: EngineConnection, agentId: string, url
     await request(conn, `/agents/${encodeURIComponent(agentId)}/desktop/takeover`, { method: 'POST', body: JSON.stringify(url ? { url } : {}), signal: AbortSignal.timeout(DESKTOP_TIMEOUT_MS) }, () => undefined)
 }
 
+// The explicit "Take over" on the coworker's screen: while held the agent keeps its hands off, even
+// when the person pauses. Taking it again renews it; the engine expires a hold nobody renews.
+export async function holdDesktop(conn: EngineConnection, agentId: string): Promise<void> {
+    await request(conn, `/agents/${encodeURIComponent(agentId)}/desktop/hold`, { method: 'POST', signal: AbortSignal.timeout(DESKTOP_TIMEOUT_MS) }, () => undefined)
+}
+
+export async function releaseDesktopHold(conn: EngineConnection, agentId: string): Promise<void> {
+    await request(conn, `/agents/${encodeURIComponent(agentId)}/desktop/hold`, { method: 'DELETE', signal: AbortSignal.timeout(DESKTOP_TIMEOUT_MS) }, () => undefined)
+}
+
+// Pauses (capturing: false) or resumes the capture of the running screen session, for the moment the
+// person on the screen types a credential.
+export async function setDesktopRecording(conn: EngineConnection, agentId: string, capturing: boolean): Promise<void> {
+    await request(conn, `/agents/${encodeURIComponent(agentId)}/desktop/recording`, { method: 'POST', body: JSON.stringify({ capturing }), signal: AbortSignal.timeout(DESKTOP_TIMEOUT_MS) }, () => undefined)
+}
+
 // keepOpen leaves the window on the coworker's screen for the run it resumes. An engine that predates
 // it ignores the flag, closes the window and says nothing of `open`.
 export async function finishTakeover(conn: EngineConnection, agentId: string, { keepOpen = false } = {}): Promise<TakeoverResult> {

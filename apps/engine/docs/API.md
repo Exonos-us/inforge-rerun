@@ -65,11 +65,12 @@ terminal. A screen reports it as `dock: true`; without it the caller draws its o
 ### `GET /desktop`
 
 ```json
-{ "available": true, "screens": [{ "agentId": "researcher", "viewers": 1, "takeover": false, "dock": true, "agentDriving": false }] }
+{ "available": true, "screens": [{ "agentId": "researcher", "viewers": 1, "takeover": false, "dock": true, "agentDriving": false, "humanHolding": false, "recordingPaused": false }] }
 ```
 
 `screens` lists the desktops that are running. `agentDriving` is true while a run of the agent has its
-hands on the screen through the `computer` tools.
+hands on the screen through the `computer` tools. `humanHolding` is true while a person has the
+explicit hold below; `recordingPaused` while they paused the capture of the running screen session.
 
 ### `POST /agents/:id/desktop/session`
 
@@ -87,6 +88,23 @@ Opens an app on the agent's screen, or brings its window forward when it is alre
 `app` is `browser`, `files` or `terminal`. The last two open on the agent's workspace. `browser`
 is a takeover with no page, which also closes once nobody has watched the screen for a minute. The
 dock of the screen calls this route itself.
+
+### `POST /agents/:id/desktop/hold` / `DELETE /agents/:id/desktop/hold`
+
+The explicit "Take over": while a person holds the screen, the agent's `computer` tools stay off it
+even when the person pauses, its refusals say the user took the screen, and the screen session (and
+its recording) stays open, so the sign-in or the fix the person came for is part of the same
+evidence folder. One hold per agent; `POST` again renews it. A hold the caller stops renewing
+expires on its own after two minutes, so a closed tab never leaves an agent waiting. Both answer
+with the `GET /desktop` status. Present when `/health` lists the `desktop.hold` capability.
+
+### `POST /agents/:id/desktop/recording`
+
+Pauses (`{ "capturing": false }`) or resumes (`{ "capturing": true }`) the capture of the agent's
+running screen session, for the moment the person on the screen types a credential. Pausing
+finalizes the current segment; resuming starts the next one (`recording.mp4`, then
+`recording-2.mp4`, …). What happens while paused is in no file. Answers with the `GET /desktop`
+status. A session that never recorded has nothing to pause.
 
 ### `POST /agents/:id/desktop/takeover`
 
@@ -115,10 +133,11 @@ and `recording.mp4` when `ffmpeg` is installed and the agent's `tools.computerRe
 (the default). The list is derived from the filesystem; the files themselves are served by the
 agent's files routes (`GET /agents/:id/files/raw?path=screen/<session id>/recording.mp4`). At most
 the 20 most recent sessions are kept, pruned when a session ends. `endedAt` is null while the
-session is still being written.
+session is still being written. `recordings` lists the segment files of a capture that was paused
+and resumed, in order; it is absent when the session has no recording.
 
 ```json
-{ "sessions": [{ "id": "2026-11-09T14-30-22-ab1c", "startedAt": "2026-11-09T14:30:22.000Z", "endedAt": "2026-11-09T14:33:10.000Z", "frames": 12, "recording": true }] }
+{ "sessions": [{ "id": "2026-11-09T14-30-22-ab1c", "startedAt": "2026-11-09T14:30:22.000Z", "endedAt": "2026-11-09T14:33:10.000Z", "frames": 12, "recording": true, "recordings": ["recording.mp4"] }] }
 ```
 
 ### `GET /desktop/ws?ticket=…` (WebSocket)

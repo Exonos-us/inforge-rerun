@@ -36,19 +36,23 @@ type DesktopViewerProps = {
     ref?: Ref<DesktopViewerHandle>
     // The canvas the screen is painted on once connected, null when it goes: what a mirror copies.
     onCanvas?: (canvas: HTMLCanvasElement | null) => void
+    // Text copied inside the remote computer, as the VNC server announces it.
+    onClipboard?: (text: string) => void
     className?: string
 }
 
-export function DesktopViewer({ socketUrl, onDisconnect, viewOnly = false, ref, onCanvas, className }: DesktopViewerProps) {
+export function DesktopViewer({ socketUrl, onDisconnect, viewOnly = false, ref, onCanvas, onClipboard, className }: DesktopViewerProps) {
     const screenRef = useRef<HTMLDivElement>(null)
     const rfbRef = useRef<RFB | null>(null)
     const [connected, setConnected] = useState(false)
     const onDisconnectRef = useRef(onDisconnect)
     const onCanvasRef = useRef(onCanvas)
+    const onClipboardRef = useRef(onClipboard)
     useEffect(() => {
         onDisconnectRef.current = onDisconnect
         onCanvasRef.current = onCanvas
-    }, [onDisconnect, onCanvas])
+        onClipboardRef.current = onClipboard
+    }, [onDisconnect, onCanvas, onClipboard])
 
     useEffect(() => {
         const screen = screenRef.current
@@ -64,6 +68,10 @@ export function DesktopViewer({ socketUrl, onDisconnect, viewOnly = false, ref, 
             rfb.addEventListener('connect', () => {
                 setConnected(true)
                 onCanvasRef.current?.(screen.querySelector('canvas'))
+            })
+            rfb.addEventListener('clipboard', event => {
+                const text = (event as CustomEvent<{ text: string }>).detail?.text
+                if (typeof text === 'string') onClipboardRef.current?.(text)
             })
             rfb.addEventListener('disconnect', () => {
                 if (rfbRef.current !== rfb) return

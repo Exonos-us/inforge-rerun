@@ -15,7 +15,7 @@ type ScreenActivityCardProps = {
 
 const frameUrl = (agentId: string, sessionId: string, frame: number) => agentFileRawUrl(agentId, `screen/${sessionId}/${String(frame).padStart(3, '0')}.jpg`)
 
-const recordingUrl = (agentId: string, sessionId: string) => agentFileRawUrl(agentId, `screen/${sessionId}/recording.mp4`)
+const recordingUrl = (agentId: string, sessionId: string, file: string) => agentFileRawUrl(agentId, `screen/${sessionId}/${file}`)
 
 /**
  * The evidence a finished run left of its screen work: the recording and the action screenshots the
@@ -72,9 +72,13 @@ function ScreenSessionSkeleton() {
 function ScreenSessionView({ agentId, session }: { agentId: string; session: ScreenSession }) {
     // Null plays the recording when there is one; a number holds that screenshot in the main view.
     const [picked, setPicked] = useState<number | null>(session.recording ? null : 1)
+    // A capture paused and resumed left several segment files; an engine that predates the list
+    // sends only the boolean, which means the single classic file.
+    const recordings = session.recordings ?? (session.recording ? ['recording.mp4'] : [])
+    const [segment, setSegment] = useState(0)
     const stripRef = useRef<HTMLDivElement>(null)
     const frames = Array.from({ length: session.frames }, (_, i) => i + 1)
-    const showVideo = session.recording && picked === null
+    const showVideo = recordings.length > 0 && picked === null
 
     // Click lands on a thumbnail; a drag across the strip scrubs through the frames it passes over.
     const scrubTo = useCallback((clientX: number) => {
@@ -93,7 +97,7 @@ function ScreenSessionView({ agentId, session }: { agentId: string; session: Scr
     return (
         <div className="flex flex-col gap-2">
             {showVideo ? (
-                <video controls preload="metadata" playsInline src={recordingUrl(agentId, session.id)} className="aspect-video w-full rounded-lg border bg-black object-contain" aria-label="Screen recording" />
+                <video key={segment} controls preload="metadata" playsInline src={recordingUrl(agentId, session.id, recordings[Math.min(segment, recordings.length - 1)]!)} className="aspect-video w-full rounded-lg border bg-black object-contain" aria-label="Screen recording" />
             ) : (
                 picked !== null && <img src={frameUrl(agentId, session.id, picked)} alt={`Screenshot ${picked} of ${session.frames}`} loading="lazy" className="aspect-video w-full rounded-lg border bg-muted object-contain" />
             )}
@@ -123,11 +127,19 @@ function ScreenSessionView({ agentId, session }: { agentId: string; session: Scr
                     ))}
                 </div>
             )}
-            <div className="flex min-h-4 items-center justify-between px-0.5">
+            <div className="flex min-h-4 flex-wrap items-center justify-between gap-1 px-0.5">
                 {picked !== null && session.frames > 1 ? (
                     <p className="text-[11px] text-muted-foreground">
                         {picked} / {session.frames}
                     </p>
+                ) : showVideo && recordings.length > 1 ? (
+                    <div className="flex items-center gap-1">
+                        {recordings.map((file, i) => (
+                            <button key={file} type="button" onClick={() => setSegment(i)} className={cn('cursor-pointer rounded-full border px-2 py-0.5 text-[11px]', i === segment ? 'border-primary text-foreground' : 'text-muted-foreground hover:text-foreground')}>
+                                Part {i + 1}
+                            </button>
+                        ))}
+                    </div>
                 ) : (
                     <span />
                 )}

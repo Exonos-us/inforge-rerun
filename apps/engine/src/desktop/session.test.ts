@@ -187,6 +187,40 @@ describe('desktop session', () => {
         expect(session.humanDriving('a1', 300_000 + 5_000)).toBe(false)
     })
 
+    it('keeps the agent off a screen a person explicitly holds, even without input, until it expires', async () => {
+        const session = await freshModule()
+        session.renewHumanHold('a1', 1_000_000)
+        expect(session.humanHolding('a1', 1_000_001)).toBe(true)
+        expect(session.humanDriving('a1', 1_000_001)).toBe(true)
+        expect(session.humanDriving('a1', 1_000_000 + 2 * 60_000 - 1)).toBe(true)
+        expect(session.humanHolding('a1', 1_000_000 + 2 * 60_000)).toBe(false)
+        expect(session.humanDriving('a1', 1_000_000 + 2 * 60_000)).toBe(false)
+        expect(session.humanHolding('a2', 1_000_001)).toBe(false)
+    })
+
+    it('renews a hold on every take and ends it on release', async () => {
+        const session = await freshModule()
+        session.renewHumanHold('a1', 1_000_000)
+        session.renewHumanHold('a1', 1_000_000 + 90_000)
+        expect(session.humanHolding('a1', 1_000_000 + 3 * 60_000)).toBe(true)
+        session.endHumanHold('a1', 1_000_000 + 95_000)
+        expect(session.humanHolding('a1', 1_000_000 + 95_001)).toBe(false)
+        session.endHumanHold('zz')
+    })
+
+    it('tells a run whether a person touched the screen since its previous action', async () => {
+        const session = await freshModule()
+        expect(session.humanTouchedSince('a1', 0)).toBe(false)
+        session.driverJoined('a1')
+        session.driverActed('a1', 500)
+        expect(session.humanTouchedSince('a1', 400)).toBe(true)
+        expect(session.humanTouchedSince('a1', 500)).toBe(false)
+        session.renewHumanHold('a2', 1_000)
+        session.endHumanHold('a2', 2_000)
+        expect(session.humanTouchedSince('a2', 1_500)).toBe(true)
+        expect(session.humanTouchedSince('a2', 2_000)).toBe(false)
+    })
+
     it('refuses to start where the agent has no display, and holds none', async () => {
         state.displays = { a1: null }
         const session = await freshModule()

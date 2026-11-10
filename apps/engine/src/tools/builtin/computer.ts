@@ -12,7 +12,7 @@ import type { Provider } from '@rerun/contracts'
 import { openDesktopApp } from '../../desktop/apps.js'
 import { ControlRefusal, captureScreen, click, controlScreen, drag, movePointer, pressKeys, scroll, typeText, type ScreenControl, type Screenshot } from '../../desktop/control.js'
 import { holdScreenSession, type ScreenSessionHold } from '../../desktop/recording.js'
-import { computerAvailable, holdDesktop, humanDriving } from '../../desktop/session.js'
+import { computerAvailable, holdDesktop, humanDriving, humanHolding, humanTouchedSince } from '../../desktop/session.js'
 import { holdBrowser, holdOpenBrowser } from '../../desktop/takeover.js'
 import { withKeyedLock } from '../../lib/lock.js'
 import type { RunContext } from '../../runtime/context.js'
@@ -50,8 +50,9 @@ type ComputerInput = z.infer<typeof computerInput>
 type Refused = { status: 'refused'; reason: string }
 type Failed = { status: 'failed'; reason: string }
 // screenSession names the workspace folder (screen/<id>) where this action's screenshot is kept,
-// which is how the chat finds the evidence of a finished run.
-type Done = { status: 'done'; screen: [number, number]; screenSession?: string } & ({ screenshotId: string } | { screenshotPath: string; next: string })
+// which is how the chat finds the evidence of a finished run. `note` warns the model that a person
+// touched the screen between its actions, so it re-reads the screenshot instead of assuming.
+type Done = { status: 'done'; screen: [number, number]; screenSession?: string; note?: string } & ({ screenshotId: string } | { screenshotPath: string; next: string })
 
 const refused = (reason: string): Refused => ({ status: 'refused', reason })
 
@@ -101,6 +102,9 @@ async function waitForScreen(agentId: string, remainingMs: number, signal: Abort
 export const agentsOnScreen = (): string[] => [...screenOwners.keys()]
 
 const HUMAN_DRIVING = 'The user is driving your screen right now, so your hands are off it. Wait for them: say what you were about to do and end your turn, or carry on with work that needs no screen.'
+const HUMAN_HOLDING = 'The user took your screen and is working on it themselves. Wait for them to finish: say what you were about to do and end your turn — they will tell you when the screen is yours again.'
+const USER_DROVE_NOTE = 'The user drove the screen since your last action; the screenshot shows the screen as they left it.'
+const humansHandsMessage = (agentId: string): string => (humanHolding(agentId) ? HUMAN_HOLDING : HUMAN_DRIVING)
 // Short enough that a person who takes the screen mid-sentence is not typed over for long.
 const TYPE_CHUNK = 40
 // A person who clicks once in the screen pauses the agent; only one who stays on it sends it away.
@@ -117,7 +121,7 @@ async function handsFree(agentId: string, signal: AbortSignal | undefined): Prom
 
 async function typeUnlessDriven(agentId: string, control: ScreenControl, text: string, signal: AbortSignal | undefined): Promise<void> {
     for (let start = 0; start < text.length; start += TYPE_CHUNK) {
-        if (!(await handsFree(agentId, signal))) throw new ControlRefusal(HUMAN_DRIVING)
+        if (!(await handsFree(agentId, signal))) throw new ControlRefusal(humansHandsMessage(agentId))
         await typeText(control, text.slice(start, start + TYPE_CHUNK))
     }
 }
@@ -165,6 +169,9 @@ export function computerTools(ctx: RunContext): { tools: ToolSet; release: () =>
     const maxActions = CLI_PROVIDERS.has(ctx.provider) ? MAX_ACTIONS_PER_CLI_RUN : MAX_ACTIONS_PER_RUN
     let actions = 0
     let evidence: ScreenSessionHold | null = null
+    // When a person drove or held the screen between two of this run's actions, the next result says
+    // so, and the model re-reads the screenshot instead of trusting what it remembers of the screen.
+    let lastActionAt: number | null = null
 
     // Codex's bridge carries text only, and Codex reads a picture from a file with a tool of its
     // own. Every other provider gets the picture attached by the run, under the id returned here.
@@ -206,7 +213,7 @@ export function computerTools(ctx: RunContext): { tools: ToolSet; release: () =>
 
     const claimScreen = async (signal: AbortSignal | undefined): Promise<Refused | null> => {
         if (!(await takeScreen(signal))) return refused(SCREEN_TAKEN)
-        if (humanDriving(id)) return refused(HUMAN_DRIVING)
+        if (humanDriving(id)) return refused(humansHandsMessage(id))
         if (actions >= maxActions) return refused(`This run has used its ${maxActions} screen actions. Tell the user where you got to and end your turn.`)
         actions++
         return null
@@ -224,7 +231,9 @@ export function computerTools(ctx: RunContext): { tools: ToolSet; release: () =>
                 if (settleMs > 0) await sleep(settleMs, undefined, { signal })
                 const screenshot = await captureScreen(control)
                 await evidence?.saveFrame(screenshot.image)
-                return { status: 'done' as const, screen: [screenshot.width, screenshot.height] as [number, number], ...(evidence ? { screenSession: evidence.id } : {}), ...(await keep(screenshot)) }
+                const humanTouched = lastActionAt !== null && humanTouchedSince(id, lastActionAt)
+                lastActionAt = Date.now()
+                return { status: 'done' as const, screen: [screenshot.width, screenshot.height] as [number, number], ...(evidence ? { screenSession: evidence.id } : {}), ...(humanTouched ? { note: USER_DROVE_NOTE } : {}), ...(await keep(screenshot)) }
             } catch (err) {
                 if (signal?.aborted) throw err
                 if (err instanceof ControlRefusal) return refused(err.message)

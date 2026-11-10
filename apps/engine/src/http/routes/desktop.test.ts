@@ -20,7 +20,23 @@ vi.mock('../../desktop/takeover.js', () => ({
 vi.mock('../../desktop/recording.js', () => ({
     listScreenSessions: async (id: string) => {
         calls.push(`sessions:${id}`)
-        return [{ id: '2026-11-09T14-30-22-ab1c', startedAt: '2026-11-09T14:30:22.000Z', endedAt: null, frames: 3, recording: true }]
+        return [{ id: '2026-11-09T14-30-22-ab1c', startedAt: '2026-11-09T14:30:22.000Z', endedAt: null, frames: 3, recording: true, recordings: ['recording.mp4', 'recording-2.mp4'] }]
+    },
+    pauseScreenRecording: async (id: string) => {
+        calls.push(`pause:${id}`)
+    },
+    resumeScreenRecording: (id: string) => {
+        calls.push(`resume:${id}`)
+    },
+    screenRecordingPaused: () => false,
+}))
+
+vi.mock('../../desktop/hold.js', () => ({
+    takeScreenHold: async (id: string) => {
+        calls.push(`hold:${id}`)
+    },
+    releaseScreenHold: (id: string) => {
+        calls.push(`release:${id}`)
     },
 }))
 
@@ -38,9 +54,27 @@ describe('DELETE /agents/:id/desktop/takeover', () => {
 })
 
 describe('GET /agents/:id/screen/sessions', () => {
-    it('lists the screen sessions kept in the agent workspace', async () => {
+    it('lists the screen sessions kept in the agent workspace, with their recording segments', async () => {
         const res = await app.request('/agents/a1/screen/sessions')
-        expect(await res.json()).toEqual({ sessions: [{ id: '2026-11-09T14-30-22-ab1c', startedAt: '2026-11-09T14:30:22.000Z', endedAt: null, frames: 3, recording: true }] })
+        expect(await res.json()).toEqual({ sessions: [{ id: '2026-11-09T14-30-22-ab1c', startedAt: '2026-11-09T14:30:22.000Z', endedAt: null, frames: 3, recording: true, recordings: ['recording.mp4', 'recording-2.mp4'] }] })
         expect(calls).toContain('sessions:a1')
+    })
+})
+
+describe('the explicit screen hold', () => {
+    it('takes and releases the hold, answering with the desktop status', async () => {
+        const held = await app.request('/agents/a1/desktop/hold', { method: 'POST' })
+        expect(await held.json()).toMatchObject({ screens: [] })
+        const released = await app.request('/agents/a1/desktop/hold', { method: 'DELETE' })
+        expect(await released.json()).toMatchObject({ screens: [] })
+        expect(calls.filter(call => call.startsWith('hold') || call.startsWith('release'))).toEqual(['hold:a1', 'release:a1'])
+    })
+})
+
+describe('POST /agents/:id/desktop/recording', () => {
+    it('pauses and resumes the capture of the running screen session', async () => {
+        await app.request('/agents/a1/desktop/recording', { method: 'POST', body: JSON.stringify({ capturing: false }), headers: { 'content-type': 'application/json' } })
+        await app.request('/agents/a1/desktop/recording', { method: 'POST', body: JSON.stringify({ capturing: true }), headers: { 'content-type': 'application/json' } })
+        expect(calls.filter(call => call.startsWith('pause') || call.startsWith('resume'))).toEqual(['pause:a1', 'resume:a1'])
     })
 })

@@ -11,6 +11,7 @@ import { AlertBlock } from '@/components/chat/AlertBlock'
 import { McpSignInBlock } from '@/components/chat/McpSignInBlock'
 import { SecretRequestBlock } from '@/components/chat/SecretRequestBlock'
 import { ChatScreen } from '@/components/chat/ChatScreen'
+import { ScreenHoldNotice } from '@/components/desktop/ScreenHoldNotice'
 import { BudgetExhaustedNotice, usePriceArm } from '@rerun/cloud/billing.client'
 import { ProviderErrorNotice } from '@/components/chat/ProviderErrorNotice'
 import { ComposerSubscriptionCta } from '@/components/chat/ComposerSubscriptionCta'
@@ -936,6 +937,7 @@ export function AgentChat({ uid, active, agentId, agentName, sessionId, onSessio
     return (
         <div ref={chatRootRef} data-chat-scrolled={active && scrollEdges.top > 0 ? '' : undefined} className="relative flex flex-1 flex-col overflow-hidden">
             {header}
+            <ScreenHoldNotice agentId={agentId} />
             {/* History lands after mount, as a resize: animating it would scroll the whole
                 conversation in front of the user. Only a reply being written is followed smoothly. */}
             <Conversation className="flex-1" contextRef={conversationRef} initial="instant" resize={status === 'streaming' || status === 'submitted' ? 'smooth' : 'instant'}>

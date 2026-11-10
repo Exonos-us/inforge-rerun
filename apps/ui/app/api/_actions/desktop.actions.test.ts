@@ -40,11 +40,11 @@ describe('openDesktopAction', () => {
         vi.mocked(engine.startDesktop).mockResolvedValue({
             available: true,
             screens: [
-                { agentId: 'other-agent', viewers: 0, takeover: false, dock: false, agentDriving: false },
-                { agentId: 'engine-agent', viewers: 0, takeover: false, dock: true, agentDriving: false },
+                { agentId: 'other-agent', viewers: 0, takeover: false, dock: false, agentDriving: false, humanHolding: false, recordingPaused: false },
+                { agentId: 'engine-agent', viewers: 0, takeover: false, dock: true, agentDriving: false, humanHolding: false, recordingPaused: false },
             ],
         })
-        await expect(openDesktopAction('agent', 'watch', 'Europe/Paris')).resolves.toEqual({ ok: true, socketUrl: 'wss://host.test/box/10/desktop/ws?ticket=t', dock: true })
+        await expect(openDesktopAction('agent', 'watch', 'Europe/Paris')).resolves.toEqual({ ok: true, socketUrl: 'wss://host.test/box/10/desktop/ws?ticket=t', dock: true, recordingPaused: false })
         expect(engine.startDesktop).toHaveBeenCalledWith(conn, 'engine-agent', 'Europe/Paris')
         expect(desktopSocketUrl).toHaveBeenCalledWith(expect.anything(), 'engine-agent', 'watch')
     })

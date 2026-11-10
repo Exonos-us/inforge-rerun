@@ -18,6 +18,8 @@ const state = vi.hoisted(() => ({
     apps: [] as string[],
     sleeps: [] as number[],
     driving: false,
+    holding: false,
+    touched: false,
     drivingAfterTyped: null as number | null,
     drivingForPolls: 0,
     parkLongSleeps: false,
@@ -58,6 +60,8 @@ vi.mock('../../desktop/control.js', () => {
 vi.mock('../../desktop/session.js', () => ({
     computerAvailable: () => state.available,
     humanDriving: () => state.driving || state.sleeps.filter(ms => ms === 500).length < state.drivingForPolls || (state.drivingAfterTyped !== null && state.calls.filter(([name]) => name === 'type').length >= state.drivingAfterTyped),
+    humanHolding: () => state.holding,
+    humanTouchedSince: () => state.touched,
     holdDesktop: () => {
         state.screenHolds++
         return () => {
@@ -140,6 +144,8 @@ beforeEach(() => {
     state.apps.length = 0
     state.sleeps.length = 0
     state.driving = false
+    state.holding = false
+    state.touched = false
     state.drivingAfterTyped = null
     state.drivingForPolls = 0
     state.openBrowser = false
@@ -356,6 +362,34 @@ describe('computer', () => {
         state.drivingAfterTyped = 1
         expect(await settled(act(built, { action: 'type', text }))).toMatchObject({ status: 'refused', reason: expect.stringContaining('driving your screen') })
         expect(state.calls).toHaveLength(1)
+    })
+
+    it('tells the model the user took the screen, not that they are driving it, while an explicit hold lasts', async () => {
+        const built = build(ctxWith())
+        state.driving = true
+        state.holding = true
+        expect(await settled(act(built, { action: 'left_click', coordinate: [1, 1] }))).toMatchObject({ status: 'refused', reason: expect.stringContaining('took your screen') })
+        expect(state.calls).toEqual([])
+        state.driving = false
+        state.drivingAfterTyped = 1
+        expect(await settled(act(built, { action: 'type', text: 'x'.repeat(100) }))).toMatchObject({ status: 'refused', reason: expect.stringContaining('took your screen') })
+        expect(state.calls).toHaveLength(1)
+        state.holding = false
+        state.drivingAfterTyped = null
+        expect((await settled(act(built, { action: 'left_click', coordinate: [1, 1] }))).status).toBe('done')
+    })
+
+    it('notes that the user touched the screen between two actions, never on the first one', async () => {
+        const built = build(ctxWith())
+        state.touched = true
+        const first = await settled(act(built, { action: 'screenshot' }))
+        expect(first.status).toBe('done')
+        expect(first.note).toBeUndefined()
+        const second = await settled(act(built, { action: 'screenshot' }))
+        expect(second).toMatchObject({ status: 'done', note: expect.stringContaining('The user drove the screen since your last action') })
+        state.touched = false
+        const third = await settled(act(built, { action: 'screenshot' }))
+        expect(third.note).toBeUndefined()
     })
 
     it('names the agents whose run has the screen', async () => {

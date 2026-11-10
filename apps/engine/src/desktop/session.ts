@@ -32,7 +32,7 @@ const PORT_FREE_TIMEOUT_MS = KILL_GRACE_MS + 500
 
 export type Desktop = { display: string; vncPort: number }
 type RunningDesktop = Desktop & { children: ChildProcess[]; releaseDisplay: () => void }
-type Screen = { desktop: Promise<RunningDesktop> | null; viewers: number; drivers: number; lastDriverInput: number; holds: number; idleTimer: NodeJS.Timeout | null; dock: boolean }
+type Screen = { desktop: Promise<RunningDesktop> | null; viewers: number; drivers: number; lastDriverInput: number; heldUntil: number; holds: number; idleTimer: NodeJS.Timeout | null; dock: boolean }
 export type DesktopOptions = { timeZone?: string }
 
 const screens = new Map<string, Screen>()
@@ -69,7 +69,7 @@ export function desktopEnv(display: string): Record<string, string> {
 function screenOf(agentId: string): Screen {
     let screen = screens.get(agentId)
     if (!screen) {
-        screen = { desktop: null, viewers: 0, drivers: 0, lastDriverInput: 0, holds: 0, idleTimer: null, dock: false }
+        screen = { desktop: null, viewers: 0, drivers: 0, lastDriverInput: 0, heldUntil: 0, holds: 0, idleTimer: null, dock: false }
         screens.set(agentId, screen)
     }
     return screen
@@ -283,7 +283,36 @@ export function driverActed(agentId: string, now: number = Date.now()): void {
 
 export function humanDriving(agentId: string, now: number = Date.now()): boolean {
     const screen = screens.get(agentId)
-    return !!screen && screen.drivers > 0 && now - screen.lastDriverInput < DRIVER_QUIET_MS
+    if (!screen) return false
+    return screen.heldUntil > now || (screen.drivers > 0 && now - screen.lastDriverInput < DRIVER_QUIET_MS)
+}
+
+// An explicit hold a person takes on the screen ("Take over"), distinct from the input detector
+// above: while it lasts the agent keeps its hands off even when the person pauses. It expires on
+// its own so a closed tab never leaves an agent waiting forever; the app renews it while the
+// person still has the screen.
+export const HOLD_TTL_MS = 2 * 60_000
+
+export function renewHumanHold(agentId: string, now: number = Date.now()): void {
+    screenOf(agentId).heldUntil = now + HOLD_TTL_MS
+}
+
+// `heldUntil` becomes the moment the hold ended, so a hold released between two agent actions
+// still reads as "the user touched the screen" to the next one.
+export function endHumanHold(agentId: string, now: number = Date.now()): void {
+    const screen = screens.get(agentId)
+    if (screen) screen.heldUntil = Math.min(screen.heldUntil, now)
+}
+
+export function humanHolding(agentId: string, now: number = Date.now()): boolean {
+    return (screens.get(agentId)?.heldUntil ?? 0) > now
+}
+
+// Whether a person drove or held this screen after `since`: a hold still running, one that ended
+// after it, or any drive-mode input sent after it.
+export function humanTouchedSince(agentId: string, since: number): boolean {
+    const screen = screens.get(agentId)
+    return !!screen && (screen.lastDriverInput > since || screen.heldUntil > since)
 }
 
 // A takeover keeps the screen up for as long as its browser is open, watched or not.

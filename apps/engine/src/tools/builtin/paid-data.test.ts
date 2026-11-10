@@ -366,6 +366,8 @@ describe('paidDataTools', () => {
             await buy('people.email.find', { full_name: 'Jane Doe', domain: 'initech.com' }, 'tool-find')
             expect((await lookupPaidSources(['prospector'], [{ email: 'jane@initech.com' }])).rows[0].cells.email).toEqual({ call: 'tool-find', field: 'email', verdict: 'accept_all' })
 
+            // "Later" is a millisecond timestamp: on the same one the order of the two calls would be a coin toss.
+            await new Promise(resolve => setTimeout(resolve, 2))
             mockFetch(200, { outcome: 'ok', result: { output: { status: 'valid' } }, costMicros: 4_000, servedBy: 'zerobounce' })
             await buy('people.email.verify', { email: 'jane@initech.com' }, 'tool-verify')
 

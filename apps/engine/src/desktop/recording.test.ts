@@ -179,6 +179,37 @@ describe('screen session recording', () => {
         hold.release()
     })
 
+    it('pauses the capture into a finalized segment and resumes into the next file', async () => {
+        const recording = await freshModule()
+        const hold = recording.holdScreenSession('a1')
+        await vi.waitFor(() => expect(state.spawns).toHaveLength(1))
+        expect(recording.screenRecordingPaused('a1')).toBe(false)
+        await recording.pauseScreenRecording('a1')
+        expect(recording.screenRecordingPaused('a1')).toBe(true)
+        expect(children()[0]!.signals).toEqual(['SIGINT'])
+        await recording.pauseScreenRecording('a1')
+        recording.resumeScreenRecording('a1')
+        expect(recording.screenRecordingPaused('a1')).toBe(false)
+        await vi.waitFor(() => expect(state.spawns).toHaveLength(2))
+        expect(state.spawns[0]!.args.at(-1)).toBe(resolve(workspaceScreenDir('a1'), hold.id, 'recording.mp4'))
+        expect(state.spawns[1]!.args.at(-1)).toBe(resolve(workspaceScreenDir('a1'), hold.id, 'recording-2.mp4'))
+        hold.release()
+        await vi.waitFor(() => expect(children()[1]!.signals).toEqual(['SIGINT']))
+    })
+
+    it('has nothing to pause when the session never recorded or does not exist', async () => {
+        const recording = await freshModule()
+        const hold = recording.holdScreenSession('a1', { record: false })
+        await recording.pauseScreenRecording('a1')
+        expect(recording.screenRecordingPaused('a1')).toBe(false)
+        recording.resumeScreenRecording('a1')
+        expect(state.spawns).toEqual([])
+        hold.release()
+        await recording.pauseScreenRecording('zz')
+        recording.resumeScreenRecording('zz')
+        expect(recording.screenRecordingPaused('zz')).toBe(false)
+    })
+
     it('prunes a workspace to its twenty most recent sessions once a session ends', async () => {
         const recording = await freshModule()
         const root = workspaceScreenDir('a1')
@@ -208,10 +239,21 @@ describe('screen session recording', () => {
         expect(sessions).toHaveLength(2)
         expect(sessions[0]).toMatchObject({ id: hold.id, endedAt: null, frames: 1, recording: false })
         expect(sessions[0]!.startedAt).toBe(recording.sessionStartedAt(hold.id))
-        expect(sessions[1]).toMatchObject({ id: '2026-01-02T09-15-00-done', startedAt: '2026-01-02T09:15:00.000Z', frames: 2, recording: true })
+        expect(sessions[1]).toMatchObject({ id: '2026-01-02T09-15-00-done', startedAt: '2026-01-02T09:15:00.000Z', frames: 2, recording: true, recordings: ['recording.mp4'] })
         expect(sessions[1]!.endedAt).not.toBeNull()
         hold.release()
         expect(await recording.listScreenSessions('a2')).toEqual([])
+    })
+
+    it('lists the segment files of a session whose capture was paused and resumed, in order', async () => {
+        const recording = await freshModule()
+        const dir = join(workspaceScreenDir('a1'), '2026-01-02T09-15-00-cut')
+        mkdirSync(dir, { recursive: true })
+        writeFileSync(join(dir, 'recording-2.mp4'), 'x')
+        writeFileSync(join(dir, 'recording.mp4'), 'x')
+        writeFileSync(join(dir, 'recording-10.mp4'), 'x')
+        const sessions = await recording.listScreenSessions('a1')
+        expect(sessions[0]).toMatchObject({ recording: true, recordings: ['recording.mp4', 'recording-2.mp4', 'recording-10.mp4'] })
     })
 
     it('parses a start time out of a session id and refuses garbage', async () => {
