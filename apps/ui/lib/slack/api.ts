@@ -65,13 +65,17 @@ export async function installedScopes(token: string): Promise<string[]> {
 }
 
 export async function postMessage(token: string, params: { channel: string; text: string; threadTs?: string; identity?: SlackIdentity }): Promise<{ ts: string }> {
-    const data = await call<{ ts: string }>(token, 'chat.postMessage', {
-        channel: params.channel,
-        text: params.text,
-        ...(params.threadTs ? { thread_ts: params.threadTs } : {}),
-        ...identityFields(params.identity),
-    })
-    return { ts: data.ts }
+    const body = { channel: params.channel, text: params.text, ...identityFields(params.identity) }
+    try {
+        const data = await call<{ ts: string }>(token, 'chat.postMessage', { ...body, ...(params.threadTs ? { thread_ts: params.threadTs } : {}) })
+        return { ts: data.ts }
+    } catch (err) {
+        // The thread is gone — someone deleted the message they asked from while the coworker was
+        // working on it. An answer in the channel is worth more than no answer at all.
+        if (!(err instanceof SlackApiError) || err.code !== 'invalid_thread_ts' || !params.threadTs) throw err
+        const data = await call<{ ts: string }>(token, 'chat.postMessage', body)
+        return { ts: data.ts }
+    }
 }
 
 export async function updateMessage(token: string, params: { channel: string; ts: string; text: string; identity?: SlackIdentity }): Promise<void> {
