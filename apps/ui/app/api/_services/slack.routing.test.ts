@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cleanMessage, routeMessage, type ChannelBinding, type SlackRouting } from './slack.service'
+import { cleanMessage, isCollabPass, routeMessage, type ChannelBinding, type SlackRouting } from './slack.service'
 
 function binding(name: string, agentId: string): ChannelBinding {
     return { id: `b-${agentId}`, channelId: 'C1', channelName: 'mdc-code', agentId, engineAgentId: `e-${agentId}`, disabled: false, name, identity: { name } }
@@ -95,6 +95,37 @@ describe('routeMessage', () => {
         it('answers a plain top-level message: it is the only one there to answer', () => {
             expect(answered(routeMessage({ bindings: [ENGINEER_1], text: 'the build is red', botUserId: BOT }))).toBe('a1')
         })
+    })
+
+    describe('several coworkers named: a convened group', () => {
+        it('convenes everyone named, in the order they were named', () => {
+            const routing = routeMessage({ bindings: BOTH, text: 'engineer-2 y engineer-1 analicen esto entre ustedes', botUserId: BOT })
+            expect(routing.kind).toBe('convene')
+            expect(routing.kind === 'convene' && routing.bindings.map(b => b.agentId)).toEqual(['a2', 'a1'])
+        })
+
+        it('convening beats a thread owner: naming both pulls the group in', () => {
+            const routing = routeMessage({ bindings: BOTH, text: 'engineer-1 and engineer-2, compare notes', threadAgentId: 'a2', botUserId: BOT })
+            expect(routing.kind).toBe('convene')
+        })
+
+        it('one name stays a plain answer, never a group of one', () => {
+            expect(routeMessage({ bindings: BOTH, text: 'engineer-1 take this', botUserId: BOT }).kind).toBe('answer')
+        })
+    })
+})
+
+describe('isCollabPass', () => {
+    it('reads PASS however the model dresses it', () => {
+        expect(isCollabPass('PASS')).toBe(true)
+        expect(isCollabPass(' pass. ')).toBe(true)
+        expect(isCollabPass('_PASS_')).toBe(true)
+        expect(isCollabPass('`pass`')).toBe(true)
+    })
+
+    it('keeps anything substantive', () => {
+        expect(isCollabPass('PASS, although one thing worries me')).toBe(false)
+        expect(isCollabPass('I would not pass on this')).toBe(false)
     })
 })
 

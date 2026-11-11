@@ -266,9 +266,11 @@ export type SlackMessageEvent = {
 // Who, if anyone, a channel message is for. Answering is earned, never the default: people talk
 // to each other in these channels too, and a bot that butts in reads as a machine. A coworker
 // speaks when it is named, when the thread is already its conversation, or when it is alone in
-// the channel and nobody else was addressed. "Who should take this" is only worth asking when the
-// app itself was mentioned: the person called, and several could pick up.
-export type SlackRouting = { kind: 'answer'; binding: ChannelBinding } | { kind: 'ask_who' } | { kind: 'silent' }
+// the channel and nobody else was addressed. Naming several coworkers in one message convenes
+// them: each answers, each may react once, and the first named closes with the result. "Who
+// should take this" is only worth asking when the app itself was mentioned: the person called,
+// and several could pick up.
+export type SlackRouting = { kind: 'answer'; binding: ChannelBinding } | { kind: 'convene'; bindings: ChannelBinding[] } | { kind: 'ask_who' } | { kind: 'silent' }
 
 export function routeMessage(params: {
     bindings: ChannelBinding[]
@@ -283,9 +285,14 @@ export function routeMessage(params: {
 
     // `(?![\w-])` rather than `\b`: a name can end in a character that is not a word character
     // ("c++"), where `\b` would never match, and it still keeps "engineer-1" from matching
-    // "engineer-10".
-    const named = bindings.find(b => new RegExp(`(^|[^\\w-])@?${b.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w-])`, 'i').test(text))
-    if (named) return { kind: 'answer', binding: named }
+    // "engineer-10". Kept in the order they were named: the first named leads a convened group.
+    const named = bindings
+        .map(binding => ({ binding, at: text.search(new RegExp(`(^|[^\\w-])@?${binding.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w-])`, 'i')) }))
+        .filter(hit => hit.at >= 0)
+        .sort((a, b) => a.at - b.at)
+        .map(hit => hit.binding)
+    if (named.length === 1) return { kind: 'answer', binding: named[0] }
+    if (named.length > 1) return { kind: 'convene', bindings: named }
 
     const threadBinding = params.threadAgentId ? (bindings.find(b => b.agentId === params.threadAgentId) ?? null) : null
 
@@ -340,15 +347,16 @@ async function rememberThread(params: { connectionId: string; channelId: string;
 
 // The placeholder is rewritten from the run's own tool calls, so a long task shows a pulse
 // instead of three minutes of nothing. Cheap: no streaming API, no Slack plan requirement.
-async function waitForAnswer(params: { conn: Awaited<ReturnType<typeof getWorkspaceConnection>>; engineAgentId: string; runId: string; onPulse: (text: string) => Promise<void> }): Promise<string> {
+async function waitForAnswer(params: { conn: Awaited<ReturnType<typeof getWorkspaceConnection>>; engineAgentId: string; runId: string; onPulse: (text: string) => Promise<void>; timeoutMs?: number }): Promise<string> {
     const startedAt = Date.now()
+    const timeoutMs = params.timeoutMs ?? RUN_TIMEOUT_MS
     let lastPulse = Date.now()
     for (;;) {
         const run = await getRun(params.conn, params.engineAgentId, params.runId)
         if (run.status === 'done') return run.output?.trim() || '_(the run finished without saying anything)_'
         if (run.status === 'error') throw new Error(run.error || 'the run failed')
         if (run.status === 'cancelled') throw new Error('the run was stopped from Rerun')
-        if (Date.now() - startedAt > RUN_TIMEOUT_MS) throw new Error('still working after 10 minutes — the answer will be in Rerun')
+        if (Date.now() - startedAt > timeoutMs) throw new Error(`still working after ${Math.round(timeoutMs / 60_000)} minutes — the answer will be in Rerun`)
 
         if (Date.now() - lastPulse > PULSE_EVERY_MS) {
             lastPulse = Date.now()
@@ -425,6 +433,159 @@ async function postAttachments(params: {
     return posted
 }
 
+// --- several coworkers convened in one thread -----------------------------------------------
+
+// The same collaboration coworkers already have inside Rerun, made visible in Slack: each takes
+// the ask, each gets one chance to react to the others, and the first named closes with the
+// result. Every turn is driven from here, sequentially — the webhook stays deaf to bot messages,
+// so two coworkers can never ping-pong each other into a loop.
+const MAX_CONVENED = 3
+const COLLAB_TURN_TIMEOUT_MS = 4 * 60_000
+
+// The reaction round is an offer, not an obligation: a coworker with nothing to add says PASS and
+// nothing is posted for it.
+export function isCollabPass(answer: string): boolean {
+    return /^[\s_*`>]*pass[\s_*`.!]*$/i.test(answer.trim())
+}
+
+type CollabSeat = { binding: ChannelBinding; engineSessionId: string | null; answer: string | null }
+
+async function startRun(conn: Awaited<ReturnType<typeof getWorkspaceConnection>>, engineAgentId: string, message: string, sessionId: string | undefined, author: { id: string; name: string }): Promise<{ runId: string; engineSessionId: string }> {
+    // `source: 'api'` because the engine's contract has no 'slack' yet: adding one means a new
+    // value in its enum, and a hub ahead of its engine would get a 400 on every message.
+    const res = await chat(conn, engineAgentId, { message, sessionId, source: 'api', author })
+    if (!res.ok) throw new Error(`the coworker could not be reached (${res.status})`)
+    const runId = res.headers.get('x-run-id')
+    const engineSessionId = res.headers.get('x-session-id') ?? sessionId ?? null
+    // The engine buffers the run, so dropping the stream here reads as one subscriber leaving.
+    await res.body?.cancel().catch(() => {})
+    if (!runId || !engineSessionId) throw new Error('the engine started the run without naming it')
+    return { runId, engineSessionId }
+}
+
+async function collabTurn(params: {
+    connection: SlackConnection
+    conn: Awaited<ReturnType<typeof getWorkspaceConnection>>
+    channelId: string
+    threadTs: string
+    seat: CollabSeat
+    prompt: string
+    author: { id: string; name: string }
+    // A quiet turn posts only a substantive answer: no placeholder, and a PASS leaves no trace.
+    quiet?: boolean
+}): Promise<string | null> {
+    const { connection, conn, channelId, threadTs, seat } = params
+    const token = connection.bot_token
+    const identity = connection.can_customize_identity ? seat.binding.identity : undefined
+    const startedAt = new Date()
+    const placeholder = params.quiet ? null : await postMessage(token, { channel: channelId, threadTs, text: '_on it…_', identity })
+
+    try {
+        const { runId, engineSessionId } = await startRun(conn, seat.binding.engineAgentId as string, params.prompt, seat.engineSessionId ?? undefined, params.author)
+        if (!seat.engineSessionId) await ensureSessionRow(seat.binding.agentId, engineSessionId, params.prompt, { source: 'api', status: 'working' })
+        seat.engineSessionId = engineSessionId
+
+        const answer = await waitForAnswer({
+            conn,
+            engineAgentId: seat.binding.engineAgentId as string,
+            runId,
+            timeoutMs: COLLAB_TURN_TIMEOUT_MS,
+            onPulse: pulse => (placeholder ? updateMessage(token, { channel: channelId, ts: placeholder.ts, text: pulse, identity }).catch(() => {}) : Promise.resolve()),
+        })
+
+        if (params.quiet && isCollabPass(answer)) return null
+        if (placeholder) await updateMessage(token, { channel: channelId, ts: placeholder.ts, text: fitMessage(toMrkdwn(answer)), identity })
+        else await postMessage(token, { channel: channelId, threadTs, text: fitMessage(toMrkdwn(answer)), identity })
+
+        const posted = await postAttachments({ token, conn, engineAgentId: seat.binding.engineAgentId as string, channel: channelId, threadTs, since: startedAt, answer, from: seat.binding.name })
+        if (posted) console.info(`[slack] ${seat.binding.name} posted ${posted} file(s) to ${channelId}`)
+        return answer
+    } catch (err) {
+        const why = err instanceof Error ? err.message : String(err)
+        console.error(`[slack] ${seat.binding.name} could not take its turn:`, why)
+        if (placeholder) await updateMessage(token, { channel: channelId, ts: placeholder.ts, text: `:warning: ${why}`, identity }).catch(() => {})
+        return null
+    }
+}
+
+async function runCollab(params: {
+    connection: SlackConnection
+    conn: Awaited<ReturnType<typeof getWorkspaceConnection>>
+    channelId: string
+    threadTs: string
+    text: string
+    author: { id: string; name: string }
+    bindings: ChannelBinding[]
+}): Promise<void> {
+    const { connection, conn, channelId, threadTs, author } = params
+    const token = connection.bot_token
+    const invited = params.bindings.slice(0, MAX_CONVENED)
+    const seats: CollabSeat[] = invited.filter(binding => !binding.disabled && binding.engineAgentId).map(binding => ({ binding, engineSessionId: null, answer: null }))
+
+    for (const off of invited.filter(binding => binding.disabled || !binding.engineAgentId)) {
+        await postMessage(token, { channel: channelId, threadTs, text: `_${off.name} is switched off in Rerun right now._`, identity: connection.can_customize_identity ? off.identity : undefined }).catch(() => {})
+    }
+    if (seats.length === 0) return
+    const channelName = `#${seats[0].binding.channelName ?? channelId}`
+    const message = params.text.replace(/<@[A-Z0-9_]+>/g, ' ').replace(/[ \t]+/g, ' ').trim()
+
+    // Round 1: everyone takes the ask, knowing the others are on it too.
+    for (const seat of seats) {
+        const others = seats.filter(other => other !== seat).map(other => other.binding.name)
+        const prompt = [
+            `[Slack] ${author.name} wrote in ${channelName}, to you and ${others.join(' and ')} together:`,
+            '',
+            message,
+            '',
+            `Give your own take now, Slack-sized (a few sentences). ${others.join(' and ')} answer in the same thread, and you will get one short chance to react to them afterwards. Answer in the language of the request.`,
+        ].join('\n')
+        seat.answer = await collabTurn({ connection, conn, channelId, threadTs, seat, prompt, author })
+    }
+
+    const active = seats.filter(seat => seat.answer !== null)
+    if (active.length < 2) {
+        const lead = active[0] ?? null
+        if (lead?.engineSessionId) await rememberThread({ connectionId: connection.id, channelId, threadTs, agentId: lead.binding.agentId, engineSessionId: lead.engineSessionId, sessionId: null })
+        return
+    }
+
+    // One reaction each, in the open. Later seats also see the reactions already given, so the
+    // exchange reads as a conversation rather than parallel monologues.
+    const reactions: { name: string; text: string }[] = []
+    for (const seat of active) {
+        const heard = [
+            ...active.filter(other => other !== seat).map(other => `${other.binding.name}: ${other.answer as string}`),
+            ...reactions.filter(reaction => reaction.name !== seat.binding.name).map(reaction => `${reaction.name} (follow-up): ${reaction.text}`),
+        ].join('\n\n')
+        const prompt = [
+            'The others have answered in the thread:',
+            '',
+            heard,
+            '',
+            'One short follow-up: react only if it changes or sharpens the result — a disagreement, a correction, a build. If you have nothing useful to add, reply exactly PASS.',
+        ].join('\n')
+        const reaction = await collabTurn({ connection, conn, channelId, threadTs, seat, prompt, author, quiet: true })
+        if (reaction) reactions.push({ name: seat.binding.name, text: reaction })
+    }
+
+    // The first named closes, but only when the reactions moved something: two clean answers with
+    // nothing to add need no third message repeating them.
+    const lead = active[0]
+    if (reactions.length > 0) {
+        const prompt = [
+            ...(reactions.some(reaction => reaction.name !== lead.binding.name)
+                ? ['Follow-ups since your last message:', '', reactions.filter(r => r.name !== lead.binding.name).map(r => `${r.name}: ${r.text}`).join('\n\n'), '']
+                : []),
+            `Close the thread for ${author.name}: one short message with the result the group landed on. Name any point still in disagreement. Do not repeat what was already said.`,
+        ].join('\n')
+        await collabTurn({ connection, conn, channelId, threadTs, seat: lead, prompt, author })
+    }
+
+    // Unnamed follow-ups in this thread go to the lead; naming another convened coworker hands it
+    // over, as in any thread.
+    if (lead.engineSessionId) await rememberThread({ connectionId: connection.id, channelId, threadTs, agentId: lead.binding.agentId, engineSessionId: lead.engineSessionId, sessionId: null })
+}
+
 export async function handleSlackMessage(connection: SlackConnection, event: SlackMessageEvent, eventId: string): Promise<void> {
     const channelId = event.channel
     const text = event.text ?? ''
@@ -459,6 +620,22 @@ export async function handleSlackMessage(connection: SlackConnection, event: Sla
         return
     }
 
+    if (routing.kind === 'convene') {
+        try {
+            const conn = await getWorkspaceConnection(connection.workspace_id)
+            const author = { id: event.user ?? 'slack', name: event.user ? await userName(token, event.user).catch(() => 'a Slack teammate') : 'a Slack teammate' }
+            await runCollab({ connection, conn, channelId, threadTs, text, author, bindings: routing.bindings })
+        } catch (err) {
+            const why = err instanceof Error ? err.message : String(err)
+            console.error('[slack] the convened coworkers could not answer:', why)
+            await postMessage(token, { channel: channelId, threadTs, text: `:warning: ${why}`, identity: { name: 'Rerun', iconEmoji: ':robot_face:' } }).catch(() => {})
+        } finally {
+            await markEventProcessed(eventId)
+            await createServiceRoleClient().from('slack_connections').update<ConnectionUpdate>({ last_event_at: new Date().toISOString(), last_signature_error_at: null }).eq('id', connection.id)
+        }
+        return
+    }
+
     const binding = routing.binding
 
     const message = cleanMessage(text, binding.name)
@@ -480,15 +657,7 @@ export async function handleSlackMessage(connection: SlackConnection, event: Sla
         // An engine session belongs to one agent: when a thread is handed to another coworker by
         // naming it, the old session would 404 under the new agent, so the newcomer starts fresh.
         const inheritedSessionId = thread && thread.agent_id === binding.agentId ? (thread.engine_session_id ?? undefined) : undefined
-        // `source: 'api'` because the engine's contract has no 'slack' yet: adding one means a new
-        // value in its enum, and a hub ahead of its engine would get a 400 on every message.
-        const res = await chat(conn, binding.engineAgentId, { message, sessionId: inheritedSessionId, source: 'api', author })
-        if (!res.ok) throw new Error(`the coworker could not be reached (${res.status})`)
-        const runId = res.headers.get('x-run-id')
-        const engineSessionId = res.headers.get('x-session-id') ?? inheritedSessionId ?? null
-        // The engine buffers the run, so dropping the stream here reads as one subscriber leaving.
-        await res.body?.cancel().catch(() => {})
-        if (!runId || !engineSessionId) throw new Error('the engine started the run without naming it')
+        const { runId, engineSessionId } = await startRun(conn, binding.engineAgentId, message, inheritedSessionId, author)
 
         const sessionId = await ensureSessionRow(binding.agentId, engineSessionId, message, { source: 'api', status: 'working' })
         await rememberThread({ connectionId: connection.id, channelId, threadTs, agentId: binding.agentId, engineSessionId, sessionId })
