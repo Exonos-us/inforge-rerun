@@ -442,6 +442,10 @@ async function postAttachments(params: {
 const MAX_CONVENED = 3
 const COLLAB_TURN_TIMEOUT_MS = 4 * 60_000
 
+// Slack already names the author on every message: a signed-off message reads like an email
+// pasted into a chat.
+const SLACK_TURN_RULES = 'Slack shows your name on the message, so never sign off with it. Answer in the language of the request.'
+
 // The reaction round is an offer, not an obligation: a coworker with nothing to add says PASS and
 // nothing is posted for it.
 export function isCollabPass(answer: string): boolean {
@@ -537,7 +541,7 @@ async function runCollab(params: {
             '',
             message,
             '',
-            `Give your own take now, Slack-sized (a few sentences). You have not seen what ${others.join(' and ')} will answer, so do not quote or anticipate them — once everyone has answered you will get one short chance to react. Answer in the language of the request.`,
+            `Give your own take now, Slack-sized (a few sentences). You have not seen what ${others.join(' and ')} will answer, so do not quote or anticipate them — once everyone has answered you will get one short chance to react. ${SLACK_TURN_RULES}`,
         ].join('\n')
         seat.answer = await collabTurn({ connection, conn, channelId, threadTs, seat, prompt, author })
     }
@@ -562,7 +566,7 @@ async function runCollab(params: {
             '',
             heard,
             '',
-            'One short follow-up: react only if it changes or sharpens the result — a disagreement, a correction, a build. If you have nothing useful to add, reply exactly PASS.',
+            `One short follow-up: react only if it changes or sharpens the result — a disagreement, a correction, a build. If you have nothing useful to add, reply exactly PASS. ${SLACK_TURN_RULES}`,
         ].join('\n')
         const reaction = await collabTurn({ connection, conn, channelId, threadTs, seat, prompt, author, quiet: true })
         if (reaction) reactions.push({ name: seat.binding.name, text: reaction })
@@ -576,7 +580,7 @@ async function runCollab(params: {
             ...(reactions.some(reaction => reaction.name !== lead.binding.name)
                 ? ['Follow-ups since your last message:', '', reactions.filter(r => r.name !== lead.binding.name).map(r => `${r.name}: ${r.text}`).join('\n\n'), '']
                 : []),
-            `Close the thread for ${author.name}: one short message with the result the group landed on. Name any point still in disagreement. Do not repeat what was already said.`,
+            `Close the thread for ${author.name}: one short message with the result the group landed on. Name any point still in disagreement. Do not repeat what was already said. ${SLACK_TURN_RULES}`,
         ].join('\n')
         await collabTurn({ connection, conn, channelId, threadTs, seat: lead, prompt, author })
     }
