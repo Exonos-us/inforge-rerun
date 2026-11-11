@@ -370,10 +370,11 @@ async function waitForAnswer(params: { conn: Awaited<ReturnType<typeof getWorksp
 
 // What the coworker wrote while it was answering. Walked rather than watched: the engine has no
 // "files changed in this run", and one shallow pass over the workspace costs less than teaching
-// it one. Two levels deep is where a coworker puts a deliverable; anything buried further was
-// not meant for a chat.
-const WALK_DEPTH = 2
-const WALK_MAX_LISTINGS = 12
+// it one. Three levels deep covers where deliverables actually land — a recording in
+// screen/<session>/, a build in <project>/out/ — while anything buried further was not meant for
+// a chat.
+const WALK_DEPTH = 3
+const WALK_MAX_LISTINGS = 20
 
 async function walkWorkspace(conn: Awaited<ReturnType<typeof getWorkspaceConnection>>, engineAgentId: string): Promise<WorkspaceFile[]> {
     const base = `/agents/${encodeURIComponent(engineAgentId)}/files`
@@ -541,7 +542,7 @@ async function runCollab(params: {
             '',
             message,
             '',
-            `Give your own take now, Slack-sized (a few sentences). You have not seen what ${others.join(' and ')} will answer, so do not quote or anticipate them — once everyone has answered you will get one short chance to react. ${SLACK_TURN_RULES}`,
+            `If this asks for work your tools can do now, do it in this turn and answer with what you actually did — a result, not a plan. Otherwise give your take, Slack-sized (a few sentences). You have not seen what ${others.join(' and ')} will answer, so do not quote or anticipate them — once everyone has answered you will get one short chance to react. ${SLACK_TURN_RULES}`,
         ].join('\n')
         seat.answer = await collabTurn({ connection, conn, channelId, threadTs, seat, prompt, author })
     }
@@ -580,7 +581,7 @@ async function runCollab(params: {
             ...(reactions.some(reaction => reaction.name !== lead.binding.name)
                 ? ['Follow-ups since your last message:', '', reactions.filter(r => r.name !== lead.binding.name).map(r => `${r.name}: ${r.text}`).join('\n\n'), '']
                 : []),
-            `Close the thread for ${author.name}: one short message with the result the group landed on. Name any point still in disagreement. Do not repeat what was already said. ${SLACK_TURN_RULES}`,
+            `If the group agreed on work that is yours and still undone, do it now, in this turn. Then close the thread for ${author.name}: one short message with the result the group landed on — name the files you produced so they travel with your message. Name any point still in disagreement. Do not repeat what was already said. ${SLACK_TURN_RULES}`,
         ].join('\n')
         await collabTurn({ connection, conn, channelId, threadTs, seat: lead, prompt, author })
     }
