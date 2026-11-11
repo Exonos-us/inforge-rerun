@@ -477,12 +477,15 @@ export async function handleSlackMessage(connection: SlackConnection, event: Sla
     try {
         const conn = await getWorkspaceConnection(connection.workspace_id)
         const author = { id: event.user ?? 'slack', name: event.user ? await userName(token, event.user).catch(() => 'a Slack teammate') : 'a Slack teammate' }
+        // An engine session belongs to one agent: when a thread is handed to another coworker by
+        // naming it, the old session would 404 under the new agent, so the newcomer starts fresh.
+        const inheritedSessionId = thread && thread.agent_id === binding.agentId ? (thread.engine_session_id ?? undefined) : undefined
         // `source: 'api'` because the engine's contract has no 'slack' yet: adding one means a new
         // value in its enum, and a hub ahead of its engine would get a 400 on every message.
-        const res = await chat(conn, binding.engineAgentId, { message, sessionId: thread?.engine_session_id ?? undefined, source: 'api', author })
+        const res = await chat(conn, binding.engineAgentId, { message, sessionId: inheritedSessionId, source: 'api', author })
         if (!res.ok) throw new Error(`the coworker could not be reached (${res.status})`)
         const runId = res.headers.get('x-run-id')
-        const engineSessionId = res.headers.get('x-session-id') ?? thread?.engine_session_id ?? null
+        const engineSessionId = res.headers.get('x-session-id') ?? inheritedSessionId ?? null
         // The engine buffers the run, so dropping the stream here reads as one subscriber leaving.
         await res.body?.cancel().catch(() => {})
         if (!runId || !engineSessionId) throw new Error('the engine started the run without naming it')
