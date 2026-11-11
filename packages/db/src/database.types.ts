@@ -2377,6 +2377,205 @@ export type Database = {
         }
         Relationships: []
       }
+      slack_channel_agents: {
+        Row: {
+          agent_id: string
+          channel_id: string
+          channel_name: string | null
+          connection_id: string
+          created_at: string
+          display_name: string | null
+          icon_emoji: string | null
+          icon_url: string | null
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          agent_id: string
+          channel_id: string
+          channel_name?: string | null
+          connection_id: string
+          created_at?: string
+          display_name?: string | null
+          icon_emoji?: string | null
+          icon_url?: string | null
+          id?: string
+          updated_at?: string
+        }
+        Update: {
+          agent_id?: string
+          channel_id?: string
+          channel_name?: string | null
+          connection_id?: string
+          created_at?: string
+          display_name?: string | null
+          icon_emoji?: string | null
+          icon_url?: string | null
+          id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "slack_channel_agents_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "slack_channel_agents_connection_id_fkey"
+            columns: ["connection_id"]
+            isOneToOne: false
+            referencedRelation: "slack_connections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      slack_connections: {
+        Row: {
+          bot_token: string
+          bot_user_id: string | null
+          can_customize_identity: boolean
+          connected_by: string | null
+          created_at: string
+          id: string
+          last_event_at: string | null
+          last_signature_error_at: string | null
+          request_url: string | null
+          signing_secret: string
+          status: string
+          team_id: string
+          team_name: string | null
+          updated_at: string
+          workspace_id: number
+        }
+        Insert: {
+          bot_token: string
+          bot_user_id?: string | null
+          can_customize_identity?: boolean
+          connected_by?: string | null
+          created_at?: string
+          id?: string
+          last_event_at?: string | null
+          last_signature_error_at?: string | null
+          request_url?: string | null
+          signing_secret: string
+          status?: string
+          team_id: string
+          team_name?: string | null
+          updated_at?: string
+          workspace_id: number
+        }
+        Update: {
+          bot_token?: string
+          bot_user_id?: string | null
+          can_customize_identity?: boolean
+          connected_by?: string | null
+          created_at?: string
+          id?: string
+          last_event_at?: string | null
+          last_signature_error_at?: string | null
+          request_url?: string | null
+          signing_secret?: string
+          status?: string
+          team_id?: string
+          team_name?: string | null
+          updated_at?: string
+          workspace_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "slack_connections_connected_by_fkey"
+            columns: ["connected_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "slack_connections_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: true
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      slack_events: {
+        Row: {
+          event_id: string
+          processed_at: string | null
+          received_at: string
+          team_id: string | null
+        }
+        Insert: {
+          event_id: string
+          processed_at?: string | null
+          received_at?: string
+          team_id?: string | null
+        }
+        Update: {
+          event_id?: string
+          processed_at?: string | null
+          received_at?: string
+          team_id?: string | null
+        }
+        Relationships: []
+      }
+      slack_threads: {
+        Row: {
+          agent_id: string
+          channel_id: string
+          connection_id: string
+          created_at: string
+          engine_session_id: string | null
+          session_id: string | null
+          thread_ts: string
+          updated_at: string
+        }
+        Insert: {
+          agent_id: string
+          channel_id: string
+          connection_id: string
+          created_at?: string
+          engine_session_id?: string | null
+          session_id?: string | null
+          thread_ts: string
+          updated_at?: string
+        }
+        Update: {
+          agent_id?: string
+          channel_id?: string
+          connection_id?: string
+          created_at?: string
+          engine_session_id?: string | null
+          session_id?: string | null
+          thread_ts?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "slack_threads_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "slack_threads_connection_id_fkey"
+            columns: ["connection_id"]
+            isOneToOne: false
+            referencedRelation: "slack_connections"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "slack_threads_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       space_members: {
         Row: {
           access: string

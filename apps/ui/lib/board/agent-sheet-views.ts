@@ -9,6 +9,7 @@ export const AGENT_SHEET_VIEWS = {
     files: ['files', 'published'],
     data: ['data'],
     routines: ['scheduled', 'triggers'],
+    channels: ['channels'],
     activity: ['monitoring', 'logs'],
     settings: ['settings', 'tools', 'setup'],
 } as const satisfies Record<string, readonly AgentFocusTab[]>
@@ -26,6 +27,7 @@ export const AGENT_SHEET_VIEW_LABELS: Record<AgentSheetView, string> = {
     files: 'Files',
     data: 'Database',
     routines: 'Routines',
+    channels: 'Chats',
     activity: 'Activity',
     settings: 'Settings',
 }
@@ -41,6 +43,7 @@ export const AGENT_VIEW_TAB_LABELS: Record<AgentViewTab, string> = {
     data: 'Database',
     scheduled: 'Scheduled',
     triggers: 'Triggers',
+    channels: 'Chats',
     monitoring: 'Monitoring',
     logs: 'Logs',
     settings: 'General',

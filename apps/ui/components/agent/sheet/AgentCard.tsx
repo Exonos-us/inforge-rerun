@@ -13,7 +13,7 @@ import { useCanManageAgent } from '@/hooks/useBoxAccess'
 import { BOX_MANAGE_REASON } from '@/lib/board/box-access'
 import type { AgentViewTab } from '@/lib/board/agent-sheet-views'
 import { type IsoAgent, UNNAMED_BOX_LABEL } from '@/lib/board/types'
-import { BlocksIcon, BrainIcon, CalendarClockIcon, ChevronRightIcon, FolderIcon, GaugeIcon, Layers, Link2, SettingsIcon, TableIcon, Trash2Icon, XIcon } from '@/lib/icons'
+import { BlocksIcon, BrainIcon, CalendarClockIcon, ChevronRightIcon, FolderIcon, GaugeIcon, Layers, Link2, MessagesSquare, SettingsIcon, TableIcon, Trash2Icon, XIcon } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 import { useBoardStore } from '@/stores/board.store'
 
@@ -22,13 +22,14 @@ type IconType = ComponentType<{ className?: string }>
 // The look of the button a destination sits on: the screen grows out of it and folds back into it.
 export type CardDestinationShape = 'tile' | 'row' | 'button'
 
-export type CardDestination = Extract<AgentViewTab, 'services' | 'skills' | 'memories' | 'scheduled' | 'files' | 'data' | 'monitoring' | 'settings'>
+export type CardDestination = Extract<AgentViewTab, 'services' | 'skills' | 'memories' | 'scheduled' | 'channels' | 'files' | 'data' | 'monitoring' | 'settings'>
 
 const DESTINATIONS: Record<CardDestination, { label: string; icon: IconType }> = {
     services: { label: 'Apps', icon: BlocksIcon },
     skills: { label: 'Skills', icon: Layers },
     memories: { label: 'Knowledge', icon: BrainIcon },
     scheduled: { label: 'Routines', icon: CalendarClockIcon },
+    channels: { label: 'Chats', icon: MessagesSquare },
     files: { label: 'Files', icon: FolderIcon },
     data: { label: 'Database', icon: TableIcon },
     monitoring: { label: 'Activity', icon: GaugeIcon },
@@ -36,7 +37,7 @@ const DESTINATIONS: Record<CardDestination, { label: string; icon: IconType }> =
 }
 
 const TILES: CardDestination[] = ['services', 'skills', 'memories', 'scheduled']
-const ROWS: CardDestination[] = ['files', 'data']
+const ROWS: CardDestination[] = ['channels', 'files', 'data']
 const FOOTER: CardDestination[] = ['monitoring', 'settings']
 
 export type CardOpenHandler = (tab: CardDestination, from: HTMLElement, shape: CardDestinationShape) => void

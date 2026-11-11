@@ -749,6 +749,14 @@ export async function fetchRawFile(conn: EngineConnection, base: string, path: s
     return fetchEngine(`${conn.baseUrl}${base}/raw?path=${encodeURIComponent(path)}`, { method: 'GET', headers })
 }
 
+// The bytes themselves, for a caller that has to hand them to someone else — Slack's upload URL
+// wants a body, not a stream it can pull from.
+export async function readFileBytes(conn: EngineConnection, base: string, path: string): Promise<Uint8Array> {
+    const res = await fetchRawFile(conn, base, path)
+    if (!res.ok) throw new Error(`rerun-engine GET ${base}/raw failed: ${res.status}`)
+    return new Uint8Array(await res.arrayBuffer())
+}
+
 // --- Skills ---
 
 export async function listSkills(conn: EngineConnection, agentId: string): Promise<EngineSkill[]> {

@@ -45,6 +45,6 @@ export function resolveServiceIcon(icon: string | null, category?: string): Luci
 // marque générée par le pipeline brand-icon (logo.dev → FAL → Storage). On renvoie les
 // props prêtes à étaler sur <Icon> : `src` pour un logo, `icon` (Lucide) sinon.
 export function serviceIconProps(icon: string | null, category?: string): { src: string } | { icon: LucideIcon } {
-    if (icon && /^https?:\/\//i.test(icon)) return { src: icon }
+    if (icon && (/^https?:\/\//i.test(icon) || (icon.startsWith('/') && !icon.startsWith('//')))) return { src: icon }
     return { icon: resolveServiceIcon(icon, category) }
 }
