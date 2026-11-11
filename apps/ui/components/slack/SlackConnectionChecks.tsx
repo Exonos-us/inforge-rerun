@@ -78,23 +78,30 @@ export function SlackConnectionChecks({ state, reload, isAdmin }: { state: Slack
             >
                 {state.delivery.reachable === 'no' && (
                     <Alert variant="danger" className="mt-2">
-                        <AlertTitle>Nothing answers at the address Slack calls</AlertTitle>
+                        <AlertTitle>Nothing answers there — events cannot arrive</AlertTitle>
                         <AlertDescription>
-                            <p>
-                                The Slack handshake gets no answer at the address above, so no event arrives any more.
-                                {isLocalTunnel(state.delivery.url ?? '') && ' It is a local tunnel, and tunnel URLs rotate on every restart: restart it, then put the address it prints in the Slack app under Event Subscriptions and save it here too.'}
-                            </p>
+                            <ol className="list-decimal space-y-0.5 pl-4">
+                                {isLocalTunnel(state.delivery.url ?? '') ? <li>Restart your tunnel (ngrok prints a new URL each time).</li> : <li>Check the server behind that address is up.</li>}
+                                <li>
+                                    Put the working URL in <SlackAppSettingsLink /> → <b>Event Subscriptions</b> → Request URL.
+                                </li>
+                                <li>Paste the same URL below.</li>
+                            </ol>
                             <RequestUrlFix reload={reload} isAdmin={isAdmin} />
                         </AlertDescription>
                     </Alert>
                 )}
                 {state.delivery.reachable === 'unknown' && (
                     <Alert variant="warning" className="mt-2">
-                        <AlertTitle>Only Slack knows where it delivers</AlertTitle>
+                        <AlertTitle>Paste your Request URL to check deliveries</AlertTitle>
                         <AlertDescription>
-                            <p>
-                                This app is read on an address Slack cannot call, so events come through a tunnel or a public domain — and nobody told this screen which one. Paste the Request URL from the Slack app&apos;s <b>Event Subscriptions</b> page so it can be checked from here.
-                            </p>
+                            <ol className="list-decimal space-y-0.5 pl-4">
+                                <li>
+                                    Open <SlackAppSettingsLink /> → your app → <b>Event Subscriptions</b>.
+                                </li>
+                                <li>Copy the Request URL.</li>
+                                <li>Paste it below — it is checked before saving.</li>
+                            </ol>
                             <RequestUrlFix reload={reload} isAdmin={isAdmin} />
                         </AlertDescription>
                     </Alert>
@@ -131,6 +138,14 @@ function DeliveriesBadge({ state }: { state: SlackStateView }) {
     if (state.delivery.reachable === 'unknown') return <Badge size="xs" tone="orange">Unchecked</Badge>
     if (health?.state === 'never_called') return <Badge size="xs" tone="orange">Never called</Badge>
     return <Badge size="xs" tone="green">Receiving</Badge>
+}
+
+function SlackAppSettingsLink() {
+    return (
+        <a href="https://api.slack.com/apps" target="_blank" rel="noreferrer noopener" className="underline underline-offset-2">
+            api.slack.com/apps
+        </a>
+    )
 }
 
 // The address, fixed where its absence is named. Saving probes it first, so what lands in the row
