@@ -537,7 +537,7 @@ async function runCollab(params: {
             '',
             message,
             '',
-            `Give your own take now, Slack-sized (a few sentences). ${others.join(' and ')} answer in the same thread, and you will get one short chance to react to them afterwards. Answer in the language of the request.`,
+            `Give your own take now, Slack-sized (a few sentences). You have not seen what ${others.join(' and ')} will answer, so do not quote or anticipate them — once everyone has answered you will get one short chance to react. Answer in the language of the request.`,
         ].join('\n')
         seat.answer = await collabTurn({ connection, conn, channelId, threadTs, seat, prompt, author })
     }
