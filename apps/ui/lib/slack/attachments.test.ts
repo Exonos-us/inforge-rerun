@@ -106,6 +106,12 @@ describe('attachmentsFor', () => {
         expect(attachmentsFor({ answer: 'Done.', files, since, screenAutoPick: false }).map(f => f.name)).toEqual(['report.pdf'])
         expect(attachmentsFor({ answer: 'Here is recording.mp4', files, since, screenAutoPick: false }).map(f => f.name)).toEqual(['recording.mp4', 'report.pdf'])
     })
+
+    it('one name travels once, however many copies of the file exist', () => {
+        const files = [file('landing.mp4'), file('shared/inforge/landing.mp4')]
+        expect(attachmentsFor({ answer: 'Copied landing.mp4 to the shared space.', files, since })).toHaveLength(1)
+        expect(attachmentsFor({ answer: 'landing.mp4 is in the shared space now.', files, since, alreadyPostedNames: new Set(['landing.mp4']) })).toHaveLength(0)
+    })
 })
 
 describe('attachmentComment', () => {

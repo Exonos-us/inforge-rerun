@@ -70,14 +70,18 @@ export function filesNamedIn(text: string, files: WorkspaceFile[]): WorkspaceFil
 // `screenAutoPick: false` is for the turns of a convened exchange: a live screen session keeps
 // appending to its recording, so the raw file reads as freshly written on every turn and would
 // ride along again and again. There, a screen file travels only when the answer names it.
-export function attachmentsFor(params: { answer: string; files: WorkspaceFile[]; since: Date; alreadyPosted?: ReadonlySet<string>; screenAutoPick?: boolean }): WorkspaceFile[] {
+// A file travels once per exchange by NAME as well as by path: a coworker that copies its video
+// to the shared space for a colleague has made the same deliverable twice, and the thread needs
+// it once. `alreadyPostedNames` carries the lowercased names earlier turns sent.
+export function attachmentsFor(params: { answer: string; files: WorkspaceFile[]; since: Date; alreadyPosted?: ReadonlySet<string>; alreadyPostedNames?: ReadonlySet<string>; screenAutoPick?: boolean }): WorkspaceFile[] {
     const named = filesNamedIn(params.answer, params.files)
     const namedPaths = new Set(named.map(file => file.path))
     const picked: WorkspaceFile[] = []
     for (const file of [...named, ...filesWorthPosting(params.files, params.since)]) {
         if (picked.length >= MAX_ATTACHMENTS) break
         if (params.alreadyPosted?.has(file.path)) continue
-        if (picked.some(already => already.path === file.path)) continue
+        if (params.alreadyPostedNames?.has(file.name.toLowerCase())) continue
+        if (picked.some(already => already.path === file.path || already.name.toLowerCase() === file.name.toLowerCase())) continue
         if (/(^|\/)screen\//.test(file.path)) {
             if (params.screenAutoPick === false && !namedPaths.has(file.path)) continue
             if (picked.some(already => already.size === file.size)) continue

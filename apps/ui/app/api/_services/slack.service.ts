@@ -424,13 +424,17 @@ async function postAttachments(params: {
     const walked = await walkWorkspace(params.conn, params.engineAgentId).catch(() => [] as WorkspaceFile[])
     const postedKey = (path: string) => `${params.engineAgentId}:${path}`
     const mine = new Set([...(params.alreadyPosted ?? [])].filter(key => key.startsWith(`${params.engineAgentId}:`)).map(key => key.slice(params.engineAgentId.length + 1)))
-    const files = attachmentsFor({ answer: params.answer, files: walked, since: params.since, alreadyPosted: mine, screenAutoPick: params.screenAutoPick })
+    // Names dedupe across the whole exchange, not per agent: once a video is in the thread, the
+    // copy a colleague received of it has nothing to add.
+    const mineNames = new Set([...(params.alreadyPosted ?? [])].filter(key => key.startsWith('name:')).map(key => key.slice('name:'.length)))
+    const files = attachmentsFor({ answer: params.answer, files: walked, since: params.since, alreadyPosted: mine, alreadyPostedNames: mineNames, screenAutoPick: params.screenAutoPick })
     let posted = 0
     for (const file of files) {
         try {
             const bytes = await readFileBytes(params.conn, `/agents/${encodeURIComponent(params.engineAgentId)}/files`, file.path)
             await uploadFile(params.token, { channel: params.channel, threadTs: params.threadTs, filename: file.name, bytes, comment: attachmentComment(file, params.from) })
             params.alreadyPosted?.add(postedKey(file.path))
+            params.alreadyPosted?.add(`name:${file.name.toLowerCase()}`)
             posted += 1
         } catch (err) {
             const why = err instanceof Error ? err.message : String(err)
