@@ -100,6 +100,12 @@ describe('attachmentsFor', () => {
         const files = [file('landing-tour.mp4')]
         expect(attachmentsFor({ answer: 'As I said, landing-tour.mp4 is up.', files, since, alreadyPosted: new Set(['landing-tour.mp4']) })).toHaveLength(0)
     })
+
+    it('in a convened turn a live screen recording rides along only when named', () => {
+        const files = [file('screen/2026-11-10/recording.mp4'), file('report.pdf')]
+        expect(attachmentsFor({ answer: 'Done.', files, since, screenAutoPick: false }).map(f => f.name)).toEqual(['report.pdf'])
+        expect(attachmentsFor({ answer: 'Here is recording.mp4', files, since, screenAutoPick: false }).map(f => f.name)).toEqual(['recording.mp4', 'report.pdf'])
+    })
 })
 
 describe('attachmentComment', () => {

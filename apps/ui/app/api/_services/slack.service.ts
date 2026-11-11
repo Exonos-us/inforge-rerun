@@ -419,11 +419,12 @@ async function postAttachments(params: {
     // conversation keeps naming it. Keyed by agent as well as path: two coworkers' workspaces can
     // hold the same relative path without being the same file.
     alreadyPosted?: Set<string>
+    screenAutoPick?: boolean
 }): Promise<number> {
     const walked = await walkWorkspace(params.conn, params.engineAgentId).catch(() => [] as WorkspaceFile[])
     const postedKey = (path: string) => `${params.engineAgentId}:${path}`
     const mine = new Set([...(params.alreadyPosted ?? [])].filter(key => key.startsWith(`${params.engineAgentId}:`)).map(key => key.slice(params.engineAgentId.length + 1)))
-    const files = attachmentsFor({ answer: params.answer, files: walked, since: params.since, alreadyPosted: mine })
+    const files = attachmentsFor({ answer: params.answer, files: walked, since: params.since, alreadyPosted: mine, screenAutoPick: params.screenAutoPick })
     let posted = 0
     for (const file of files) {
         try {
@@ -510,7 +511,7 @@ async function collabTurn(params: {
         if (placeholder) await updateMessage(token, { channel: channelId, ts: placeholder.ts, text: fitMessage(toMrkdwn(answer)), identity })
         else await postMessage(token, { channel: channelId, threadTs, text: fitMessage(toMrkdwn(answer)), identity })
 
-        const posted = await postAttachments({ token, conn, engineAgentId: seat.binding.engineAgentId as string, channel: channelId, threadTs, since: startedAt, answer, from: seat.binding.name, alreadyPosted: params.postedPaths })
+        const posted = await postAttachments({ token, conn, engineAgentId: seat.binding.engineAgentId as string, channel: channelId, threadTs, since: startedAt, answer, from: seat.binding.name, alreadyPosted: params.postedPaths, screenAutoPick: false })
         if (posted) console.info(`[slack] ${seat.binding.name} posted ${posted} file(s) to ${channelId}`)
         return answer
     } catch (err) {

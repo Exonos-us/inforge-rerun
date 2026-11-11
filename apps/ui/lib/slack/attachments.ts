@@ -67,13 +67,21 @@ export function filesNamedIn(text: string, files: WorkspaceFile[]): WorkspaceFil
 // convened conversation does not repost its own files every time someone mentions them. And a raw
 // screen recording whose same-sized copy is already going up stays home: the coworker renamed it
 // to hand it over, and the same bytes under two names would read as two videos.
-export function attachmentsFor(params: { answer: string; files: WorkspaceFile[]; since: Date; alreadyPosted?: ReadonlySet<string> }): WorkspaceFile[] {
+// `screenAutoPick: false` is for the turns of a convened exchange: a live screen session keeps
+// appending to its recording, so the raw file reads as freshly written on every turn and would
+// ride along again and again. There, a screen file travels only when the answer names it.
+export function attachmentsFor(params: { answer: string; files: WorkspaceFile[]; since: Date; alreadyPosted?: ReadonlySet<string>; screenAutoPick?: boolean }): WorkspaceFile[] {
+    const named = filesNamedIn(params.answer, params.files)
+    const namedPaths = new Set(named.map(file => file.path))
     const picked: WorkspaceFile[] = []
-    for (const file of [...filesNamedIn(params.answer, params.files), ...filesWorthPosting(params.files, params.since)]) {
+    for (const file of [...named, ...filesWorthPosting(params.files, params.since)]) {
         if (picked.length >= MAX_ATTACHMENTS) break
         if (params.alreadyPosted?.has(file.path)) continue
         if (picked.some(already => already.path === file.path)) continue
-        if (/(^|\/)screen\//.test(file.path) && picked.some(already => already.size === file.size)) continue
+        if (/(^|\/)screen\//.test(file.path)) {
+            if (params.screenAutoPick === false && !namedPaths.has(file.path)) continue
+            if (picked.some(already => already.size === file.size)) continue
+        }
         picked.push(file)
     }
     return picked
