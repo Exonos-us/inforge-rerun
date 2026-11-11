@@ -85,6 +85,21 @@ describe('attachmentsFor', () => {
         const files = ['a.pdf', 'b.pdf', 'c.pdf', 'd.pdf'].map(name => file(name))
         expect(attachmentsFor({ answer: 'a.pdf b.pdf c.pdf d.pdf', files, since })).toHaveLength(3)
     })
+
+    it('leaves the raw screen frames home: the recording is the deliverable', () => {
+        const files = [file('screen/2026-11-10/recording.mp4'), file('screen/2026-11-10/001.jpg'), file('screen/2026-11-10/002.jpg')]
+        expect(attachmentsFor({ answer: 'Done.', files, since }).map(f => f.name)).toEqual(['recording.mp4'])
+    })
+
+    it('posts the renamed copy of a screen recording once, not the raw twin beside it', () => {
+        const files = [file('landing-tour.mp4', { size: 6_100_000 }), file('screen/2026-11-10/recording.mp4', { size: 6_100_000 })]
+        expect(attachmentsFor({ answer: 'Here is landing-tour.mp4', files, since }).map(f => f.name)).toEqual(['landing-tour.mp4'])
+    })
+
+    it('does not repost what an earlier turn of the same exchange already sent', () => {
+        const files = [file('landing-tour.mp4')]
+        expect(attachmentsFor({ answer: 'As I said, landing-tour.mp4 is up.', files, since, alreadyPosted: new Set(['landing-tour.mp4']) })).toHaveLength(0)
+    })
 })
 
 describe('attachmentComment', () => {

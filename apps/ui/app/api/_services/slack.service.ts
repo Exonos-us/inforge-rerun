@@ -415,14 +415,21 @@ async function postAttachments(params: {
     since: Date
     answer: string
     from: string
+    // Shared across the turns of one convened exchange, so a file travels once however often the
+    // conversation keeps naming it. Keyed by agent as well as path: two coworkers' workspaces can
+    // hold the same relative path without being the same file.
+    alreadyPosted?: Set<string>
 }): Promise<number> {
     const walked = await walkWorkspace(params.conn, params.engineAgentId).catch(() => [] as WorkspaceFile[])
-    const files = attachmentsFor({ answer: params.answer, files: walked, since: params.since })
+    const postedKey = (path: string) => `${params.engineAgentId}:${path}`
+    const mine = new Set([...(params.alreadyPosted ?? [])].filter(key => key.startsWith(`${params.engineAgentId}:`)).map(key => key.slice(params.engineAgentId.length + 1)))
+    const files = attachmentsFor({ answer: params.answer, files: walked, since: params.since, alreadyPosted: mine })
     let posted = 0
     for (const file of files) {
         try {
             const bytes = await readFileBytes(params.conn, `/agents/${encodeURIComponent(params.engineAgentId)}/files`, file.path)
             await uploadFile(params.token, { channel: params.channel, threadTs: params.threadTs, filename: file.name, bytes, comment: attachmentComment(file, params.from) })
+            params.alreadyPosted?.add(postedKey(file.path))
             posted += 1
         } catch (err) {
             const why = err instanceof Error ? err.message : String(err)
@@ -478,6 +485,7 @@ async function collabTurn(params: {
     author: { id: string; name: string }
     // A quiet turn posts only a substantive answer: no placeholder, and a PASS leaves no trace.
     quiet?: boolean
+    postedPaths?: Set<string>
 }): Promise<string | null> {
     const { connection, conn, channelId, threadTs, seat } = params
     const token = connection.bot_token
@@ -502,7 +510,7 @@ async function collabTurn(params: {
         if (placeholder) await updateMessage(token, { channel: channelId, ts: placeholder.ts, text: fitMessage(toMrkdwn(answer)), identity })
         else await postMessage(token, { channel: channelId, threadTs, text: fitMessage(toMrkdwn(answer)), identity })
 
-        const posted = await postAttachments({ token, conn, engineAgentId: seat.binding.engineAgentId as string, channel: channelId, threadTs, since: startedAt, answer, from: seat.binding.name })
+        const posted = await postAttachments({ token, conn, engineAgentId: seat.binding.engineAgentId as string, channel: channelId, threadTs, since: startedAt, answer, from: seat.binding.name, alreadyPosted: params.postedPaths })
         if (posted) console.info(`[slack] ${seat.binding.name} posted ${posted} file(s) to ${channelId}`)
         return answer
     } catch (err) {
@@ -533,6 +541,7 @@ async function runCollab(params: {
     if (seats.length === 0) return
     const channelName = `#${seats[0].binding.channelName ?? channelId}`
     const message = params.text.replace(/<@[A-Z0-9_]+>/g, ' ').replace(/[ \t]+/g, ' ').trim()
+    const postedPaths = new Set<string>()
 
     // Round 1: everyone takes the ask, knowing the others are on it too.
     for (const seat of seats) {
@@ -542,9 +551,9 @@ async function runCollab(params: {
             '',
             message,
             '',
-            `If this asks for work your tools can do now, do it in this turn and answer with what you actually did — a result, not a plan. Otherwise give your take, Slack-sized (a few sentences). You have not seen what ${others.join(' and ')} will answer, so do not quote or anticipate them — once everyone has answered you will get one short chance to react. ${SLACK_TURN_RULES}`,
+            `Read who the message hands the work to: it may be for one of you by name, with the others only copied or receiving the result. If the work is yours and your tools can do it now, do it in this turn and answer with what you actually did — a result, not a plan. If it is someone else's to do, do not redo it: say what you will check or add once their result lands. Otherwise give your take, Slack-sized (a few sentences). You have not seen what ${others.join(' and ')} will answer, so do not quote or anticipate them — once everyone has answered you will get one short chance to react. ${SLACK_TURN_RULES}`,
         ].join('\n')
-        seat.answer = await collabTurn({ connection, conn, channelId, threadTs, seat, prompt, author })
+        seat.answer = await collabTurn({ connection, conn, channelId, threadTs, seat, prompt, author, postedPaths })
     }
 
     const active = seats.filter(seat => seat.answer !== null)
@@ -569,7 +578,7 @@ async function runCollab(params: {
             '',
             `One short follow-up: react only if it changes or sharpens the result — a disagreement, a correction, a build. If you have nothing useful to add, reply exactly PASS. ${SLACK_TURN_RULES}`,
         ].join('\n')
-        const reaction = await collabTurn({ connection, conn, channelId, threadTs, seat, prompt, author, quiet: true })
+        const reaction = await collabTurn({ connection, conn, channelId, threadTs, seat, prompt, author, quiet: true, postedPaths })
         if (reaction) reactions.push({ name: seat.binding.name, text: reaction })
     }
 
@@ -583,7 +592,7 @@ async function runCollab(params: {
                 : []),
             `If the group agreed on work that is yours and still undone, do it now, in this turn. Then close the thread for ${author.name}: one short message with the result the group landed on — name the files you produced so they travel with your message. Name any point still in disagreement. Do not repeat what was already said. ${SLACK_TURN_RULES}`,
         ].join('\n')
-        await collabTurn({ connection, conn, channelId, threadTs, seat: lead, prompt, author })
+        await collabTurn({ connection, conn, channelId, threadTs, seat: lead, prompt, author, postedPaths })
     }
 
     // Unnamed follow-ups in this thread go to the lead; naming another convened coworker hands it

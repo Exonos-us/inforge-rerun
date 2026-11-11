@@ -22,6 +22,12 @@ export const MAX_ATTACHMENTS = 3
 // Never from the folders that hold a coworker's own machinery rather than its work.
 const SKIPPED = ['.rerun/', '.git/', 'node_modules/', '.cache/']
 
+// A screen session leaves one numbered frame per action beside its recording. The recording is
+// the deliverable; the frames are raw material and would bury it.
+function isScreenFrame(file: WorkspaceFile): boolean {
+    return /(^|\/)screen\//.test(file.path) && /^\d+\.(jpe?g|png)$/i.test(file.name)
+}
+
 export function extensionOf(name: string): string {
     const dot = name.lastIndexOf('.')
     return dot > 0 ? name.slice(dot + 1).toLowerCase() : ''
@@ -38,6 +44,7 @@ export function filesWorthPosting(files: WorkspaceFile[], since: Date): Workspac
             if (!isShareable(file.name)) return false
             if (file.size <= 0 || file.size > MAX_ATTACHMENT_BYTES) return false
             if (SKIPPED.some(prefix => file.path.startsWith(prefix) || file.path.includes(`/${prefix}`))) return false
+            if (isScreenFrame(file)) return false
             if (!file.modifiedAt) return false
             return new Date(file.modifiedAt).getTime() >= since.getTime()
         })
@@ -55,12 +62,19 @@ export function filesNamedIn(text: string, files: WorkspaceFile[]): WorkspaceFil
 }
 
 // What goes into the thread under one answer: what the run just made, and what the answer says it
-// is handing over. Written first, because that is the thing most likely to be the point.
-export function attachmentsFor(params: { answer: string; files: WorkspaceFile[]; since: Date }): WorkspaceFile[] {
+// is handing over. Named files first, because what the answer hands over is the point.
+// `alreadyPosted` carries the paths earlier turns of the same exchange put in the thread, so a
+// convened conversation does not repost its own files every time someone mentions them. And a raw
+// screen recording whose same-sized copy is already going up stays home: the coworker renamed it
+// to hand it over, and the same bytes under two names would read as two videos.
+export function attachmentsFor(params: { answer: string; files: WorkspaceFile[]; since: Date; alreadyPosted?: ReadonlySet<string> }): WorkspaceFile[] {
     const picked: WorkspaceFile[] = []
-    for (const file of [...filesWorthPosting(params.files, params.since), ...filesNamedIn(params.answer, params.files)]) {
+    for (const file of [...filesNamedIn(params.answer, params.files), ...filesWorthPosting(params.files, params.since)]) {
         if (picked.length >= MAX_ATTACHMENTS) break
-        if (!picked.some(already => already.path === file.path)) picked.push(file)
+        if (params.alreadyPosted?.has(file.path)) continue
+        if (picked.some(already => already.path === file.path)) continue
+        if (/(^|\/)screen\//.test(file.path) && picked.some(already => already.size === file.size)) continue
+        picked.push(file)
     }
     return picked
 }
