@@ -67,25 +67,25 @@ export function filesNamedIn(text: string, files: WorkspaceFile[]): WorkspaceFil
 // convened conversation does not repost its own files every time someone mentions them. And a raw
 // screen recording whose same-sized copy is already going up stays home: the coworker renamed it
 // to hand it over, and the same bytes under two names would read as two videos.
-// `screenAutoPick: false` is for the turns of a convened exchange: a live screen session keeps
-// appending to its recording, so the raw file reads as freshly written on every turn and would
-// ride along again and again. There, a screen file travels only when the answer names it.
-// A file travels once per exchange by NAME as well as by path: a coworker that copies its video
-// to the shared space for a colleague has made the same deliverable twice, and the thread needs
-// it once. `alreadyPostedNames` carries the lowercased names earlier turns sent.
-export function attachmentsFor(params: { answer: string; files: WorkspaceFile[]; since: Date; alreadyPosted?: ReadonlySet<string>; alreadyPostedNames?: ReadonlySet<string>; screenAutoPick?: boolean }): WorkspaceFile[] {
+// `namedOnly` is for the turns of a convened exchange: several coworkers make scratch material
+// while they work each other's output over (review frames, probe output, a still-recording
+// screen), and the thread only wants what someone explicitly hands across. The prompts teach them
+// to name their deliverables, so what is worth sending is named. A solo answer keeps the
+// auto-pick: there, what the run just made is the point.
+// A file also travels once per exchange by NAME as well as by path: a coworker that copies its
+// video to the shared space for a colleague has made the same deliverable twice, and the thread
+// needs it once. `alreadyPostedNames` carries the lowercased names earlier turns sent.
+export function attachmentsFor(params: { answer: string; files: WorkspaceFile[]; since: Date; alreadyPosted?: ReadonlySet<string>; alreadyPostedNames?: ReadonlySet<string>; namedOnly?: boolean }): WorkspaceFile[] {
     const named = filesNamedIn(params.answer, params.files)
-    const namedPaths = new Set(named.map(file => file.path))
     const picked: WorkspaceFile[] = []
-    for (const file of [...named, ...filesWorthPosting(params.files, params.since)]) {
+    for (const file of params.namedOnly ? named : [...named, ...filesWorthPosting(params.files, params.since)]) {
         if (picked.length >= MAX_ATTACHMENTS) break
         if (params.alreadyPosted?.has(file.path)) continue
         if (params.alreadyPostedNames?.has(file.name.toLowerCase())) continue
         if (picked.some(already => already.path === file.path || already.name.toLowerCase() === file.name.toLowerCase())) continue
-        if (/(^|\/)screen\//.test(file.path)) {
-            if (params.screenAutoPick === false && !namedPaths.has(file.path)) continue
-            if (picked.some(already => already.size === file.size)) continue
-        }
+        // The raw screen recording whose renamed, same-sized copy is already going up: same bytes
+        // under two names would read as two videos.
+        if (/(^|\/)screen\//.test(file.path) && picked.some(already => already.size === file.size)) continue
         picked.push(file)
     }
     return picked

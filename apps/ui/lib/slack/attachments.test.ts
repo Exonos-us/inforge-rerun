@@ -101,10 +101,10 @@ describe('attachmentsFor', () => {
         expect(attachmentsFor({ answer: 'As I said, landing-tour.mp4 is up.', files, since, alreadyPosted: new Set(['landing-tour.mp4']) })).toHaveLength(0)
     })
 
-    it('in a convened turn a live screen recording rides along only when named', () => {
-        const files = [file('screen/2026-11-10/recording.mp4'), file('report.pdf')]
-        expect(attachmentsFor({ answer: 'Done.', files, since, screenAutoPick: false }).map(f => f.name)).toEqual(['report.pdf'])
-        expect(attachmentsFor({ answer: 'Here is recording.mp4', files, since, screenAutoPick: false }).map(f => f.name)).toEqual(['recording.mp4', 'report.pdf'])
+    it('in a convened turn only what the answer names travels: scratch stays home', () => {
+        const files = [file('screen/2026-11-10/recording.mp4'), file('f80.png'), file('report.pdf')]
+        expect(attachmentsFor({ answer: 'Done.', files, since, namedOnly: true })).toHaveLength(0)
+        expect(attachmentsFor({ answer: 'Here is report.pdf', files, since, namedOnly: true }).map(f => f.name)).toEqual(['report.pdf'])
     })
 
     it('one name travels once, however many copies of the file exist', () => {

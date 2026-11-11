@@ -419,7 +419,7 @@ async function postAttachments(params: {
     // conversation keeps naming it. Keyed by agent as well as path: two coworkers' workspaces can
     // hold the same relative path without being the same file.
     alreadyPosted?: Set<string>
-    screenAutoPick?: boolean
+    namedOnly?: boolean
 }): Promise<number> {
     const walked = await walkWorkspace(params.conn, params.engineAgentId).catch(() => [] as WorkspaceFile[])
     const postedKey = (path: string) => `${params.engineAgentId}:${path}`
@@ -427,7 +427,7 @@ async function postAttachments(params: {
     // Names dedupe across the whole exchange, not per agent: once a video is in the thread, the
     // copy a colleague received of it has nothing to add.
     const mineNames = new Set([...(params.alreadyPosted ?? [])].filter(key => key.startsWith('name:')).map(key => key.slice('name:'.length)))
-    const files = attachmentsFor({ answer: params.answer, files: walked, since: params.since, alreadyPosted: mine, alreadyPostedNames: mineNames, screenAutoPick: params.screenAutoPick })
+    const files = attachmentsFor({ answer: params.answer, files: walked, since: params.since, alreadyPosted: mine, alreadyPostedNames: mineNames, namedOnly: params.namedOnly })
     let posted = 0
     for (const file of files) {
         try {
@@ -515,7 +515,7 @@ async function collabTurn(params: {
         if (placeholder) await updateMessage(token, { channel: channelId, ts: placeholder.ts, text: fitMessage(toMrkdwn(answer)), identity })
         else await postMessage(token, { channel: channelId, threadTs, text: fitMessage(toMrkdwn(answer)), identity })
 
-        const posted = await postAttachments({ token, conn, engineAgentId: seat.binding.engineAgentId as string, channel: channelId, threadTs, since: startedAt, answer, from: seat.binding.name, alreadyPosted: params.postedPaths, screenAutoPick: false })
+        const posted = await postAttachments({ token, conn, engineAgentId: seat.binding.engineAgentId as string, channel: channelId, threadTs, since: startedAt, answer, from: seat.binding.name, alreadyPosted: params.postedPaths, namedOnly: true })
         if (posted) console.info(`[slack] ${seat.binding.name} posted ${posted} file(s) to ${channelId}`)
         return answer
     } catch (err) {
