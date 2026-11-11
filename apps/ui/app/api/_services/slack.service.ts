@@ -581,7 +581,7 @@ async function runCollab(params: {
             '',
             heard,
             '',
-            `One short follow-up: react only if it changes or sharpens the result — a disagreement, a correction, a build. If you have nothing useful to add, reply exactly PASS. ${SLACK_TURN_RULES}`,
+            `One short follow-up. First, keep any promise your own answer made: if you said you would review, verify or confirm something once it landed, it has landed — do that now with your tools and report what you found, even when the news is simply that it arrived and looks good. Otherwise react only if it changes or sharpens the result — a disagreement, a correction, a build. If you promised nothing and have nothing useful to add, reply exactly PASS. ${SLACK_TURN_RULES}`,
         ].join('\n')
         const reaction = await collabTurn({ connection, conn, channelId, threadTs, seat, prompt, author, quiet: true, postedPaths })
         if (reaction) reactions.push({ name: seat.binding.name, text: reaction })
