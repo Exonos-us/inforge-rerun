@@ -126,7 +126,8 @@ function CreateChannelCard({ state, onDone, onClose }: { state: SlackStateView; 
         const result = await createSlackChannelAction({ name, isPrivate, agentIds: picked })
         setCreating(false)
         if (!result.ok) return toast.error(result.error)
-        toast.success(`#${name} created — your coworkers said hello`)
+        if (result.warning) toast.warning(result.warning)
+        else toast.success(`#${name} created — your coworkers said hello`)
         onClose()
         await onDone()
     }

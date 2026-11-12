@@ -7,6 +7,7 @@ import {
     connectSlack,
     connectionForWorkspace,
     disconnectSlack,
+    invitePrivateChannelCreator,
     lastThreadActivity,
     listBindings,
     publicView,
@@ -23,6 +24,7 @@ import { getAppOrigin } from '@/lib/app-origin'
 import { createChannel, postMessage, type SlackChannel } from '@/lib/slack/api'
 import { createAppUrl } from '@/lib/slack/manifest'
 import { selectMaybeSingle } from '@/supabase/supabase-helpers'
+import type { Database } from '@/app/api/database.types'
 
 import type { ActionResult } from './space.actions'
 
@@ -66,6 +68,9 @@ export type SlackStateView = {
     coworkers: SlackCoworkerView[]
     // When each channel last moved (a thread a coworker answered in), by channel id.
     channelActivity: Record<string, string>
+    // Where this member's Slack account lives when it is not their sign-in email: the address
+    // used to invite them into private channels Rerun creates.
+    mySlackEmail: string | null
     // Set when Slack itself refused a call: an uninstalled app, a revoked token.
     slackError?: string
 }
@@ -110,7 +115,9 @@ export async function getSlackStateAction(): Promise<ActionResult<{ state: Slack
         const view = publicView(connection)
 
         const coworkers = (await workspaceCoworkers(ctx.workspace.id)).map(agent => ({ id: agent.id, name: agent.name, disabled: Boolean(agent.disabled_at) }))
+        const { data: me } = await selectMaybeSingle(ctx.supabase, 'users', ['slack_email'] as const, { id: ctx.userId })
         const base = {
+            mySlackEmail: me?.slack_email ?? null,
             requestUrl,
             createAppUrl: createAppUrl(requestUrl),
             coworkers,
@@ -140,6 +147,21 @@ export async function getSlackStateAction(): Promise<ActionResult<{ state: Slack
         }
     } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : 'Could not read the Slack settings' }
+    }
+}
+
+// Each member speaks for themselves here: the address only matters when their Slack account lives
+// under a different email than their Rerun sign-in.
+export async function saveSlackEmailAction(params: { email: string }): Promise<ActionResult> {
+    try {
+        const ctx = await requireWorkspaceContext()
+        const email = params.email.trim().toLowerCase()
+        if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { ok: false, error: 'That does not look like an email address.' }
+        const { error } = await ctx.supabase.from('users').update<Database['public']['Tables']['users']['Update']>({ slack_email: email || null }).eq('id', ctx.userId)
+        if (error) return { ok: false, error: error.message }
+        return { ok: true }
+    } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : 'Could not save your Slack email' }
     }
 }
 
@@ -337,7 +359,7 @@ const CHANNEL_NAME_RE = /^[a-z0-9][a-z0-9-_]{0,78}$/
 // "Give this team a channel": creates it in Slack, binds every coworker picked, and has each one
 // say what it is. The hello matters — it is the only thing that tells the rest of the channel
 // what these names are and how to talk to them.
-export async function createSlackChannelAction(params: { name: string; isPrivate?: boolean; agentIds: string[] }): Promise<ActionResult<{ channelId: string }>> {
+export async function createSlackChannelAction(params: { name: string; isPrivate?: boolean; agentIds: string[] }): Promise<ActionResult<{ channelId: string; warning: string | null }>> {
     try {
         const ctx = await requireWorkspaceContext()
         const connection = await connectionForWorkspace(ctx.workspace.id)
@@ -362,7 +384,8 @@ export async function createSlackChannelAction(params: { name: string; isPrivate
             }).catch(() => {})
         }
 
-        return { ok: true, channelId: channel.id }
+        const warning = params.isPrivate ? await invitePrivateChannelCreator(connection, channel, { id: ctx.userId, email: ctx.userEmail }) : null
+        return { ok: true, channelId: channel.id, warning }
     } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : 'Could not create the channel' }
     }

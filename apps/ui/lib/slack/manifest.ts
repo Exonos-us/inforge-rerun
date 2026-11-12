@@ -27,6 +27,9 @@ export function appManifest(requestUrl: string, name = 'Rerun'): Record<string, 
                     // Reading one back: what the coworker itself was handed in the channel.
                     'files:read',
                     'users:read',
+                    // Finding the hirer by their account email, to invite them into a private
+                    // channel the bot just created — otherwise Slack hides it from them.
+                    'users:read.email',
                 ],
             },
         },

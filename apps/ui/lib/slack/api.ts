@@ -17,7 +17,7 @@ export class SlackApiError extends Error {
 // read: users.info, users.conversations and conversations.info answer `ok: true` with nothing in
 // it when handed JSON, having quietly ignored every argument. Two shapes, one per family, rather
 // than one that looks right and returns empty.
-const FORM_ENCODED = new Set(['auth.test', 'users.info', 'users.conversations', 'conversations.info', 'conversations.list', 'files.getUploadURLExternal'])
+const FORM_ENCODED = new Set(['auth.test', 'users.info', 'users.lookupByEmail', 'users.conversations', 'conversations.info', 'conversations.list', 'files.getUploadURLExternal'])
 
 async function call<T>(token: string, method: string, payload: Record<string, unknown>): Promise<T> {
     const form = FORM_ENCODED.has(method)
@@ -85,6 +85,26 @@ export async function updateMessage(token: string, params: { channel: string; ts
 export async function createChannel(token: string, params: { name: string; isPrivate?: boolean }): Promise<{ id: string; name: string }> {
     const data = await call<{ channel: { id: string; name: string } }>(token, 'conversations.create', { name: params.name, is_private: params.isPrivate ?? false })
     return data.channel
+}
+
+// Needs users:read.email, which older installs of the app do not carry: null covers the missing
+// scope and the address Slack does not know, and the caller says what to do instead.
+export async function findUserByEmail(token: string, email: string): Promise<string | null> {
+    try {
+        const data = await call<{ user: { id: string } }>(token, 'users.lookupByEmail', { email })
+        return data.user.id
+    } catch {
+        return null
+    }
+}
+
+export async function inviteToChannel(token: string, channelId: string, userId: string): Promise<void> {
+    try {
+        await call(token, 'conversations.invite', { channel: channelId, users: userId })
+    } catch (err) {
+        if (err instanceof SlackApiError && err.code === 'already_in_channel') return
+        throw err
+    }
 }
 
 export type SlackChannel = { id: string; name: string; is_private?: boolean; is_member?: boolean }

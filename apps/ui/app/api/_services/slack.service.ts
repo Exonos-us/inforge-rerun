@@ -4,7 +4,7 @@ import type { Database } from '@/app/api/database.types'
 import { ensureSessionRow } from '@/app/api/_services/chat.service'
 import { getWorkspaceConnection } from '@/app/api/_services/workspace-engine.service'
 import { chat, getRun, getRunTools, listFiles, readFileBytes } from '@/lib/engine/client'
-import { authTest, fitMessage, installedScopes, listChannels, postMessage, toMrkdwn, updateMessage, uploadFile, userName, type SlackIdentity } from '@/lib/slack/api'
+import { authTest, findUserByEmail, fitMessage, installedScopes, inviteToChannel, listChannels, postMessage, toMrkdwn, updateMessage, uploadFile, userName, type SlackIdentity } from '@/lib/slack/api'
 import { attachmentComment, attachmentsFor, type WorkspaceFile } from '@/lib/slack/attachments'
 import { looksLikeSigningSecret } from '@/lib/slack/signature'
 import { createServiceRoleClient } from '@/supabase/serviceRole'
@@ -41,6 +41,26 @@ export async function connectionForTeam(teamId: string): Promise<SlackConnection
 export async function connectionForWorkspace(workspaceId: number): Promise<SlackConnection | null> {
     const { data } = await selectMaybeSingle(createServiceRoleClient(), 'slack_connections', CONNECTION_COLUMNS, { workspace_id: workspaceId })
     return data ?? null
+}
+
+// A private channel the bot creates starts with no human in it: Slack hides it from the very
+// person who asked for it. Their Slack email (set on the Slack page, for accounts signed in under
+// another address) and then their sign-in email find their Slack user to invite; when neither can
+// (an install without users:read.email, or an unknown address), the warning explains what
+// happened and how to reach the channel anyway.
+export async function invitePrivateChannelCreator(connection: SlackConnection, channel: { id: string; name: string }, user: { id: string; email: string | null }): Promise<string | null> {
+    const { data } = await selectMaybeSingle(createServiceRoleClient(), 'users', ['slack_email'] as const, { id: user.id })
+    const candidates = [...new Set([data?.slack_email, user.email].map(email => email?.trim().toLowerCase()).filter((email): email is string => Boolean(email)))]
+    for (const email of candidates) {
+        const slackUserId = await findUserByEmail(connection.bot_token, email)
+        if (!slackUserId) continue
+        const invited = await inviteToChannel(connection.bot_token, channel.id, slackUserId).then(
+            () => true,
+            () => false,
+        )
+        if (invited) return null
+    }
+    return `#${channel.name} is private, so Slack hides it until someone invites you, and no Slack account answers to your email. Set "Your Slack email" on the Slack page under Chat apps, and check the Rerun Slack app carries the users:read.email permission.`
 }
 
 // What the dialog is allowed to see. The bot token and the signing secret never leave the server.
