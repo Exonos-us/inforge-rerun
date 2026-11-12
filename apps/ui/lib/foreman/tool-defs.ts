@@ -136,6 +136,7 @@ const SETTINGS_PANEL_HINTS: Record<SettingsPanel, string> = {
     api_keys: 'the keys of the Rerun API and how to plug a client onto MCP, on an active subscription or trial',
     ai_providers: 'the AI subscriptions and API keys every coworker of the workspace runs on',
     chat_apps: 'connecting the workspace to a chat app (Slack today, more later), and which coworkers answer in which channel',
+    global_apps: 'the apps connected once for the whole workspace (a shared GitHub token, a shared Gmail), enabled per coworker without a second sign-in',
     coworker_presets: 'the saved coworker definitions and team presets, where a whole squad is hired into a new Box with its Slack channel in one go',
     knowledge_base: 'the company brain (the pages every coworker reads about the company, and the changes coworkers propose to them), plus the files and the tables the whole workspace shares',
     billing: 'the plan, the add-ons, the card and the invoices',

@@ -271,6 +271,12 @@ export function engineClientSecret(ref: ClientRef): string | undefined {
     return clientSecret(ref, true)
 }
 
+// The secret the hub itself uses to refresh a workspace-level (Global apps) token. Unlike the
+// engine, the hub shares the environment that holds the pre-registered clients, so it always may.
+export function hubClientSecret(ref: ClientRef): string | undefined {
+    return clientSecret(ref, false)
+}
+
 export function createPkce(): { verifier: string; challenge: string; state: string } {
     const verifier = base64url(randomBytes(32))
     const challenge = base64url(createHash('sha256').update(verifier).digest())

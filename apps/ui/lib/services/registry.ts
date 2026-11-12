@@ -42,6 +42,11 @@ export type RegistryEntry = {
     // A paid app to plug in (needs_auth until the coworker picks an account). Which account it
     // picked lives in Supabase (app_connection_agents), the label here is only for display.
     app?: { appSlug: string; serverName: string; accountLabel?: string }
+    // A workspace-level (Global apps) connection this entry runs on. Reconnect/disconnect live on
+    // the workspace page, not here; uninstalling only detaches this coworker. For a composio entry
+    // the connected account belongs to the connection row, never to `composio.connectedAccountId`,
+    // so a per-coworker teardown can never revoke the shared account.
+    global?: { connectionId: string; label?: string }
     // Set on an extra account only, the base one is the bare slug key.
     instanceId?: string
     // Which account this entry is, for the user and the agent alike: the email, else "Gmail 2".

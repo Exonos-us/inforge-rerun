@@ -105,7 +105,58 @@ export type InstalledService = {
     composio?: ComposioTarget
     app?: AppTarget
     authMethodId?: string
+    // The workspace (Global apps) connection this row runs on: reconnect lives on the workspace
+    // page, and removing the row only detaches this coworker.
+    global?: { connectionId: string; label?: string }
     installedAt: string
+}
+
+// --- Global apps (workspace-level connections) ---
+
+export type GlobalAppStatus = 'connecting' | 'connected' | 'needs_reconnect'
+// 'key': a pasted credential compiled onto each enabled coworker (stdio servers included).
+// 'composio': Composio holds the token under a per-connection user id.
+// 'oauth': one browser sign-in for the workspace, the token stays on the server and coworker
+// calls go through the /api/mcp/global proxy.
+export type GlobalAppKind = 'key' | 'composio' | 'oauth'
+
+// One workspace account on the Global apps page.
+export type GlobalAppConnection = {
+    id: string
+    slug: string
+    name: string
+    icon: string | null
+    category: string
+    label: string
+    kind: GlobalAppKind
+    status: GlobalAppStatus
+    authMethodId: string
+    // The signed-in identity Composio reported, when there is one ("ops@inforge.us").
+    accountLabel?: string
+    createdAt: string
+    // Coworkers enabled on this account (Supabase agent ids).
+    agentIds: string[]
+}
+
+// A workspace account offered while installing an app on a coworker.
+export type GlobalAppOption = {
+    id: string
+    label: string
+    status: GlobalAppStatus
+    usedBy: number
+}
+
+// A catalog row of the workspace-level connect picker: every service shows, the ones whose auth
+// cannot be shared say so instead of hiding.
+export type ShareableService = {
+    slug: string
+    name: string
+    category: string
+    summary: string
+    icon: string | null
+    shareable: boolean
+    // Why not, when it isn't ("Signs in per coworker for now", "Runs locally on each coworker").
+    shareableReason?: string
 }
 
 // Outcome of resetting a connected service: 'auth' when only the sign-in was cleared (the

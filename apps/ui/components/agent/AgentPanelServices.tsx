@@ -3,7 +3,9 @@
 import { parseServiceRegistryKey } from '@rerun/contracts'
 
 import { getServiceAlternativesAction, getServiceDetailsAction, installServiceAction, listCatalogServicesAction, resetServiceConnectionAction, searchServicesAction, uninstallServiceAction } from '@/app/api/_actions/services.actions'
+import { enableGlobalAppAction, listGlobalOptionsForSlugAction } from '@/app/api/_actions/global-apps.actions'
 import { getAgentDetailAction, patchAgentMcpServersAction } from '@/app/api/_actions/agent.actions'
+import { GlobalAccountOffer } from '@/components/global-apps/GlobalAccountOffer'
 import { listAgentConnectorsAction, removeCustomMcpServerAction } from '@/app/api/_actions/custom-mcp.actions'
 import { McpOAuthAuthorize } from '@/components/agent/McpOAuthAuthorize'
 import { McpServerEditor } from '@/components/agent/McpServerEditor'
@@ -29,7 +31,8 @@ import { BOX_MANAGE_REASON } from '@/lib/board/box-access'
 import { serviceIconProps } from '@/lib/services/icons'
 import { SERVICE_CATEGORIES, SERVICE_CATEGORY_LABELS, type ServiceCategory } from '@/lib/services/manifest'
 import { MAX_OFFERED_ALTERNATIVES } from '@/lib/services/alternatives'
-import type { AppTarget, AuthMethodSummary, ComposioTarget, CustomMcpServer, InstalledService, ManagedTarget, OAuthTarget, ServiceAlternative, ServiceDetails, ServiceSearchResult } from '@/lib/services/types'
+import type { AppTarget, AuthMethodSummary, ComposioTarget, CustomMcpServer, GlobalAppOption, InstalledService, ManagedTarget, OAuthTarget, ServiceAlternative, ServiceDetails, ServiceSearchResult } from '@/lib/services/types'
+import { Badge } from '@rerun/ui/primitives'
 import { AlertTriangleIcon, Loader2Icon, RefreshCwIcon } from '@/lib/icons'
 import { PanelList, PanelScroller, PanelSection } from '@/components/ui/panel-list'
 import { PanelRow } from '@/components/ui/panel-row'
@@ -106,6 +109,9 @@ export function AgentPanelServices({ agentId }: AgentPanelServicesProps) {
     const [debouncedQuery, setDebouncedQuery] = useState('')
     const [loading, setLoading] = useState(true)
     const [setupTarget, setSetupTarget] = useState<SetupTarget | null>(null)
+    // A workspace account exists for the app being installed: the user picks it or signs in anyway.
+    const [globalOffer, setGlobalOffer] = useState<{ target: SetupTarget; options: GlobalAppOption[] } | null>(null)
+    const [enablingGlobal, setEnablingGlobal] = useState<string | null>(null)
     const [swapping, setSwapping] = useState<string | null>(null)
     const [swapError, setSwapError] = useState<string | null>(null)
     const [error, setError] = useState<string | null>(null)
@@ -209,10 +215,30 @@ export function AgentPanelServices({ agentId }: AgentPanelServicesProps) {
         }
     }, [agentId, debouncedQuery, selectedCategory])
 
+    // The tail of an install: a single method with no fields installs straight away (OAuth
+    // sign-in or skill-only) and lands on Connect when it returns needs_auth; anything with
+    // fields or a choice of methods opens the config form.
+    const openSetup = useCallback(
+        async (target: SetupTarget) => {
+            const single = target.authMethods.length === 1 ? target.authMethods[0] : null
+            if (single && single.inputs.length === 0) {
+                const res = await installServiceAction(agentId, target.key ?? target.slug, {}, single.id)
+                if (res.ok && res.result.status === 'needs_auth') {
+                    setSetupTarget({ ...target, initialAuthTarget: pendingAuthTarget(res.result) })
+                    return
+                }
+                await load()
+                return
+            }
+            setSetupTarget(target)
+        },
+        [agentId, load],
+    )
+
     const onInstall = useCallback(
         async (key: string, authTarget?: AuthTargets) => {
             const { slug } = parseServiceRegistryKey(key)
-            const [details, alternatives] = await Promise.all([getServiceDetailsAction(agentId, key), getServiceAlternativesAction([slug])])
+            const [details, alternatives, globalRes] = await Promise.all([getServiceDetailsAction(agentId, key), getServiceAlternativesAction([slug]), listGlobalOptionsForSlugAction({ slug })])
             if (!details) return
             const icon = [...installed, ...browseServices, ...searchResults].find(s => s.slug === slug)?.icon ?? null
             const target = { ...toSetupTarget(details, icon, alternatives[slug] ?? []), ...(authTarget ? { initialAuthTarget: authTarget } : {}) }
@@ -223,22 +249,16 @@ export function AgentPanelServices({ agentId }: AgentPanelServicesProps) {
                 setSetupTarget(target)
                 return
             }
-            // A single method with no fields → install straight away (OAuth sign-in or
-            // skill-only); an OAuth method then returns needs_auth → open the connect step.
-            // Anything with fields or a choice of methods → open the config form.
-            const single = details.authMethods.length === 1 ? details.authMethods[0] : null
-            if (single && single.inputs.length === 0) {
-                const res = await installServiceAction(agentId, key, {}, single.id)
-                if (res.ok && res.result.status === 'needs_auth') {
-                    setSetupTarget({ ...target, initialAuthTarget: pendingAuthTarget(res.result) })
-                    return
-                }
-                await load()
+            // The workspace holds this app: offer its accounts before any per-coworker sign-in.
+            // Never on an app the coworker already set up, where the click means "finish it".
+            const workspaceAccounts = globalRes.ok ? globalRes.options.filter(option => option.status === 'connected') : []
+            if (workspaceAccounts.length > 0 && !installed.some(s => s.slug === slug)) {
+                setGlobalOffer({ target, options: workspaceAccounts })
                 return
             }
-            setSetupTarget(target)
+            await openSetup(target)
         },
-        [agentId, load, installed, browseServices, searchResults],
+        [agentId, openSetup, installed, browseServices, searchResults],
     )
 
     // Same shortcut as onInstall, except the install allocates a fresh account instead of
@@ -387,6 +407,40 @@ export function AgentPanelServices({ agentId }: AgentPanelServicesProps) {
         )
     }
 
+    if (globalOffer) {
+        return (
+            <PanelSteps stepKey={`global:${globalOffer.target.slug}`} depth={1}>
+                <PanelEditorShell>
+                    <PanelEditorHeader title={globalOffer.target.name} onBack={() => setGlobalOffer(null)} />
+                    <PanelEditorBody>
+                        <GlobalAccountOffer
+                            appName={globalOffer.target.name}
+                            options={globalOffer.options}
+                            busy={enablingGlobal}
+                            onUse={async option => {
+                                setEnablingGlobal(option.id)
+                                const res = await enableGlobalAppAction({ connectionId: option.id, agentId })
+                                setEnablingGlobal(null)
+                                if (!res.ok) {
+                                    setError(res.error)
+                                    setGlobalOffer(null)
+                                    return
+                                }
+                                setGlobalOffer(null)
+                                await load()
+                            }}
+                            onOwn={() => {
+                                const target = globalOffer.target
+                                setGlobalOffer(null)
+                                void openSetup(target)
+                            }}
+                        />
+                    </PanelEditorBody>
+                </PanelEditorShell>
+            </PanelSteps>
+        )
+    }
+
     if (setupTarget) {
         // An app the agent already runs would only be offered to be set up a second time.
         const alternatives = setupTarget.alternatives.filter(a => statusBySlug.get(a.slug) !== 'active')
@@ -452,6 +506,13 @@ export function AgentPanelServices({ agentId }: AgentPanelServicesProps) {
                                                 title={
                                                     <span className="flex min-w-0 items-center gap-1.5">
                                                         <span className="truncate">{s.name}</span>
+                                                        {s.global && (
+                                                            <TooltipLabeled label="Runs on a workspace account. Reconnecting and disconnecting live in Global apps.">
+                                                                <Badge size="xs" tone="brand" glow={false}>
+                                                                    Global
+                                                                </Badge>
+                                                            </TooltipLabeled>
+                                                        )}
                                                         {(s.status === 'needs_config' || s.status === 'needs_auth') && (
                                                             <TooltipLabeled label={s.status === 'needs_auth' ? 'This app needs you to sign in before the coworker can use it. Click Connect.' : 'This app needs credentials before the coworker can use it. Click Configure to set it up.'}>
                                                                 <AlertTriangleIcon className="size-3.5 shrink-0 text-amber-400" />
@@ -475,7 +536,7 @@ export function AgentPanelServices({ agentId }: AgentPanelServicesProps) {
                                                                 </Button>
                                                             </TooltipDisabledReason>
                                                         )}
-                                                        {s.status === 'active' && (
+                                                        {s.status === 'active' && !s.global && (
                                                             <TooltipDisabledReason reason={manageReason}>
                                                                 <Button size="sm" variant="ghost" className="text-muted-foreground" disabled={!canManage || reconnecting === s.key} onClick={() => onReconnect(s.key)}>
                                                                     {reconnecting === s.key ? <Loader2Icon className="animate-spin" /> : <RefreshCwIcon />}
@@ -488,9 +549,13 @@ export function AgentPanelServices({ agentId }: AgentPanelServicesProps) {
                                                                 label={`Uninstall ${s.label ? `${s.name} (${s.label})` : s.name}`}
                                                                 disabled={!canManage}
                                                                 onClick={() => onUninstall(s.key)}
-                                                                confirmTitle={`Uninstall ${s.label ? `${s.name} (${s.label})` : s.name}?`}
-                                                                confirmDescription="The coworker loses this service and its tools. Its connection is revoked, so reinstalling means connecting again."
-                                                                confirmLabel="Uninstall"
+                                                                confirmTitle={s.global ? `Remove ${s.name} from this coworker?` : `Uninstall ${s.label ? `${s.name} (${s.label})` : s.name}?`}
+                                                                confirmDescription={
+                                                                    s.global
+                                                                        ? `This coworker stops using the workspace account${s.global.label ? ` ${s.global.label}` : ''}. The account stays connected for everyone else.`
+                                                                        : 'The coworker loses this service and its tools. Its connection is revoked, so reinstalling means connecting again.'
+                                                                }
+                                                                confirmLabel={s.global ? 'Remove' : 'Uninstall'}
                                                             />
                                                         </TooltipDisabledReason>
                                                     </>

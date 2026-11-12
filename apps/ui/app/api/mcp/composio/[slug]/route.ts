@@ -1,7 +1,8 @@
 import { SERVICE_INSTANCE_ID_RE, serviceRegistryKey } from '@rerun/contracts'
+import { markGlobalNeedsReconnect } from '@/app/api/_services/global-apps.service'
 import { loadManifest } from '@/app/api/_services/services.service'
 import { authenticateEngineToken, getWorkspaceConnection } from '@/app/api/_services/workspace-engine.service'
-import { ComposioApiError, composioUserId, executeTool, listToolkitTools } from '@/lib/composio/client'
+import { ComposioApiError, composioGlobalUserId, composioUserId, executeTool, listToolkitTools } from '@/lib/composio/client'
 import { readRegistry, upsertRegistryEntry } from '@/lib/services/registry'
 import { createServiceRoleClient } from '@/supabase/serviceRole'
 import { selectMaybeSingle } from '@/supabase/supabase-helpers'
@@ -83,6 +84,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
     if (instanceHeader && !SERVICE_INSTANCE_ID_RE.test(instanceHeader)) return new Response('Invalid x-rerun-instance', { status: 400 })
     const instanceId = instanceHeader || undefined
 
+    // A Global apps binding: the call runs as the workspace connection's Composio user, never as
+    // the coworker's own. Verified below against the authenticated workspace before any execute.
+    const globalHeader = req.headers.get('x-rerun-global')
+    if (globalHeader && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(globalHeader)) return new Response('Invalid x-rerun-global', { status: 400 })
+    const globalId = globalHeader || undefined
+
     const manifest = await loadManifest(slug)
     const method = manifest?.authMethods.find(m => m.kind === 'composio' && m.composio)
     if (!manifest || !method?.composio) return new Response('Unknown Composio service', { status: 404 })
@@ -134,11 +141,26 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
         const { data: agent } = engineAgentId ? await selectMaybeSingle(supabase, 'agents', ['id'] as const, { engine_agent_id: engineAgentId, workspace_id: engine.workspaceId }) : { data: null }
         if (!agent) return rpcError(id, -32603, 'Coworker does not belong to the authenticated workspace')
 
+        // A forged header can only name a connection of the engine's own workspace, and only one
+        // this coworker was actually enabled on.
+        if (globalId) {
+            const { data: connection } = await selectMaybeSingle(supabase, 'global_app_connections', ['id', 'label'] as const, { id: globalId, workspace_id: engine.workspaceId, service_slug: slug })
+            const { data: binding } = connection ? await selectMaybeSingle(supabase, 'global_app_agents', ['agent_id'] as const, { connection_id: globalId, agent_id: agent.id }) : { data: null }
+            if (!connection || !binding) return rpcError(id, -32603, 'This coworker is not enabled on that workspace account')
+        }
+
+        const notConnectedGlobal = async (rawMessage: string): Promise<Response> => {
+            await markGlobalNeedsReconnect(globalId!).catch(() => {})
+            console.warn(`[composio:${slug}] tools/call ${name}: workspace account ${globalId} not connected:`, rawMessage)
+            return toolError(id, `${manifest.name}'s workspace account needs to be reconnected. Tell the user to reconnect it in Global apps, then end your turn.`)
+        }
+
         try {
-            const out = await executeTool(name, composioUserId(agent.id, instanceId), args)
+            const out = await executeTool(name, globalId ? composioGlobalUserId(globalId) : composioUserId(agent.id, instanceId), args)
             if (!out.successful) {
                 const message = out.error ?? 'Tool failed'
                 if (isNotConnectedError(message)) {
+                    if (globalId) return notConnectedGlobal(message)
                     return notConnectedResponse(id, { workspaceId: engine.workspaceId, engineAgentId, slug, instanceId, name: manifest.name, tool: name, rawMessage: message })
                 }
                 return toolError(id, message)
@@ -149,6 +171,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
             // Order matters: Composio reports a missing connected account as a 404 too, so the
             // not-connected check must run before the 404 → unknown-tool mapping.
             if (isNotConnectedError(message)) {
+                if (globalId) return notConnectedGlobal(message)
                 return notConnectedResponse(id, { workspaceId: engine.workspaceId, engineAgentId, slug, instanceId, name: manifest.name, tool: name, rawMessage: message })
             }
             if (err instanceof ComposioApiError && err.status === 404) return rpcError(id, -32601, `Unknown tool: ${name}`)

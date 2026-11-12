@@ -26,8 +26,29 @@ export type ComposioOAuthContext = {
     mobileGrant?: string
 }
 
+// Connect flow of a Global apps account: no agent, the context names the workspace connection
+// row the callback finishes. Same cookie path, so the global callback (a subpath) receives it.
+export type GlobalComposioOAuthContext = {
+    connectionId: string
+    toolkit: string
+    authConfigId: string
+    connectedAccountId: string
+}
+
 export function createComposioState(): string {
     return base64url(randomBytes(24))
+}
+
+export function globalComposioCallbackUrl(req: Request, state: string): string {
+    return `${appOrigin(req)}${COMPOSIO_COOKIE_PATH}/global/callback?state=${encodeURIComponent(state)}`
+}
+
+export function encodeGlobalComposioContext(ctx: GlobalComposioOAuthContext): string {
+    return sealContext(ctx)
+}
+
+export function decodeGlobalComposioContext(raw: string): GlobalComposioOAuthContext {
+    return openContext<GlobalComposioOAuthContext>(raw)
 }
 
 export function composioCallbackUrl(req: Request, state: string): string {

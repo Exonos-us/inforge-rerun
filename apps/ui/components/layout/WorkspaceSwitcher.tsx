@@ -9,6 +9,7 @@ import { ServersDialog } from '@/components/dialogs/ServersDialog'
 import { ChatAppsConnectedHint } from '@/components/chat-apps/ChatAppsConnectedHint'
 import { ChatAppsDialog } from '@/components/dialogs/ChatAppsDialog'
 import { CoworkerPresetsDialog } from '@/components/presets/CoworkerPresetsDialog'
+import { GlobalAppsDialog } from '@/components/global-apps/GlobalAppsDialog'
 import { ADMIN_URL } from '@rerun/cloud/admin'
 import { RERUN_CLOUD } from '@rerun/cloud/edition'
 import { SERVERS_ENABLED } from '@rerun/cloud/servers'
@@ -42,7 +43,7 @@ import { useForemanStore } from '@/stores/foreman.store'
 import { useNotificationsStore } from '@/stores/notifications.store'
 import { useWorkspaceSettingsStore } from '@/stores/workspace-settings.store'
 import { useIsWorkspaceAdmin, useSession } from '@/supabase/session/SessionProvider'
-import { BadgeCheck, BellIcon, BrainIcon, CheckIcon, CreditCardIcon, FlaskConical, GaugeIcon, GridIcon, IdCardIcon, KeyIcon, LayersIcon, Loader2Icon, LockKeyholeIcon, LogOutIcon, MessagesSquare, PlusIcon, ServerIcon, SettingsIcon, ShieldCheckIcon, StoreIcon, UserRoundIcon, UsersIcon } from '@/lib/icons'
+import { BadgeCheck, BellIcon, BrainIcon, CheckIcon, CreditCardIcon, FlaskConical, GaugeIcon, GlobeIcon, GridIcon, IdCardIcon, KeyIcon, LayersIcon, Loader2Icon, LockKeyholeIcon, LogOutIcon, MessagesSquare, PlusIcon, ServerIcon, SettingsIcon, ShieldCheckIcon, StoreIcon, UserRoundIcon, UsersIcon } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 import { abortWorkspaceSwitch, beginWorkspaceSwitch, enterActiveWorkspace } from '@/lib/workspace/workspace-switch'
 import Link from 'next/link'
@@ -243,6 +244,10 @@ export function WorkspaceSwitcher() {
                 Chat apps
                 <ChatAppsConnectedHint />
             </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => openWorkspacePanel('global_apps')} className="gap-2 text-muted-foreground">
+                <GlobeIcon className="size-4" />
+                Global apps
+            </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => openWorkspacePanel('coworker_presets')} className="gap-2 text-muted-foreground">
                 <StoreIcon className="size-4" />
                 Coworkers Store
@@ -431,6 +436,7 @@ export function WorkspaceSwitcher() {
             {SERVERS_ENABLED && <ServersDialog open={serversOpen} onOpenChange={setServersOpen} />}
             <AiProvidersDialog open={panel === 'ai_providers'} onOpenChange={open => setPanel(open ? 'ai_providers' : null)} />
             <ChatAppsDialog open={panel === 'chat_apps'} onOpenChange={open => setPanel(open ? 'chat_apps' : null)} />
+            <GlobalAppsDialog open={panel === 'global_apps'} onOpenChange={open => setPanel(open ? 'global_apps' : null)} />
             <CoworkerPresetsDialog open={panel === 'coworker_presets'} onOpenChange={open => setPanel(open ? 'coworker_presets' : null)} />
             <KnowledgeBaseDialog open={panel === 'knowledge_base'} onOpenChange={open => setPanel(open ? 'knowledge_base' : null)} />
             <PaidAppDialogs apps={paidApps} />

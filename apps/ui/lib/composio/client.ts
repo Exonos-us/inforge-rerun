@@ -29,6 +29,12 @@ export function composioUserId(agentId: string, instanceId?: string): string {
     return instanceId ? `${base}_${instanceId}` : base
 }
 
+// A Global apps connection holds ONE Composio account for the whole workspace, so its user_id is
+// keyed by the connection row, not by any coworker. Same namespace isolation as composioUserId.
+export function composioGlobalUserId(connectionId: string): string {
+    return `${process.env.COMPOSIO_USER_NAMESPACE || 'local'}_global_${connectionId}`
+}
+
 export function composioConfigured(): boolean {
     return Boolean(process.env.COMPOSIO_API_KEY)
 }

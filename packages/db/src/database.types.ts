@@ -1342,6 +1342,111 @@ export type Database = {
           },
         ]
       }
+      global_app_agents: {
+        Row: {
+          agent_id: string
+          connection_id: string
+          created_at: string
+          registry_key: string
+        }
+        Insert: {
+          agent_id: string
+          connection_id: string
+          created_at?: string
+          registry_key: string
+        }
+        Update: {
+          agent_id?: string
+          connection_id?: string
+          created_at?: string
+          registry_key?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "global_app_agents_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "global_app_agents_connection_id_fkey"
+            columns: ["connection_id"]
+            isOneToOne: false
+            referencedRelation: "global_app_connections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      global_app_connections: {
+        Row: {
+          auth_method_id: string
+          composio_account_id: string | null
+          composio_account_label: string | null
+          config: Json
+          connected_by: string | null
+          created_at: string
+          id: string
+          kind: string
+          label: string
+          oauth: Json | null
+          secrets: Json
+          service_slug: string
+          status: string
+          updated_at: string
+          workspace_id: number
+        }
+        Insert: {
+          auth_method_id: string
+          composio_account_id?: string | null
+          composio_account_label?: string | null
+          config?: Json
+          connected_by?: string | null
+          created_at?: string
+          id?: string
+          kind: string
+          label: string
+          oauth?: Json | null
+          secrets?: Json
+          service_slug: string
+          status?: string
+          updated_at?: string
+          workspace_id: number
+        }
+        Update: {
+          auth_method_id?: string
+          composio_account_id?: string | null
+          composio_account_label?: string | null
+          config?: Json
+          connected_by?: string | null
+          created_at?: string
+          id?: string
+          kind?: string
+          label?: string
+          oauth?: Json | null
+          secrets?: Json
+          service_slug?: string
+          status?: string
+          updated_at?: string
+          workspace_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "global_app_connections_connected_by_fkey"
+            columns: ["connected_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "global_app_connections_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       invitation_codes: {
         Row: {
           active: boolean
