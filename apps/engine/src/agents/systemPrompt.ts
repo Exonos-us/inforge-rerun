@@ -9,7 +9,8 @@ import { readSharedDbSchema } from '../db/sharedDb.js'
 import { buildMcpIndex } from '../tools/mcp-index.js'
 import { buildBrainSection, buildForemanBrainSection } from '../brain/prompt.js'
 import { AUTO_RECALL_MIN_SIMILARITY, recallMemory, type RecalledMemory } from '../memory/store.js'
-import { workspaceDir, sharedDir, sharedDbPath } from '../config/paths.js'
+import { workspaceDir, sharedDir, sharedDbPath, projectNotePath } from '../config/paths.js'
+import { readFile } from 'node:fs/promises'
 import { defaultSoul } from './soul.js'
 import { hasPendingSetup } from './setup.js'
 import { offersQuickReplies } from './quick-replies-stream.js'
@@ -130,6 +131,17 @@ export function systemPromptText({ stable, volatile }: SystemPrompt): string {
 }
 
 const joinSections = (parts: string[]) => parts.filter(Boolean).join('\n\n')
+
+// The project note the hub writes when this agent's Box is linked to a Confluence engagement:
+// where this project's knowledge lives, read it before working, write findings back. Absent for
+// most agents, so an empty read renders nothing.
+async function readProjectNote(agentId: string): Promise<string> {
+    try {
+        return (await readFile(projectNotePath(agentId), 'utf8')).trim()
+    } catch {
+        return ''
+    }
+}
 
 const utcDay = new Intl.DateTimeFormat('en-GB', { timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 const utcTime = new Intl.DateTimeFormat('en-GB', { timeZone: 'UTC', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
@@ -261,7 +273,7 @@ async function buildForemanPrompt(agent: LoadedAgent, provider: Provider, order:
 export async function buildSystemPrompt(agent: LoadedAgent, trigger: RunTrigger = { source: 'chat' }, provider: Provider = agent.resolved.provider, order: TurnOrder = turnOrder(provider, agent.resolved.model)): Promise<SystemPrompt> {
     if (agent.config.kind === 'foreman') return await buildForemanPrompt(agent, provider, order)
     const cfg = agent.config.tools
-    const [skillIndex, scheduleIndex, triggerIndex, memoryIndex, dbSchema, sharedDbSchema, mcpIndex, brain] = await Promise.all([
+    const [skillIndex, scheduleIndex, triggerIndex, memoryIndex, dbSchema, sharedDbSchema, mcpIndex, brain, projectNote] = await Promise.all([
         cfg.skills ? buildSkillIndex(agent.id).catch(() => '') : Promise.resolve(''),
         cfg.schedule ? buildScheduleIndex(agent.id).catch(() => '') : Promise.resolve(''),
         cfg.trigger ? buildTriggerIndex(agent.id).catch(() => '') : Promise.resolve(''),
@@ -270,6 +282,7 @@ export async function buildSystemPrompt(agent: LoadedAgent, trigger: RunTrigger 
         cfg.sharedDb ? readSharedDbSchema(SHARED_SCHEMA_BUDGET).catch(() => '') : Promise.resolve(''),
         buildMcpIndex(agent, provider).catch(() => ''),
         cfg.brain ? buildBrainSection().catch(() => '') : Promise.resolve(''),
+        readProjectNote(agent.id),
     ])
 
     const computer = runOffersComputer(agent.config, provider, agent.resolved.model, agent.resolved.connection)
@@ -309,6 +322,7 @@ export async function buildSystemPrompt(agent: LoadedAgent, trigger: RunTrigger 
     if (scheduleIndex) volatile.push(section('scheduled_tasks', scheduleIndex))
     if (triggerIndex) volatile.push(section('webhook_triggers', triggerIndex))
     if (brain) volatile.push(section('company_brain', brain))
+    if (projectNote) volatile.push(section('project_knowledge', projectNote))
     if (memoryIndex) volatile.push(section('memory_index', memoryIndex))
     if (cfg.db) volatile.push(section('database', `${databaseNote(cfg.sharedDb)}${dbSchema ? `\n\n${dbSchema}` : ''}`))
     if (cfg.sharedDb) volatile.push(section('shared_database', `${SHARED_DATABASE_NOTE}${sharedDbSchema ? `\n\n${sharedDbSchema}` : ''}`))

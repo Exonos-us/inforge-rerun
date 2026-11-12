@@ -191,7 +191,20 @@ export async function createAgent(params: CreateAgentParams) {
         throw new Error(`Failed to persist agent: ${error?.message ?? 'unknown error'}`)
     }
 
+    await syncProjectNote(agent.id)
     return agent
+}
+
+// A coworker born in a Box linked to a Confluence engagement starts with the project note, like
+// one moved into it. Lazy import: project-knowledge.service reaches back into services this file
+// feeds, and the note is best-effort either way.
+async function syncProjectNote(agentId: string): Promise<void> {
+    try {
+        const { syncAgentProjectNote } = await import('@/app/api/_services/project-knowledge.service')
+        await syncAgentProjectNote(agentId)
+    } catch {
+        // The coworker works without the note; the next link or move rewrites it.
+    }
 }
 
 type ImportAgentParams = {
@@ -254,6 +267,7 @@ export async function importAgent(params: ImportAgentParams) {
     // not start firing them.
     if (!enabled) await pauseAgentSchedules(agent.id).catch(err => console.error('[activation] failed to pause the schedules of an imported agent', agent.id, err))
 
+    await syncProjectNote(agent.id)
     return { agent, imported }
 }
 
@@ -342,6 +356,8 @@ export async function duplicateAgent(params: DuplicateAgentParams): Promise<Dupl
     // on them, same rule as an import.
     if (!enabled) await pauseAgentSchedules(agent.id).catch(err => console.error('[activation] failed to pause the schedules of a duplicated agent', agent.id, err))
 
+    // The copied folder carries the source's project note; the copy's own Box decides it.
+    await syncProjectNote(agent.id)
     return { agent, schedules: copy.schedules, triggers: copy.triggers }
 }
 

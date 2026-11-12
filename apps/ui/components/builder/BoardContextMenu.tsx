@@ -6,12 +6,13 @@ import { BoxAccessDialog } from '@/components/dialogs/BoxAccessDialog'
 import { DeleteAgentDialog } from '@/components/dialogs/DeleteAgentDialog'
 import { DeleteSpaceDialog } from '@/components/dialogs/DeleteSpaceDialog'
 import { RenameAgentDialog } from '@/components/dialogs/RenameAgentDialog'
+import { ProjectKnowledgeDialog } from '@/components/project-knowledge/ProjectKnowledgeDialog'
 import { RenameBoxDialog } from '@/components/dialogs/RenameBoxDialog'
 import { TooltipDisabledReason } from '@/components/ui/tooltip'
 import { useBoxViewer, useCanManageAgent, useCanManageSpace, useManageableSpaceIds } from '@/hooks/useBoxAccess'
 import { BOX_MANAGE_ACTION_REASON } from '@/lib/board/box-access'
 import { UNNAMED_BOX_LABEL } from '@/lib/board/types'
-import { CopyPlusIcon, Link2, MessageCircle, PencilIcon, SettingsIcon, Trash2Icon, UsersIcon } from '@/lib/icons'
+import { BookOpenIcon, CopyPlusIcon, Link2, MessageCircle, PencilIcon, SettingsIcon, Trash2Icon, UsersIcon } from '@/lib/icons'
 import { useBoardStore } from '@/stores/board.store'
 import { useIsWorkspaceAdmin } from '@/supabase/session/SessionProvider'
 import { useState, type ReactNode } from 'react'
@@ -50,6 +51,7 @@ export function BoardContextMenu({ children, target, onTargetClear }: BoardConte
     const [deleteSpaceId, setDeleteSpaceId] = useState<string | null>(null)
     const [renameSpaceId, setRenameSpaceId] = useState<string | null>(null)
     const [accessSpaceId, setAccessSpaceId] = useState<string | null>(null)
+    const [knowledgeSpaceId, setKnowledgeSpaceId] = useState<string | null>(null)
 
     const targetAgent = target?.kind === 'agent' ? agents.find(agent => agent.id === target.id) : undefined
     const targetSpace = target?.kind === 'space' ? spaces.find(space => space.id === target.id) : undefined
@@ -60,6 +62,7 @@ export function BoardContextMenu({ children, target, onTargetClear }: BoardConte
     const agentsInSpaceToDelete = deleteSpaceId ? agents.filter(agent => agent.spaceId === deleteSpaceId).length : 0
     const spaceToRename = renameSpaceId ? spaces.find(space => space.id === renameSpaceId) : undefined
     const spaceForAccess = accessSpaceId ? spaces.find(space => space.id === accessSpaceId) : undefined
+    const spaceForKnowledge = knowledgeSpaceId ? spaces.find(space => space.id === knowledgeSpaceId) : undefined
     const workspaceAdmin = useIsWorkspaceAdmin()
     const canManageAgent = useCanManageAgent(targetAgent?.id)
     const canManageSpace = useCanManageSpace(targetSpace?.id)
@@ -146,6 +149,10 @@ export function BoardContextMenu({ children, target, onTargetClear }: BoardConte
                                 Rename
                             </ContextMenuItem>
                         </Forbidden>
+                        <ContextMenuItem onSelect={() => setKnowledgeSpaceId(targetSpace.id)}>
+                            <BookOpenIcon className="size-4" />
+                            Project knowledge
+                        </ContextMenuItem>
                         <Forbidden reason={workspaceAdmin ? undefined : BOX_ACCESS_ADMIN_ONLY}>
                             <ContextMenuItem disabled={!workspaceAdmin} className="w-full" onSelect={() => setAccessSpaceId(targetSpace.id)}>
                                 <UsersIcon className="size-4" />
@@ -198,6 +205,15 @@ export function BoardContextMenu({ children, target, onTargetClear }: BoardConte
                 open={!!renameSpaceId}
                 onOpenChange={open => {
                     if (!open) setRenameSpaceId(null)
+                }}
+            />
+
+            <ProjectKnowledgeDialog
+                spaceId={knowledgeSpaceId}
+                boxName={spaceForKnowledge?.name}
+                open={!!knowledgeSpaceId}
+                onOpenChange={open => {
+                    if (!open) setKnowledgeSpaceId(null)
                 }}
             />
 

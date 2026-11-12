@@ -74,6 +74,10 @@ export const installPath = (id: string) => resolve(agentDir(id), 'INSTALL.md')
 
 export const agentEnvPath = (id: string) => resolve(agentDir(id), '.env')
 
+// Written by the hub when the agent's Box is linked to a Confluence engagement (Project
+// knowledge); absent otherwise. Read into the system prompt, never written engine-side.
+export const projectNotePath = (id: string) => resolve(agentDir(id), '.rerun', 'project.md')
+
 export const workspaceDir = (id: string) => resolve(agentDir(id), 'workspace')
 
 export const agentDataDir = (id: string) => resolve(agentDir(id), 'data')
