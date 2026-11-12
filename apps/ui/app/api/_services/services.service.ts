@@ -581,6 +581,7 @@ export async function installedFromRegistry(reg: ServiceRegistry): Promise<Insta
                 composio: entry.composio,
                 app: entry.app,
                 authMethodId: entry.authMethodId,
+                ...(entry.global ? { global: entry.global } : {}),
                 installedAt: entry.installedAt,
             }
         }),
@@ -600,6 +601,12 @@ export async function uninstallService(agentId: string, key: string, actor?: Act
         const supabase = createServiceRoleClient()
         const { data: agent } = await selectMaybeSingle(supabase, 'agents', ['workspace_id'] as const, { id: agentId })
         if (agent) await unbindAgent(supabase, agent.workspace_id, agentId, entry.app.appSlug)
+    }
+    // A Global apps binding: the workspace account survives (its credential never lived on this
+    // coworker), only the link goes.
+    if (entry?.global) {
+        const supabase = createServiceRoleClient()
+        await supabase.from('global_app_agents').delete().eq('connection_id', entry.global.connectionId).eq('agent_id', agentId)
     }
 }
 

@@ -97,6 +97,11 @@ export type CompileResult = {
 // server names and env vars, so it never overwrites the base account's.
 export type ServiceInstanceTarget = { key: string; instanceId: string }
 
+// A workspace-level (Global apps) connection the compile binds the coworker to. The entry lands
+// active at once: a key method's secrets came in `values`, and a composio method routes by the
+// `x-rerun-global` header instead of a per-coworker sign-in.
+export type GlobalBindTarget = { connectionId: string; label?: string }
+
 // Compile a service into engine primitives, using the selected auth method (falls back to
 // the default). Assumes all REQUIRED inputs of that method are present in `values` (the
 // caller — installService — guards this). Idempotent: safe to re-run.
@@ -107,6 +112,7 @@ export async function compileService(
     authMethodId?: string,
     actor?: Actor,
     instance?: ServiceInstanceTarget,
+    global?: GlobalBindTarget,
 ): Promise<CompileResult> {
     const { conn, engineAgentId } = await resolveAgentTarget(agentId, actor, 'manage')
     const method = getMethod(manifest, authMethodId)
@@ -124,9 +130,17 @@ export async function compileService(
 
     // Compile first so `referencedSecrets` is populated before we assemble the .env set.
     const compiled = method.mcpServers.map(t => {
+        // An OAuth server bound to a workspace account never signs in on the engine: its calls go
+        // through the hub proxy, which injects (and refreshes) the shared token. The literal
+        // ${RERUN_HUB_BASE_URL} is the one placeholder the engine resolves from its own env.
+        if (global && t.oauth) {
+            return { name: serverNameFor(t.name), transport: 'http' as const, args: [], url: `\${RERUN_HUB_BASE_URL}/api/mcp/global/${global.connectionId}`, env: {}, headers: {} }
+        }
         const server = compileMcpServer(t, ctx, serverNameFor(t.name))
         // The Composio proxy derives the instance's own Composio user from this header.
         if (instanceId && method.kind === 'composio') server.headers = { ...server.headers, 'x-rerun-instance': instanceId }
+        // A global binding routes the proxy to the workspace connection's Composio user instead.
+        if (global && method.kind === 'composio') server.headers = { ...server.headers, 'x-rerun-global': global.connectionId }
         return server
     })
     const compiledSkills = manifest.skills.map(s => ({ ...s, body: substitute(s.body, ctx) }))
@@ -170,8 +184,9 @@ export async function compileService(
     const mcpServerNames = compiled.map(s => s.name)
 
     // An OAuth / managed service is only usable once the user signs in — the sign-in writes
-    // the token to the engine token store and the connect action flips this to 'active'.
-    const authServer = oauthServer(method)
+    // the token to the engine token store and the connect action flips this to 'active'. A
+    // global binding has no per-coworker sign-in at all: the workspace account already did.
+    const authServer = global ? undefined : oauthServer(method)
     const oauth = authServer ? { serverName: serverNameFor(authServer.name), url: substitute(authServer.url ?? '', ctx) } : null
     const renamed = <T extends { serverName: string }>(target: T | null): T | null => (target ? { ...target, serverName: serverNameFor(target.serverName) } : null)
     const managed = renamed(managedTarget(method))
@@ -183,7 +198,8 @@ export async function compileService(
     const instanceFields = instance ? await instanceRegistryFields(conn, engineAgentId, manifest, instance) : {}
 
     await upsertRegistryEntry(conn, engineAgentId, registryKey, {
-        status: oauth || managed || composio || app ? 'needs_auth' : 'active',
+        // A global binding is usable at once: its sign-in happened at the workspace level.
+        status: global || !(oauth || managed || composio || app) ? 'active' : 'needs_auth',
         config: nonSecretConfig,
         authMethodId: method.id,
         mcpServers: mcpServerNames,
@@ -194,6 +210,7 @@ export async function compileService(
         ...(composio ? { composio } : {}),
         ...(app ? { app } : {}),
         ...instanceFields,
+        ...(global ? { global, ...(global.label ? { label: global.label } : {}) } : {}),
         installedAt: new Date().toISOString(),
     })
 
