@@ -2,6 +2,7 @@
 
 import { actorFromContext, assertAgentAccess, assertSpaceAccess } from '@/app/api/_auth/access'
 import { requireWorkspaceContext } from '@/app/api/_auth/ownership'
+import { linkProjectKnowledge } from '@/app/api/_services/project-knowledge.service'
 import { connectionForWorkspace } from '@/app/api/_services/slack.service'
 import {
     createCoworkerPresetFromScratch,
@@ -159,20 +160,37 @@ export async function hireFromPresetAction(params: { spaceId: string; roster: Ro
     }
 }
 
-export async function hireTeamAction(params: { spaceName: string; roster: RosterEntry[]; channel: { name: string; isPrivate: boolean } | null; answers: HireAnswer[] }): Promise<ActionResult<{ outcome: HireOutcome }>> {
+export async function hireTeamAction(params: {
+    spaceName: string
+    roster: RosterEntry[]
+    channel: { name: string; isPrivate: boolean } | null
+    answers: HireAnswer[]
+    // The Confluence engagement the project is about, linked to the new Box once the team is
+    // hired so the whole roster gets the project note and Atlassian access.
+    knowledge: { spaceKey: string; pageId: string | null; pageTitle: string | null } | null
+}): Promise<ActionResult<{ outcome: HireOutcome }>> {
     try {
         const ctx = await requireWorkspaceContext()
         if (params.roster.some(entry => !entry.name.trim())) return { ok: false, error: 'Every coworker needs a name.' }
+        const actor = actorFromContext(ctx)
         const outcome = await hireTeam({
             workspaceId: ctx.workspace.id,
             userId: ctx.userId,
             userEmail: ctx.userEmail,
-            actor: actorFromContext(ctx),
+            actor,
             spaceName: params.spaceName,
             roster: params.roster.map(entry => ({ ...entry, name: entry.name.trim() })),
             channel: params.channel,
             answers: params.answers,
         })
+        if (params.knowledge) {
+            try {
+                const { warnings } = await linkProjectKnowledge({ actor, spaceId: outcome.spaceId, ...params.knowledge })
+                outcome.warnings.push(...warnings)
+            } catch (err) {
+                outcome.warnings.push(`The Confluence engagement could not be linked: ${err instanceof Error ? err.message : 'unknown error'}. Link it from the Box menu.`)
+            }
+        }
         return { ok: true, outcome }
     } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : 'Could not hire the team' }

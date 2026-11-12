@@ -464,3 +464,25 @@ describe('paid data section', () => {
         expect(await paidDataSection()).toContain('never paid_data, a capability id or a catalog')
     })
 })
+
+describe('project knowledge section', () => {
+    it('injects the hub-written project note and leaves the section out without one', async () => {
+        const { mkdir, writeFile, rm } = await import('node:fs/promises')
+        const { projectNotePath } = await import('../config/paths.js')
+        const { dirname } = await import('node:path')
+
+        const before = await buildSystemPrompt(agentWith({ memory: false, db: false, schedule: false }), { source: 'chat' })
+        expect(before).not.toContain('<project_knowledge>')
+
+        const notePath = projectNotePath(agent.id)
+        await mkdir(dirname(notePath), { recursive: true })
+        await writeFile(notePath, '# Project knowledge\nYour Box "NSCB Licensing" is the project for the engagement "73 NSCB".')
+        try {
+            const prompt = await buildSystemPrompt(agentWith({ memory: false, db: false, schedule: false }), { source: 'chat' })
+            expect(prompt).toContain('<project_knowledge>')
+            expect(prompt).toContain('73 NSCB')
+        } finally {
+            await rm(notePath, { force: true })
+        }
+    })
+})

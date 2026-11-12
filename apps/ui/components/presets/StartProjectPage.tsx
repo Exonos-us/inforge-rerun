@@ -1,6 +1,8 @@
 'use client'
 
 import { hireTeamAction, type PresetStoreView } from '@/app/api/_actions/preset.actions'
+import { listKnowledgeEngagementsAction, listKnowledgeSpacesAction } from '@/app/api/_actions/project-knowledge.actions'
+import type { KnowledgeEngagementsResult, KnowledgeSpacesResult } from '@/app/api/_services/project-knowledge.service'
 import type { CoworkerPresetView, TeamPresetView } from '@/app/api/_services/preset.service'
 import { Button } from '@/components/ui/button'
 import { Field } from '@/components/ui/field'
@@ -13,8 +15,9 @@ import { ChevronLeftIcon } from '@/lib/icons'
 import { channelNameFor, coworkerNameFor, shortCodeOf, spaceNameFor } from '@/lib/presets/naming'
 import { useBoardStore } from '@/stores/board.store'
 import { useSession } from '@/supabase/session/SessionProvider'
+import { useWorkspaceSettingsStore } from '@/stores/workspace-settings.store'
 import { StepperBar, StepTransition, useStepper } from '@rerun/ui/steps'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
 import { guarded } from './action-guard'
@@ -31,6 +34,14 @@ const STEPS = [
     { title: 'Slack', hint: 'The channel the team answers in.' },
     { title: 'Kickoff', hint: 'Names, project facts, hire.' },
 ] as const
+
+// "21.01 VividGovTech" → "VividGovTech", "73 NSCB Licensing" → "NSCB Licensing": the wiki numbers
+// stay in the wiki, the project names read clean.
+function stripWikiNumber(title: string): string {
+    return title.replace(/^\s*\d+(?:\.\d+)*(?:[-–]\d+)?\s+/, '').trim() || title.trim()
+}
+
+const WHOLE_SPACE = 'whole-space'
 
 function rosterFromTeam(team: TeamPresetView, presets: CoworkerPresetView[]): RosterDraft[] {
     return team.members.flatMap(member => {
@@ -54,6 +65,55 @@ export function StartProjectPage({ store, team, onBack, onDone }: { store: Prese
     const [isPrivate, setIsPrivate] = useState(false)
     const [answers, setAnswers] = useState<Record<string, string>>({})
     const [hiring, setHiring] = useState(false)
+
+    // The Confluence engagement this project is about, picked here so the whole roster starts
+    // with the project pages in its context. Optional: the fields below work without it.
+    const openWorkspacePanel = useWorkspaceSettingsStore(s => s.openWorkspacePanel)
+    const [knowledgeSpaces, setKnowledgeSpaces] = useState<KnowledgeSpacesResult | null>(null)
+    const [knowledgeSpaceKey, setKnowledgeSpaceKey] = useState<string>('')
+    const [engagements, setEngagements] = useState<KnowledgeEngagementsResult | null>(null)
+    const [engagementChoice, setEngagementChoice] = useState<string>('')
+    // What the pick itself wrote into Client/Project, so re-picking updates them while a value
+    // the user typed is never clobbered.
+    const autoFilled = useRef({ client: '', project: '' })
+
+    useEffect(() => {
+        if (stepper.index !== 1 || knowledgeSpaces) return
+        let active = true
+        listKnowledgeSpacesAction().then(result => {
+            if (active && result.ok) setKnowledgeSpaces(result.result)
+        })
+        return () => {
+            active = false
+        }
+    }, [stepper.index, knowledgeSpaces])
+
+    const pickKnowledgeSpace = async (key: string) => {
+        setKnowledgeSpaceKey(key)
+        setEngagementChoice('')
+        setEngagements(null)
+        const space = knowledgeSpaces?.available ? knowledgeSpaces.spaces.find(candidate => candidate.key === key) : undefined
+        if (space && (!client.trim() || client === autoFilled.current.client)) {
+            const stripped = stripWikiNumber(space.name)
+            setClient(stripped)
+            autoFilled.current.client = stripped
+        }
+        const result = await listKnowledgeEngagementsAction({ spaceKey: key })
+        if (result.ok) setEngagements(result.result)
+        else toast.error(result.error)
+    }
+
+    const pickEngagement = (choice: string) => {
+        setEngagementChoice(choice)
+        const engagement = engagements?.engagements.find(candidate => candidate.id === choice)
+        if (engagement && (!project.trim() || project === autoFilled.current.project)) {
+            const stripped = stripWikiNumber(engagement.title)
+            setProject(stripped)
+            autoFilled.current.project = stripped
+        }
+    }
+
+    const knowledge = knowledgeSpaceKey && engagementChoice ? { spaceKey: knowledgeSpaceKey, pageId: engagementChoice === WHOLE_SPACE ? null : engagementChoice, pageTitle: engagements?.engagements.find(candidate => candidate.id === engagementChoice)?.title ?? null } : null
 
     const presetOf = (presetId: string) => store.presets.find(candidate => candidate.id === presetId)
     const code = codeOverride ?? shortCodeOf(client)
@@ -92,6 +152,7 @@ export function StartProjectPage({ store, team, onBack, onDone }: { store: Prese
                 roster: roster.map((entry, index) => ({ presetId: entry.presetId, name: names[index], icon: entry.icon })),
                 channel: createChannel && store.slackConnected ? { name: channelName, isPrivate } : null,
                 answers: questions.map(question => ({ question: question.question, answer: answers[question.key] ?? '' })),
+                knowledge,
             })
         )
         setHiring(false)
@@ -184,6 +245,50 @@ export function StartProjectPage({ store, team, onBack, onDone }: { store: Prese
 
                     {stepper.index === 1 && (
                         <>
+                            {knowledgeSpaces && !knowledgeSpaces.available ? (
+                                <p className="text-xs text-muted-foreground">
+                                    {knowledgeSpaces.reason === 'no_connection' ? 'Connect Atlassian in Global apps and this step reads your client spaces from Confluence, so the project starts linked to its engagement.' : 'The workspace Atlassian account needs a reconnect in Global apps before the client spaces can be read.'}{' '}
+                                    <button type="button" className="underline underline-offset-2 hover:text-foreground" onClick={() => openWorkspacePanel('global_apps')}>
+                                        Open Global apps
+                                    </button>
+                                </p>
+                            ) : (
+                                <>
+                                    <div className="flex flex-col gap-3 sm:flex-row">
+                                        <Field label="Client space in Confluence" htmlFor="project-knowledge-space" className="flex-1">
+                                            <Select value={knowledgeSpaceKey} onValueChange={value => void pickKnowledgeSpace(value)} disabled={!knowledgeSpaces}>
+                                                <SelectTrigger id="project-knowledge-space" className="w-full">
+                                                    <SelectValue placeholder={knowledgeSpaces ? 'Pick the client space' : 'Reading your wiki…'} />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {knowledgeSpaces?.available &&
+                                                        knowledgeSpaces.spaces.map(space => (
+                                                            <SelectItem key={space.key} value={space.key}>
+                                                                {space.name}
+                                                            </SelectItem>
+                                                        ))}
+                                                </SelectContent>
+                                            </Select>
+                                        </Field>
+                                        <Field label="Engagement" htmlFor="project-knowledge-engagement" className="flex-1">
+                                            <Select value={engagementChoice} onValueChange={pickEngagement} disabled={!knowledgeSpaceKey || engagements === null}>
+                                                <SelectTrigger id="project-knowledge-engagement" className="w-full">
+                                                    <SelectValue placeholder={!knowledgeSpaceKey ? 'Pick a space first' : engagements === null ? 'Reading engagements…' : engagements.fallback ? 'Pick a page tree' : 'Pick the engagement'} />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {engagements?.engagements.map(engagement => (
+                                                        <SelectItem key={engagement.id} value={engagement.id}>
+                                                            {engagement.title}
+                                                        </SelectItem>
+                                                    ))}
+                                                    <SelectItem value={WHOLE_SPACE}>The whole space</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </Field>
+                                    </div>
+                                    <p className="-mt-2 text-xs text-muted-foreground">Optional. The engagement's pages become the project's knowledge: every coworker hired here reads them before working and writes decisions and meeting preps back. The fields below prefill from your pick.</p>
+                                </>
+                            )}
                             <div className="flex flex-col gap-3 sm:flex-row">
                                 <Field label="Client" htmlFor="project-client" className="flex-[2]">
                                     <Input id="project-client" value={client} onChange={e => setClient(e.target.value)} placeholder="Miami Dade County" autoComplete="off" />
@@ -264,6 +369,7 @@ export function StartProjectPage({ store, team, onBack, onDone }: { store: Prese
                             <p className="border-t pt-3 text-xs text-muted-foreground">
                                 Creates Box “{spaceName || '…'}” · hires {roster.length}
                                 {createChannel && store.slackConnected && channelName ? ` · creates #${channelName}${isPrivate ? ' (private)' : ''} and invites everyone` : ''}
+                                {knowledge ? ` · links ${knowledge.pageTitle ?? 'the whole client space'} as the project's knowledge` : ''}
                             </p>
                         </>
                     )}

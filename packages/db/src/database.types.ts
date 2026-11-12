@@ -2827,6 +2827,82 @@ export type Database = {
           },
         ]
       }
+      space_knowledge: {
+        Row: {
+          cloud_id: string
+          connection_id: string | null
+          created_at: string
+          index_refreshed_at: string | null
+          linked_by: string | null
+          page_id: string | null
+          page_index: Json
+          page_title: string | null
+          site_url: string
+          space_id: string
+          space_key: string
+          space_name: string
+          status: string
+          updated_at: string
+          workspace_id: number
+        }
+        Insert: {
+          cloud_id: string
+          connection_id?: string | null
+          created_at?: string
+          index_refreshed_at?: string | null
+          linked_by?: string | null
+          page_id?: string | null
+          page_index?: Json
+          page_title?: string | null
+          site_url: string
+          space_id: string
+          space_key: string
+          space_name: string
+          status?: string
+          updated_at?: string
+          workspace_id: number
+        }
+        Update: {
+          cloud_id?: string
+          connection_id?: string | null
+          created_at?: string
+          index_refreshed_at?: string | null
+          linked_by?: string | null
+          page_id?: string | null
+          page_index?: Json
+          page_title?: string | null
+          site_url?: string
+          space_id?: string
+          space_key?: string
+          space_name?: string
+          status?: string
+          updated_at?: string
+          workspace_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "space_knowledge_connection_id_fkey"
+            columns: ["connection_id"]
+            isOneToOne: false
+            referencedRelation: "global_app_connections"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "space_knowledge_space_id_fkey"
+            columns: ["space_id"]
+            isOneToOne: true
+            referencedRelation: "spaces"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "space_knowledge_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       spaces: {
         Row: {
           col_end: number
