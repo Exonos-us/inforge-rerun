@@ -23,9 +23,11 @@ import type { IsoAgent } from '@/lib/board/types'
 import type { EngineVerbosity } from '@/lib/engine/types'
 import { useBoardStore } from '@/stores/board.store'
 import { useNotificationsStore } from '@/stores/notifications.store'
-import { BellIcon, CheckIcon } from '@/lib/icons'
+import { BellIcon, BookmarkIcon, CheckIcon } from '@/lib/icons'
+import { saveAgentAsPresetAction } from '@/app/api/_actions/preset.actions'
 import { useCallback, useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
+import { toast } from 'sonner'
 
 type AgentPanelSettingsProps = {
     agent: IsoAgent
@@ -42,6 +44,16 @@ const SETTINGS_FORM_ID = 'agent-settings-form'
 export function AgentPanelSettings({ agent }: AgentPanelSettingsProps) {
     const renameAgent = useBoardStore(s => s.renameAgent)
     const openNotifications = useNotificationsStore(s => s.openNotifications)
+    const [savingPreset, setSavingPreset] = useState(false)
+
+    const saveAsPreset = async () => {
+        setSavingPreset(true)
+        const result = await saveAgentAsPresetAction({ agentId: agent.id }).catch(() => null)
+        setSavingPreset(false)
+        if (!result) return toast.error('The server did not answer. Reload the page and try again.')
+        if (!result.ok) return toast.error(result.error)
+        toast.success(`“${result.preset.name}” saved — find it in the Coworkers Store, in the workspace menu.`)
+    }
     const soulLocked = useTemplateContentLock(agent.id)
     const canManage = useCanManageAgent(agent.id)
     const manageReason = canManage ? undefined : BOX_MANAGE_REASON
@@ -182,6 +194,15 @@ export function AgentPanelSettings({ agent }: AgentPanelSettingsProps) {
                         <BellIcon className="size-3.5" />
                         Choose what reaches you
                     </Button>
+                </Field>
+
+                <Field label="Preset" helperText="Captures its soul, skills and routines as a definition you can hire again — never its credentials or memory.">
+                    <TooltipDisabledReason reason={manageReason} className="flex w-full flex-col">
+                        <Button type="button" variant="outline" size="sm" className="w-full justify-start" disabled={!canManage} loading={savingPreset} onClick={saveAsPreset}>
+                            <BookmarkIcon className="size-3.5" />
+                            Save as preset
+                        </Button>
+                    </TooltipDisabledReason>
                 </Field>
             </PanelEditorBody>
             <PanelEditorFooter>

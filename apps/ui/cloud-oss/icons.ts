@@ -280,6 +280,7 @@ import {
     ShieldCheckIcon as LucideShieldCheckIcon,
     ShipWheelIcon as LucideShipWheelIcon,
     ShoppingBagIcon as LucideShoppingBagIcon,
+    StoreIcon as LucideStoreIcon,
     Siren as LucideSiren,
     SlidersHorizontalIcon as LucideSlidersHorizontalIcon,
     Smartphone as LucideSmartphone,
@@ -631,6 +632,7 @@ export const ShieldAlertIcon: LucideIcon = LucideShieldAlertIcon
 export const ShieldCheck: LucideIcon = LucideShieldCheck
 export const ShieldCheckIcon: LucideIcon = LucideShieldCheckIcon
 export const ShoppingBagIcon: LucideIcon = LucideShoppingBagIcon
+export const StoreIcon: LucideIcon = LucideStoreIcon
 export const Siren: LucideIcon = LucideSiren
 export const SlidersHorizontalIcon: LucideIcon = LucideSlidersHorizontalIcon
 export const Smartphone: LucideIcon = LucideSmartphone

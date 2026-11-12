@@ -41,3 +41,6 @@ yarn-error.log*
 next-env.d.ts
 
 .trigger
+
+# Local TLS certificate of the dev HTTP/2 door (scripts/dev-h2-door.mjs)
+/.dev-certs

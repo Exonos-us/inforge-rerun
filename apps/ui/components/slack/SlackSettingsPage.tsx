@@ -15,6 +15,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 
 import { SlackChannelsSection } from './SlackChannelsSection'
+import { SlackIdentitySection } from './SlackIdentitySection'
 import { SlackConnectionChecks } from './SlackConnectionChecks'
 import { SlackConnectSteps } from './SlackConnectSteps'
 
@@ -61,6 +62,7 @@ export function SlackSettingsPage({ icon, onBack }: { icon: string | null; onBac
                         <>
                             <SlackConnectionChecks state={state} reload={load} isAdmin={isAdmin} />
                             <SlackChannelsSection state={state} reload={load} />
+                            <SlackIdentitySection state={state} reload={load} />
                             <p className="text-xs text-muted-foreground">
                                 In a channel with several coworkers, start the message with the one you want. A thread keeps its own conversation, so a follow-up needs no reminder of what you were talking about.
                             </p>

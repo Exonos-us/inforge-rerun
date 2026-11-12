@@ -12,6 +12,7 @@ type WorkspaceSettingsState = {
     panel: WorkspaceDialogPanel | null
     focus: PanelFocus | null
     openWorkspacePanel: (panel: WorkspaceDialogPanel) => void
+    openStartProject: () => void
     openAiProviders: (connectionId?: string) => void
     reconnectAiProvider: (connectionId: string) => void
     addAiProvider: (provider: Exclude<Provider, 'rerun'>) => void
@@ -26,6 +27,8 @@ export const useWorkspaceSettingsStore = create<WorkspaceSettingsState>(set => (
     focus: null,
     // The menu never deep-links, so opening from it clears whatever a previous caller asked for.
     openWorkspacePanel: panel => set({ panel, focus: null }),
+    // The board's "Start a project" lands on the store's wizard rather than its front page.
+    openStartProject: () => set({ panel: 'coworker_presets', focus: { page: 'start_project' } }),
     openAiProviders: connectionId => set({ panel: 'ai_providers', focus: { connectionId } }),
     reconnectAiProvider: connectionId => set({ panel: 'ai_providers', focus: { connectionId, reconnect: true } }),
     addAiProvider: provider => set({ panel: 'ai_providers', focus: { addProvider: provider } }),

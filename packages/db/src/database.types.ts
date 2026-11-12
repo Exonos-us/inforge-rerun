@@ -587,6 +587,103 @@ export type Database = {
           },
         ]
       }
+      coworker_presets: {
+        Row: {
+          archive_bytes: number
+          archive_path: string | null
+          connector_slugs: Json
+          created_at: string
+          created_by: string | null
+          description: string
+          engine_commit: string | null
+          hires: number
+          icon: string
+          id: string
+          knowledge: Json
+          name: string
+          questions: Json
+          role: string
+          routines: Json
+          skills: Json
+          soul: string | null
+          source_agent_id: string | null
+          summary: Json
+          tags: Json
+          updated_at: string
+          workspace_id: number
+        }
+        Insert: {
+          archive_bytes?: number
+          archive_path?: string | null
+          connector_slugs?: Json
+          created_at?: string
+          created_by?: string | null
+          description?: string
+          engine_commit?: string | null
+          hires?: number
+          icon?: string
+          id?: string
+          knowledge?: Json
+          name: string
+          questions?: Json
+          role?: string
+          routines?: Json
+          skills?: Json
+          soul?: string | null
+          source_agent_id?: string | null
+          summary?: Json
+          tags?: Json
+          updated_at?: string
+          workspace_id: number
+        }
+        Update: {
+          archive_bytes?: number
+          archive_path?: string | null
+          connector_slugs?: Json
+          created_at?: string
+          created_by?: string | null
+          description?: string
+          engine_commit?: string | null
+          hires?: number
+          icon?: string
+          id?: string
+          knowledge?: Json
+          name?: string
+          questions?: Json
+          role?: string
+          routines?: Json
+          skills?: Json
+          soul?: string | null
+          source_agent_id?: string | null
+          summary?: Json
+          tags?: Json
+          updated_at?: string
+          workspace_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "coworker_presets_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "coworker_presets_source_agent_id_fkey"
+            columns: ["source_agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "coworker_presets_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       creator_accounts: {
         Row: {
           charges_enabled: boolean
@@ -2693,6 +2790,57 @@ export type Database = {
         }
         Relationships: []
       }
+      team_presets: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          description: string
+          id: string
+          members: Json
+          tags: Json
+          name: string
+          updated_at: string
+          workspace_id: number
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          description?: string
+          id?: string
+          members?: Json
+          tags?: Json
+          name: string
+          updated_at?: string
+          workspace_id: number
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          description?: string
+          id?: string
+          members?: Json
+          tags?: Json
+          name?: string
+          updated_at?: string
+          workspace_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "team_presets_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "team_presets_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       template_purchases: {
         Row: {
           activated_at: string | null
@@ -3147,6 +3295,7 @@ export type Database = {
           onboarding_answers: Json | null
           onboarding_completed_at: string | null
           signed_up_at: string | null
+          slack_email: string | null
           verified: boolean
           workspace_id: number
         }
@@ -3161,6 +3310,7 @@ export type Database = {
           onboarding_answers?: Json | null
           onboarding_completed_at?: string | null
           signed_up_at?: string | null
+          slack_email?: string | null
           verified?: boolean
           workspace_id: number
         }
@@ -3175,6 +3325,7 @@ export type Database = {
           onboarding_answers?: Json | null
           onboarding_completed_at?: string | null
           signed_up_at?: string | null
+          slack_email?: string | null
           verified?: boolean
           workspace_id?: number
         }
