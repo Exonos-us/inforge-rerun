@@ -15,10 +15,11 @@ import { useLibraryViewerSignals } from '@/lib/templates/useLibraryViewerSignals
 import { placementLabel, useBoardStore } from '@/stores/board.store'
 import { useBuilderDialogsStore } from '@/stores/builder-dialogs.store'
 import { useControlCenterStore } from '@/stores/control-center.store'
+import { useWorkspaceSettingsStore } from '@/stores/workspace-settings.store'
 import { useSession } from '@/supabase/session/SessionProvider'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { TooltipDisabledReason, TooltipLabeled } from '@/components/ui/tooltip'
-import { CirclePlusIcon, GridIcon, PlusIcon, SearchIcon } from '@/lib/icons'
+import { CirclePlusIcon, GridIcon, PlusIcon, SearchIcon, StoreIcon } from '@/lib/icons'
 
 export function BuilderToolbar() {
     const agents = useBoardStore(s => s.agents)
@@ -29,6 +30,7 @@ export function BuilderToolbar() {
     const cancelPlacement = useBoardStore(s => s.cancelPlacement)
     const { libraryOpen, newAgentOpen, librarySlug, newBoxOpen, openLibrary, openNewAgent, setLibraryOpen, setNewAgentOpen, setNewBoxOpen } = useBuilderDialogsStore()
     const openControlCenter = useControlCenterStore(s => s.openControlCenter)
+    const openStartProject = useWorkspaceSettingsStore(s => s.openStartProject)
     const isTemplateAuthor = useIsTemplateAuthor()
     const { isAnonymous } = useSession()
     const viewerSignals = useLibraryViewerSignals()
@@ -83,6 +85,8 @@ export function BuilderToolbar() {
                                     <ChromeButton icon={CirclePlusIcon} label="New coworker" disabledReason={needsMachineReason} onClick={openNewAgent} />
                                     <ChromeDivider />
                                     <ChromeButton icon={GridIcon} label="Template" disabledReason={needsMachineReason} onClick={() => openLibrary()} />
+                                    <ChromeDivider />
+                                    <ChromeButton icon={StoreIcon} label="Start a project" disabledReason={needsMachineReason} onClick={openStartProject} />
                                 </div>
                                 {/* Below `sm` the two labels crowd the notification bell: one "+" opens both choices. */}
                                 <div className="flex shrink-0 sm:hidden">
@@ -100,6 +104,10 @@ export function BuilderToolbar() {
                                             <DropdownMenuItem onSelect={() => openLibrary()} className="gap-2 whitespace-nowrap">
                                                 <GridIcon className="size-4" />
                                                 Template
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem onSelect={openStartProject} className="gap-2 whitespace-nowrap">
+                                                <StoreIcon className="size-4" />
+                                                Start a project
                                             </DropdownMenuItem>
                                         </DropdownMenuContent>
                                     </DropdownMenu>
