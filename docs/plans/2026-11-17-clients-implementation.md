@@ -102,10 +102,18 @@ create policy "clients_select_workspace_members" on public.clients
 **Step 3: Apply it**
 
 ```bash
-pnpm db:reset
+./node_modules/.bin/supabase migration up --local
 ```
 
-Expected: every migration replays with no error, ending in the seed.
+Expected: the new migration applies, nothing else runs.
+
+> **Do not run `pnpm db:reset` here.** It wipes the local database: workspaces, agents, and the
+> Composio `authConfigId`s that were set by hand (`ONBOARDING.md` §7.4 has to be redone after a
+> reset). `migration up` applies the pending migration and leaves the data alone.
+>
+> The clean-replay check `db:reset` gives you is still worth having — a migration that only works
+> on an existing database is a broken migration. Run it **once, deliberately**, when you are
+> willing to lose the local workspace, or let CI do it. Not as part of this task.
 
 **Step 4: Regenerate the database types**
 
