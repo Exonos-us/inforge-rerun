@@ -95,6 +95,7 @@ export type Database = {
       }
       agents: {
         Row: {
+          client_revision: number | null
           col: number
           created_at: string
           description: string | null
@@ -112,6 +113,7 @@ export type Database = {
           workspace_id: number
         }
         Insert: {
+          client_revision?: number | null
           col?: number
           created_at?: string
           description?: string | null
@@ -129,6 +131,7 @@ export type Database = {
           workspace_id: number
         }
         Update: {
+          client_revision?: number | null
           col?: number
           created_at?: string
           description?: string | null
@@ -554,6 +557,72 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      clients: {
+        Row: {
+          cloud_id: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          knowledge: Json
+          name: string
+          revision: number
+          short_code: string
+          site_url: string | null
+          skills: Json
+          space_key: string | null
+          space_name: string | null
+          updated_at: string
+          workspace_id: number
+        }
+        Insert: {
+          cloud_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          knowledge?: Json
+          name: string
+          revision?: number
+          short_code: string
+          site_url?: string | null
+          skills?: Json
+          space_key?: string | null
+          space_name?: string | null
+          updated_at?: string
+          workspace_id: number
+        }
+        Update: {
+          cloud_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          knowledge?: Json
+          name?: string
+          revision?: number
+          short_code?: string
+          site_url?: string | null
+          skills?: Json
+          space_key?: string | null
+          space_name?: string | null
+          updated_at?: string
+          workspace_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "clients_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "clients_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       connector_requests: {
         Row: {
@@ -2905,6 +2974,7 @@ export type Database = {
       }
       spaces: {
         Row: {
+          client_id: string | null
           col_end: number
           col_start: number
           created_at: string | null
@@ -2916,6 +2986,7 @@ export type Database = {
           workspace_id: number
         }
         Insert: {
+          client_id?: string | null
           col_end: number
           col_start: number
           created_at?: string | null
@@ -2927,6 +2998,7 @@ export type Database = {
           workspace_id: number
         }
         Update: {
+          client_id?: string | null
           col_end?: number
           col_start?: number
           created_at?: string | null
@@ -2938,6 +3010,13 @@ export type Database = {
           workspace_id?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "spaces_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "spaces_workspace_id_fkey"
             columns: ["workspace_id"]

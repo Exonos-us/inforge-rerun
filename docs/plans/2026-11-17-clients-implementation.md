@@ -63,7 +63,11 @@ create table public.clients (
     id uuid primary key default gen_random_uuid(),
     workspace_id bigint not null references public.workspaces(id) on delete cascade,
     name text not null,
-    short_code text not null default '',
+    -- Names Boxes, channels and coworkers (mdc-permitting-po), so two clients sharing one would
+    -- make those names ambiguous to read. It never keys the skills a client installs: that is the
+    -- id, which no rename can move. shortCodeOf() is initials-based, so "Miami Dade County" and
+    -- "Miami Dade City" both propose "mdc" and one of them has to pick something else.
+    short_code text not null,
     skills jsonb not null default '[]'::jsonb,
     knowledge jsonb not null default '[]'::jsonb,
     site_url text,
@@ -75,11 +79,12 @@ create table public.clients (
     revision integer not null default 1,
     created_by uuid references public.users(id) on delete set null,
     created_at timestamptz not null default now(),
-    updated_at timestamptz not null default now()
+    updated_at timestamptz not null default now(),
+    constraint clients_short_code_not_blank check (short_code <> '')
 );
 
-create index clients_workspace_idx on public.clients (workspace_id);
 create index clients_workspace_name_idx on public.clients (workspace_id, name);
+create unique index clients_workspace_short_code_idx on public.clients (workspace_id, short_code);
 
 alter table public.spaces add column client_id uuid references public.clients(id) on delete set null;
 create index spaces_client_idx on public.spaces (client_id);
@@ -89,10 +94,12 @@ alter table public.agents add column client_revision integer;
 alter table public.clients enable row level security;
 
 revoke all on table public.clients from anon, authenticated;
--- Readable by every member of the workspace, exactly as coworker_presets is. Writes go through
--- server actions on the service role.
+-- Readable by every member of the workspace, as coworker_presets is. Writes go through server
+-- actions on the service role, whose grant is spelled out because the revoke above would
+-- otherwise strip it on a database whose grants came from default privileges — the slack tables
+-- learned this the hard way.
 grant select on table public.clients to authenticated;
-grant all on table public.clients to service_role;
+grant select, insert, update, delete on table public.clients to service_role;
 
 create policy "clients_select_workspace_members" on public.clients
     for select to authenticated
@@ -149,7 +156,13 @@ git commit -m "feat(clients): the clients table, its Box pointer and the agent r
 
 ## Task 2: Slug derivation (pure, TDD)
 
-Client skills need a namespaced slug so that changing a Box's client can remove exactly that client's files, and a coworker's own skill can never collide with the client's.
+Client skills need a namespaced slug so that changing a Box's client removes exactly that client's
+files, and a coworker's own skill can never collide with the client's.
+
+**The key is the client's `id`, not its `short_code`.** `shortCodeOf` is initials-based, so
+"Miami Dade County", "Miami Dade City" and "Monroe Dade Collective" all yield `mdc`; and
+`short_code` is editable, so keying on it would orphan every installed skill on a rename. An id
+cannot collide and cannot be renamed. See the design doc's "The write path" section.
 
 **Files:**
 - Create: `apps/ui/lib/clients/naming.ts`
@@ -164,41 +177,49 @@ import { describe, expect, it } from 'vitest'
 
 import { clientKnowledgeDir, clientSkillSlug, isClientSkillSlug } from './naming'
 
+const MDC = 'a1b8d4fa-0db3-4de6-9305-f1fb9c37ca34'
+const BROWARD = 'c7e2119b-55aa-4f01-9f3e-2b6d0e4a7781'
+
 describe('clientSkillSlug', () => {
-    it('namespaces a skill under its client code', () => {
-        expect(clientSkillSlug('mdc', 'Document format')).toBe('client-mdc-document-format')
+    it('namespaces a skill under its client id', () => {
+        expect(clientSkillSlug(MDC, 'Document format')).toBe('client-a1b8d4fa-document-format')
     })
 
-    it('survives a client with no short code', () => {
-        expect(clientSkillSlug('', 'Document format')).toBe('client-document-format')
+    it('gives two clients whose short codes would collide different slugs', () => {
+        // "Miami Dade County" and "Miami Dade City" both shortCodeOf() to "mdc".
+        expect(clientSkillSlug(MDC, 'Doc format')).not.toBe(clientSkillSlug(BROWARD, 'Doc format'))
     })
 
-    it('collapses punctuation and case the way slugOf does', () => {
-        expect(clientSkillSlug('MDC', 'Comms / tone!')).toBe('client-mdc-comms-tone')
+    it('collapses punctuation and case', () => {
+        expect(clientSkillSlug(MDC, 'Comms / tone!')).toBe('client-a1b8d4fa-comms-tone')
     })
 
     it('keeps a name that slugs to nothing addressable', () => {
-        expect(clientSkillSlug('mdc', '日本語')).toBe('client-mdc-skill')
+        expect(clientSkillSlug(MDC, '日本語')).toBe('client-a1b8d4fa-skill')
     })
 })
 
 describe('isClientSkillSlug', () => {
-    it('recognises its own slugs', () => {
-        expect(isClientSkillSlug('client-mdc-doc-format', 'mdc')).toBe(true)
+    it('recognises its own client’s slugs', () => {
+        expect(isClientSkillSlug('client-a1b8d4fa-doc-format', MDC)).toBe(true)
     })
 
     it('does not claim another client’s slug', () => {
-        expect(isClientSkillSlug('client-bc-doc-format', 'mdc')).toBe(false)
+        expect(isClientSkillSlug('client-a1b8d4fa-doc-format', BROWARD)).toBe(false)
     })
 
     it('does not claim a coworker’s own skill', () => {
-        expect(isClientSkillSlug('permit-intake-triage', 'mdc')).toBe(false)
+        expect(isClientSkillSlug('permit-intake-triage', MDC)).toBe(false)
+    })
+
+    it('does not match a slug that merely starts with the same characters', () => {
+        expect(isClientSkillSlug('client-a1b8d4faXX-doc', MDC)).toBe(false)
     })
 })
 
 describe('clientKnowledgeDir', () => {
     it('gives each client its own folder under knowledge/', () => {
-        expect(clientKnowledgeDir('mdc')).toBe('knowledge/client-mdc')
+        expect(clientKnowledgeDir(MDC)).toBe('knowledge/client-a1b8d4fa')
     })
 })
 ```
@@ -218,21 +239,31 @@ Create `apps/ui/lib/clients/naming.ts`:
 ```ts
 import { slugOf } from '@/lib/presets/naming'
 
-// A client's skills live under a slug of their own so that changing a Box's client removes
-// exactly that client's files, and a coworker's own skill can never collide with one of them.
+// A client's skills live under a slug keyed on its id, so that changing a Box's client removes
+// exactly that client's files and a coworker's own skill can never collide with one of them.
+// Not the short code: shortCodeOf() is initials-based ("Miami Dade County" and "Miami Dade City"
+// both give "mdc") and the code stays editable, so a rename would orphan everything installed.
 const PREFIX = 'client'
+const KEY_LENGTH = 8
 
-export function clientSkillSlug(shortCode: string, skillName: string): string {
-    const name = slugOf(skillName) || 'skill'
-    return [PREFIX, slugOf(shortCode), name].filter(Boolean).join('-')
+function keyOf(clientId: string): string {
+    return clientId.replace(/-/g, '').slice(0, KEY_LENGTH)
 }
 
-export function isClientSkillSlug(slug: string, shortCode: string): boolean {
-    return slug.startsWith(`${[PREFIX, slugOf(shortCode)].filter(Boolean).join('-')}-`)
+export function clientNamespace(clientId: string): string {
+    return `${PREFIX}-${keyOf(clientId)}`
 }
 
-export function clientKnowledgeDir(shortCode: string): string {
-    return `knowledge/${[PREFIX, slugOf(shortCode)].filter(Boolean).join('-')}`
+export function clientSkillSlug(clientId: string, skillName: string): string {
+    return `${clientNamespace(clientId)}-${slugOf(skillName) || 'skill'}`
+}
+
+export function isClientSkillSlug(slug: string, clientId: string): boolean {
+    return slug.startsWith(`${clientNamespace(clientId)}-`)
+}
+
+export function clientKnowledgeDir(clientId: string): string {
+    return `knowledge/${clientNamespace(clientId)}`
 }
 ```
 
@@ -242,16 +273,14 @@ export function clientKnowledgeDir(shortCode: string): string {
 pnpm --filter rerun test lib/clients/naming.test.ts
 ```
 
-Expected: PASS, 8 tests.
+Expected: PASS, 9 tests.
 
 **Step 5: Commit**
 
 ```bash
 git add apps/ui/lib/clients/naming.ts apps/ui/lib/clients/naming.test.ts
-git commit -m "feat(clients): namespaced slugs for a client's skills and knowledge"
+git commit -m "feat(clients): slugs keyed on the client id, immune to rename and code collision"
 ```
-
----
 
 ## Task 3: Extract `authoredSkillMarkdown` so both services share it
 
@@ -397,6 +426,27 @@ export async function listClients(supabase: SupabaseClient<Database>, workspaceI
 Expected: PASS.
 
 **Step 6: Add create / update / delete**
+
+`short_code` is `not null`, non-blank and **unique per workspace**, so `createClient` must resolve
+a collision rather than let the insert fail: `shortCodeOf` is initials-based, and "Miami Dade
+County" / "Miami Dade City" both propose `mdc`. Write a test for this before the implementation:
+
+```ts
+it('gives the second client a free code when the proposed one is taken', async () => {
+    existingCodes = ['mdc']
+    await createClient(supabase, 7, 'user-1', 'Miami Dade City')
+    expect(captured.short_code).toBe('mdc2')
+})
+
+it('never writes a blank code, whatever the name', async () => {
+    await createClient(supabase, 7, 'user-1', '日本語')
+    expect(captured.short_code).not.toBe('')
+})
+```
+
+Resolve by reading the workspace's existing codes through `selectMany` and appending the smallest
+free integer. Do not catch the unique-violation and retry blindly — the user should see the code
+they are getting, and Task 9's form shows it in an editable field.
 
 Writes carry the generic explicitly — the verbose form, never `TablesInsert<'x'>`:
 

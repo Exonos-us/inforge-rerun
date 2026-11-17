@@ -43,7 +43,7 @@ create table public.clients (
     id uuid primary key default gen_random_uuid(),
     workspace_id bigint not null references workspaces(id) on delete cascade,
     name text not null,
-    short_code text not null default '',
+    short_code text not null,  -- unique per workspace, never blank; names Boxes and coworkers
     skills jsonb not null default '[]'::jsonb,     -- AuthoredSkill[]
     knowledge jsonb not null default '[]'::jsonb,  -- KnowledgeDoc[]
     site_url text, cloud_id text, space_key text, space_name text,
@@ -53,8 +53,8 @@ create table public.clients (
     updated_at timestamptz not null default now()
 );
 
-create index clients_workspace_idx on public.clients (workspace_id);
 create index clients_workspace_name_idx on public.clients (workspace_id, name);
+create unique index clients_workspace_short_code_idx on public.clients (workspace_id, short_code);
 
 alter table public.spaces add column client_id uuid references clients(id) on delete set null;
 alter table public.agents add column client_revision integer;
@@ -96,10 +96,24 @@ Passing an explicit `slug` is what makes this re-runnable — the hire path omit
 so a second call would duplicate. With it the engine swaps the whole folder atomically: the edit
 lands whole or not at all.
 
-**Namespacing makes removal possible.** Client skills get a stable derived slug
-(`client-<short_code>-<skill>`) and knowledge lands under `knowledge/<short_code>/`. Without it,
-"this Box is Broward now, not Miami-Dade" could not tell which files to pull, and a coworker's own
-skill could collide with the client's.
+**Namespacing makes removal possible.** Client skills get a stable slug keyed on the client's
+**id** (`client-<id-prefix>-<skill>`), and knowledge lands under `knowledge/client-<id-prefix>/`.
+Without the namespace, "this Box is Broward now, not Miami-Dade" could not tell which files to
+pull, and a coworker's own skill could collide with the client's.
+
+The key is the id and not `short_code`, for two reasons found while building:
+
+- `shortCodeOf` is initials-based, so "Miami Dade County", "Miami Dade City" and "Monroe Dade
+  Collective" all propose `mdc`. Since skills push with `overwrite: true`, two clients sharing a
+  code means one silently overwrites the other's skill on any coworker in a Box that has had both
+  — and removal, matching on the code, strips the wrong client's files.
+- `short_code` is editable. Keyed on it, renaming a client orphans every skill already installed
+  under the old code.
+
+An id cannot collide and cannot be renamed, so both problems disappear rather than being guarded
+against. `short_code` is still unique per workspace (`clients_workspace_short_code_idx`) because it
+names Boxes, channels and coworkers — `mdc-permitting-po` is ambiguous to a human if two clients
+answer to `mdc` — but nothing on the engine depends on it.
 
 Three callers, one function:
 
