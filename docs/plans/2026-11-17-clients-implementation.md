@@ -738,6 +738,69 @@ export async function applyClientExtras(client: ClientView, spaceId: string, age
 
 `removeClientExtras` takes the coworker's existing slugs and deletes only those matching `isClientSkillSlug(slug, client.id)`.
 
+
+### Removing what the client dropped
+
+`applyClientExtras` installs; nothing yet removes. Delete or rename a skill on a client and the old
+slug stays installed on every coworker forever — `removeClientExtras` only runs when a Box *changes*
+client. Editing a client has to reconcile too, or the fleet accumulates skills their client no
+longer has.
+
+Reconcile **statelessly**: the engine is the truth, and the client row is the intent.
+
+```ts
+const wanted = new Set(client.skills.filter(s => s.name.trim()).map(s => clientSkillSlug(client.id, s.name)))
+const installed = await listSkillSummaries(conn, agent.engine_agent_id)   // ?summary=1, slugs only
+for (const summary of installed) {
+    if (!isClientSkillSlug(client.id, summary.slug)) continue   // never touch the coworker's own
+    if (wanted.has(summary.slug)) continue
+    await deleteSkill(conn, agent.engine_agent_id, summary.slug).catch(() => {
+        warnings.push(`"${agent.name}" kept "${summary.slug}", which ${client.name} no longer has.`)
+    })
+}
+```
+
+Use `listSkillSummaries` (`apps/ui/lib/engine/client.ts:768`), not `listSkills` — the summary
+carries the slug, which is all `isClientSkillSlug` needs, and it avoids pulling every skill body
+back over the wire for a comparison that only reads names.
+
+**Do not record the installed slugs on the client row instead.** That is a second copy of state
+with no path back to the truth: it drifts every time a data-dir archive is restored, an agent is
+imported, or someone deletes a skill from the agent panel. The engine already knows what is
+installed — ask it.
+
+**Push before you delete.** If an import fails, the coworker keeps the skill it had rather than
+losing it to a reconcile that ran first.
+
+#### The guard that makes this safe
+
+> **An empty skill list must never authorize deletions.**
+>
+> `client.skills` is parsed with `authoredSkillsFromRow`, which is `.catch([])`
+> (`apps/ui/lib/presets/types.ts:38`). A malformed or half-migrated `clients.skills` jsonb
+> therefore parses as **zero skills** rather than failing — and a reconcile that trusts it reads
+> that as "this client dropped everything" and wipes its skills off every coworker in every Box,
+> silently, from one bad row.
+>
+> So: skip the removal pass entirely when `client.skills` is empty, or parse with the uncaught
+> schema here so a malformed row throws into a warning instead of becoming an empty array. The
+> tolerance that lets an old row still *render* must not double as permission to delete.
+
+Everything else about this fails in the safe direction: a truncated or failed `listSkillSummaries`
+yields fewer deletions, never more.
+
+**Test it.** These three, and the third is the one that matters:
+
+```ts
+it('removes a skill the client no longer has', async () => { /* installed has 2, client wants 1 */ })
+it('never removes a skill outside the client namespace', async () => { /* 'permit-intake-triage' survives */ })
+it('deletes nothing when the client parses to zero skills', async () => {
+    const malformed = { ...client, skills: [] }          // what .catch([]) produces from a bad row
+    await applyClientExtras(malformed, 'space-1', agent, [])
+    expect(deleteSkill).not.toHaveBeenCalled()
+})
+```
+
 **Step 4: Run the tests**
 
 Expected: PASS, 4 tests.
@@ -852,6 +915,8 @@ pnpm --filter rerun test
 Copy the shape from `preset.actions.ts` exactly: `'use server'`, `requireWorkspaceContext()`, every function returns `ActionResult<T>`, every error is caught and returned as `{ ok: false, error }` — never thrown at the client.
 
 Actions: `listClientsAction`, `createClientAction`, `updateClientAction` (then `syncClient`, returning the counts), `deleteClientAction`, `setBoxClientAction`, `retryClientSyncAction`.
+
+`updateClientAction` must surface a short-code collision as a **field error on the code input**, not a toast. `updateClient` deliberately does not auto-rename a code the user typed — they chose it, so they get told rather than silently corrected — which means the Postgres unique-violation message reaches the action, and the form has to put it where the user can see which field is wrong.
 
 `setBoxClientAction` is the one with teeth: it removes the previous client's extras from every coworker in the Box before applying the new client's. Guard it with `assertSpaceAccess` — only a manager of the Box may change its client.
 
