@@ -706,6 +706,20 @@ pnpm --filter rerun test app/api/_services/client-install.service.test.ts
 
 Expected: FAIL — `applyClientExtras` is not exported.
 
+**Step 2b: Wire the capability gate (already built, Task 4c)**
+
+`canInstallClientSkills(conn, agent, warnings)` exists in `client.service.ts`. Call it **once, right
+before the skill loop** — not per skill.
+
+> **Do not return early when it refuses.** It gates the skills and nothing else: knowledge docs are
+> plain file writes that install on any engine. An early return silently costs the coworker its
+> documents on every older machine.
+>
+> `client-install.service.test.ts` carries `it.todo('writes the knowledge docs even when the gate
+> refuses the skills')`. **Turn it into a real test in this task.** It is the only thing standing
+> between this design and that bug, and Task 4c could not write it because the function did not
+> exist yet.
+
 **Step 3: Implement**
 
 ```ts
