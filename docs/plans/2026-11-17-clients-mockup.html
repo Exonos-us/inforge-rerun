@@ -1,0 +1,914 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Clients — UI mockup</title>
+<style>
+  :root, .light {
+    --background: oklch(0.98 0 0);
+    --foreground: oklch(0.145 0 0);
+    --card: oklch(1 0 0);
+    --popover: oklch(1 0 0);
+    --primary: oklch(0.205 0 0);
+    --primary-foreground: oklch(0.985 0 0);
+    --secondary: oklch(0.955 0 0);
+    --secondary-foreground: oklch(0.205 0 0);
+    --muted: oklch(0.955 0 0);
+    --muted-foreground: oklch(0.556 0 0);
+    --accent: oklch(0.945 0 0);
+    --destructive: oklch(0.577 0.245 27.325);
+    --border: oklch(0.905 0 0);
+    --input: oklch(0.905 0 0);
+    --ring: oklch(0.708 0 0);
+    --radius: 0.625rem;
+    --brand: #4d34f7;
+    --page: oklch(0.96 0 0);
+  }
+  .dark {
+    --background: oklch(0.145 0 0);
+    --foreground: oklch(0.985 0 0);
+    --card: oklch(0.205 0 0);
+    --popover: oklch(0.205 0 0);
+    --primary: oklch(0.922 0 0);
+    --primary-foreground: oklch(0.205 0 0);
+    --secondary: oklch(0.269 0 0);
+    --secondary-foreground: oklch(0.985 0 0);
+    --muted: oklch(0.269 0 0);
+    --muted-foreground: oklch(0.708 0 0);
+    --accent: oklch(0.269 0 0);
+    --destructive: oklch(0.704 0.191 22.216);
+    --border: oklch(1 0 0 / 10%);
+    --input: oklch(1 0 0 / 15%);
+    --ring: oklch(0.556 0 0);
+    --radius: 0.625rem;
+    --brand: #4d34f7;
+    --page: oklch(0.115 0 0);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--foreground);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page { max-width: 1240px; margin: 0 auto; padding: 32px 24px 96px; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 8px; }
+  h1 { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; margin: 0; }
+  .sub { color: var(--muted-foreground); font-size: 13px; margin: 4px 0 0; max-width: 70ch; }
+
+  .toggle {
+    border: 1px solid var(--border); background: var(--card); color: var(--foreground);
+    border-radius: 999px; padding: 7px 14px; font-size: 12px; font-weight: 500; cursor: pointer;
+  }
+  .toggle:hover { background: var(--accent); }
+
+  h2.section {
+    font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--muted-foreground); margin: 44px 0 4px;
+    padding-top: 20px; border-top: 1px solid var(--border);
+  }
+  .section-note { color: var(--muted-foreground); font-size: 13px; margin: 0 0 18px; max-width: 78ch; }
+  .section-note code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; background: var(--muted); padding: 1px 5px; border-radius: 4px; }
+
+  .frames { display: flex; gap: 28px; align-items: flex-start; flex-wrap: wrap; }
+  .frame-label { font-size: 11px; color: var(--muted-foreground); margin-bottom: 8px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+  /* ---- dialog frame (PanelDialogContent) ---- */
+  .dialog {
+    width: 768px; max-width: 100%;
+    background: var(--popover);
+    border: 1px solid var(--border);
+    border-radius: calc(var(--radius) * 1.4);
+    box-shadow: 0 24px 60px -20px rgb(0 0 0 / 0.5), 0 2px 8px -2px rgb(0 0 0 / 0.3);
+    overflow: hidden;
+    display: flex; flex-direction: column;
+  }
+  .dialog.phone { width: 375px; border-radius: calc(var(--radius) * 1.4) calc(var(--radius) * 1.4) 0 0; }
+  .dialog.phone .dialog-body { max-height: 520px; overflow-y: auto; }
+
+  .dialog-head { padding: 18px 22px 14px; border-bottom: 1px solid var(--border); display: flex; align-items: flex-start; gap: 12px; }
+  .dialog.phone .dialog-head { padding: 16px 16px 12px; }
+  .dialog-title { font-size: 15px; font-weight: 600; margin: 0; display: flex; align-items: center; gap: 8px; }
+  .dialog-desc { font-size: 12.5px; color: var(--muted-foreground); margin: 3px 0 0; }
+  .dialog-x { margin-left: auto; color: var(--muted-foreground); cursor: pointer; line-height: 1; padding: 2px; }
+  .dialog-body { padding: 18px 22px 20px; display: flex; flex-direction: column; gap: 18px; }
+  .dialog.phone .dialog-body { padding: 14px 16px 18px; gap: 16px; }
+  .dialog-foot { padding: 14px 22px; border-top: 1px solid var(--border); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .dialog.phone .dialog-foot { padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); }
+
+  /* ---- panel rows ---- */
+  .rows { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--card); }
+  .row { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--border); }
+  .row:last-child { border-bottom: 0; }
+  .row:hover { background: var(--accent); }
+  .row-ico {
+    width: 32px; height: 32px; flex: none; border-radius: 8px;
+    background: color-mix(in oklab, var(--brand) 16%, transparent);
+    color: var(--brand); display: grid; place-items: center;
+  }
+  .light .row-ico { color: var(--brand); }
+  .row-main { min-width: 0; flex: 1; }
+  .row-title { font-size: 13.5px; font-weight: 500; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .row-meta { font-size: 11.5px; color: var(--muted-foreground); margin-top: 2px; }
+  .row-actions { display: flex; align-items: center; gap: 6px; flex: none; }
+  .chev { color: var(--muted-foreground); }
+
+  /* phone rows stack their meta */
+  .dialog.phone .row { align-items: flex-start; }
+  .dialog.phone .row-title { font-size: 13px; }
+
+
+  /* ---- toolbar + table ---- */
+  .toolbar {
+    display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
+    padding: 12px 22px; border-bottom: 1px solid var(--border);
+  }
+  .dialog.phone .toolbar { padding: 10px 16px; }
+  .search { position: relative; flex: 1 1 200px; min-width: 150px; }
+  .search .input { padding-left: 30px; }
+  .search-ico { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--muted-foreground); pointer-events: none; }
+
+  .table-wrap { flex: 1; min-height: 0; overflow: auto; max-height: 340px; }
+  .tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .tbl thead th {
+    position: sticky; top: 0; z-index: 1;
+    background: var(--popover);
+    text-align: left; font-size: 11.5px; font-weight: 500; color: var(--muted-foreground);
+    padding: 9px 10px; border-bottom: 1px solid var(--border); white-space: nowrap;
+  }
+  .tbl thead th:first-child { padding-left: 22px; }
+  .tbl thead th.num, .tbl td.num { text-align: right; }
+  .tbl thead th.sortable { cursor: pointer; }
+  .tbl thead th.sorted { color: var(--foreground); }
+  .caret { font-size: 9px; opacity: .7; }
+  .tbl td { padding: 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  .tbl td:first-child { padding-left: 22px; }
+  .tbl tbody tr:last-child td { border-bottom: 0; }
+  .tbl tbody tr:hover { background: color-mix(in oklab, var(--muted) 55%, transparent); }
+  .tbl tbody tr.hl { background: color-mix(in oklab, var(--muted) 55%, transparent); }
+  .cell-name { font-weight: 500; }
+  .tbl td.dim { color: var(--muted-foreground); }
+  .tbl .tight { width: 28px; text-align: right; padding-right: 18px; }
+  .tbl .chev { color: var(--muted-foreground); }
+  mark { background: color-mix(in oklab, var(--brand) 30%, transparent); color: inherit; border-radius: 3px; padding: 0 1px; }
+
+  .empty { padding: 36px 24px 34px; text-align: center; }
+  .empty-ico {
+    width: 40px; height: 40px; margin: 0 auto 12px; border-radius: 10px;
+    background: var(--muted); color: var(--muted-foreground); display: grid; place-items: center;
+  }
+  .empty-title { font-size: 13.5px; font-weight: 500; margin: 0; }
+  .empty-desc { font-size: 12.5px; color: var(--muted-foreground); margin: 4px 0 0; }
+
+  /* ---- field ---- */
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field > label { font-size: 12px; font-weight: 500; color: var(--muted-foreground); }
+  .input {
+    border: 1px solid var(--input); background: transparent; color: var(--foreground);
+    border-radius: calc(var(--radius) * 0.8); padding: 7px 10px; font-size: 13px; font-family: inherit; width: 100%;
+  }
+  .input.ghost { color: var(--muted-foreground); }
+  .hint { font-size: 11.5px; color: var(--muted-foreground); }
+  .hint code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; }
+
+  .two-col { display: flex; gap: 12px; flex-wrap: wrap; }
+  .two-col > .field:first-child { flex: 2 1 240px; }
+  .two-col > .field:last-child { flex: 1 1 120px; }
+
+  /* ---- group heading ---- */
+  .group-head { display: flex; align-items: baseline; gap: 10px; }
+  .group-head h3 { font-size: 12.5px; font-weight: 600; margin: 0; }
+  .group-head .aside { margin-left: auto; font-size: 11.5px; color: var(--muted-foreground); }
+  .group { display: flex; flex-direction: column; gap: 8px; }
+
+  /* ---- badge ---- */
+  .badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 10.5px; font-weight: 500; line-height: 1;
+    padding: 3px 7px; border-radius: 999px; white-space: nowrap;
+    border: 1px solid transparent;
+  }
+  .badge.green { background: color-mix(in oklab, oklch(0.72 0.17 150) 16%, transparent); color: oklch(0.78 0.16 150); border-color: color-mix(in oklab, oklch(0.72 0.17 150) 28%, transparent); }
+  .light .badge.green { color: oklch(0.45 0.14 150); }
+  .badge.orange { background: color-mix(in oklab, oklch(0.75 0.16 65) 16%, transparent); color: oklch(0.8 0.15 65); border-color: color-mix(in oklab, oklch(0.75 0.16 65) 28%, transparent); }
+  .light .badge.orange { color: oklch(0.5 0.14 65); }
+  .badge.neutral { background: var(--muted); color: var(--muted-foreground); border-color: var(--border); }
+  .badge.brand { background: color-mix(in oklab, var(--brand) 18%, transparent); color: color-mix(in oklab, var(--brand) 70%, white); border-color: color-mix(in oklab, var(--brand) 34%, transparent); }
+  .light .badge.brand { color: var(--brand); }
+  .code-pill { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+  /* ---- buttons ---- */
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px; justify-content: center;
+    border-radius: calc(var(--radius) * 0.8); padding: 7px 12px;
+    font-size: 12.5px; font-weight: 500; cursor: pointer; border: 1px solid transparent;
+    font-family: inherit; white-space: nowrap;
+  }
+  .btn.primary { background: var(--primary); color: var(--primary-foreground); }
+  .btn.secondary { background: var(--secondary); color: var(--secondary-foreground); border-color: var(--border); }
+  .btn.ghost { background: transparent; color: var(--muted-foreground); }
+  .btn.ghost:hover { background: var(--accent); color: var(--foreground); }
+  .btn.dashed { background: transparent; color: var(--muted-foreground); border: 1px dashed var(--border); }
+  .btn.dashed:hover { color: var(--foreground); }
+  .btn.sm { padding: 5px 9px; font-size: 11.5px; }
+  .btn.danger { background: transparent; color: var(--destructive); }
+  .spacer { flex: 1; }
+
+  /* ---- context menu ---- */
+  .menu {
+    width: 232px; background: var(--popover); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 5px; box-shadow: 0 16px 40px -12px rgb(0 0 0 / 0.45);
+  }
+  .menu-item { display: flex; align-items: center; gap: 9px; padding: 7px 9px; border-radius: 6px; font-size: 13px; }
+  .menu-item:hover { background: var(--accent); }
+  .menu-item.new { color: var(--foreground); }
+  .menu-item .ico { color: var(--muted-foreground); display: grid; place-items: center; }
+  .menu-sep { height: 1px; background: var(--border); margin: 5px 3px; }
+  .menu-item .tail { margin-left: auto; font-size: 11px; color: var(--muted-foreground); }
+
+  /* ---- wizard ---- */
+  .wizard { width: 620px; max-width: 100%; }
+  .steps { display: flex; gap: 6px; align-items: center; font-size: 11.5px; color: var(--muted-foreground); margin-bottom: 14px; flex-wrap: wrap; }
+  .step { padding: 4px 9px; border-radius: 999px; border: 1px solid var(--border); }
+  .step.active { background: var(--accent); color: var(--foreground); border-color: transparent; }
+
+  /* ---- combobox open ---- */
+  .combo-pop {
+    margin-top: 6px; border: 1px solid var(--border); border-radius: var(--radius);
+    background: var(--popover); padding: 5px; box-shadow: 0 16px 40px -12px rgb(0 0 0 / 0.45);
+  }
+  .combo-item { display: flex; align-items: center; gap: 9px; padding: 7px 9px; border-radius: 6px; font-size: 13px; }
+  .combo-item:hover, .combo-item.on { background: var(--accent); }
+  .combo-item .tail { margin-left: auto; font-size: 11px; color: var(--muted-foreground); }
+
+  /* ---- sync result ---- */
+  .sync { display: flex; flex-direction: column; gap: 8px; }
+  .sync-line { display: flex; align-items: center; gap: 9px; font-size: 12.5px; }
+  .sync-line .ico { flex: none; display: grid; place-items: center; }
+  .ok { color: oklch(0.78 0.16 150); }
+  .light .ok { color: oklch(0.45 0.14 150); }
+  .warn { color: oklch(0.8 0.15 65); }
+  .light .warn { color: oklch(0.5 0.14 65); }
+
+  .callout {
+    border: 1px solid var(--border); background: var(--muted);
+    border-radius: var(--radius); padding: 11px 13px; font-size: 12.5px; color: var(--muted-foreground);
+    display: flex; gap: 10px; align-items: flex-start;
+  }
+  .callout b { color: var(--foreground); font-weight: 600; }
+
+  .skel { background: var(--muted); border-radius: 6px; height: 11px; }
+  .skel.w1 { width: 42%; } .skel.w2 { width: 28%; } .skel.w3 { width: 56%; }
+
+  svg { display: block; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="topbar">
+    <div>
+      <h1>Clients — UI mockup</h1>
+      <p class="sub">A client is a workspace entity carrying skills, knowledge docs, a default Confluence space and a short code. A Box points at one; every coworker hired into that Box inherits it.</p>
+    </div>
+    <button class="toggle" onclick="document.documentElement.classList.toggle('dark');document.documentElement.classList.toggle('light')">Toggle theme</button>
+  </div>
+
+  <!-- ============ 1. SETTINGS > CLIENTS ============ -->
+  <h2 class="section">1 · Settings → Clients</h2>
+  <p class="section-note">A searchable table, built on the <code>Table</code> primitive from <code>@rerun/ui/primitives</code>, inside a <code>PanelDialogContent</code>. Search is the house pattern — a <code>SearchIcon</code> inset in an <code>Input</code>, as in <code>OpencodeModels.tsx:84</code>. The header row is sticky, so it survives scrolling a long list.</p>
+
+  <div class="frames">
+    <div style="flex:1 1 760px;min-width:0">
+      <div class="frame-label">desktop · 768px · 24 clients</div>
+      <div class="dialog">
+        <div class="dialog-head">
+          <div>
+            <p class="dialog-title">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/><path d="M9 9v.01"/><path d="M9 12v.01"/><path d="M9 15v.01"/></svg>
+              Clients
+            </p>
+            <p class="dialog-desc">Who you work for, and how they like things done.</p>
+          </div>
+          <div class="dialog-x">✕</div>
+        </div>
+
+        <div class="toolbar">
+          <div class="search">
+            <svg class="search-ico" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            <input class="input" placeholder="Search clients…" />
+          </div>
+          <button class="btn secondary sm">All <span style="opacity:.6">▾</span></button>
+          <button class="btn primary sm"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg> New client</button>
+        </div>
+
+        <div class="table-wrap">
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th class="sortable sorted">Client <span class="caret">▲</span></th>
+                <th>Code</th>
+                <th class="num sortable">Skills</th>
+                <th class="num sortable">Docs</th>
+                <th class="num sortable">Coworkers</th>
+                <th>Status</th>
+                <th class="tight"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="cell-name">Acme Corp</span></td>
+                <td><span class="badge neutral code-pill">acme</span></td>
+                <td class="num">1</td>
+                <td class="num dim">—</td>
+                <td class="num">2</td>
+                <td><span class="badge orange">3 to sync</span></td>
+                <td class="tight"><span class="chev">›</span></td>
+              </tr>
+              <tr>
+                <td><span class="cell-name">Broward County</span></td>
+                <td><span class="badge neutral code-pill">bc</span></td>
+                <td class="num">4</td>
+                <td class="num">2</td>
+                <td class="num">5</td>
+                <td><span class="badge green">Synced</span></td>
+                <td class="tight"><span class="chev">›</span></td>
+              </tr>
+              <tr>
+                <td><span class="cell-name">City of Hialeah</span></td>
+                <td><span class="badge neutral code-pill">coh</span></td>
+                <td class="num">2</td>
+                <td class="num">1</td>
+                <td class="num">3</td>
+                <td><span class="badge green">Synced</span></td>
+                <td class="tight"><span class="chev">›</span></td>
+              </tr>
+              <tr class="hl">
+                <td><span class="cell-name">Miami Dade County</span></td>
+                <td><span class="badge neutral code-pill">mdc</span></td>
+                <td class="num">2</td>
+                <td class="num">3</td>
+                <td class="num">7</td>
+                <td><span class="badge green">Synced</span></td>
+                <td class="tight"><span class="chev">›</span></td>
+              </tr>
+              <tr>
+                <td><span class="cell-name">Port Everglades</span></td>
+                <td><span class="badge neutral code-pill">pe</span></td>
+                <td class="num">1</td>
+                <td class="num">1</td>
+                <td class="num dim">—</td>
+                <td><span class="badge neutral">Not in use</span></td>
+                <td class="tight"><span class="chev">›</span></td>
+              </tr>
+              <tr>
+                <td><span class="cell-name">Vivid Govtech</span></td>
+                <td><span class="badge neutral code-pill">vg</span></td>
+                <td class="num dim">—</td>
+                <td class="num">1</td>
+                <td class="num dim">—</td>
+                <td><span class="badge neutral">Not in use</span></td>
+                <td class="tight"><span class="chev">›</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="dialog-foot">
+          <span class="hint">24 clients · 7 in use · 1 waiting to sync</span>
+          <span class="spacer"></span>
+          <span class="hint mono">1–6 of 24</span>
+          <button class="btn secondary sm">‹</button>
+          <button class="btn secondary sm">›</button>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="frame-label">mobile · 375px · the table degrades to rows</div>
+      <div class="dialog phone">
+        <div class="dialog-head">
+          <div>
+            <p class="dialog-title">Clients</p>
+            <p class="dialog-desc">24 clients · 7 in use</p>
+          </div>
+          <div class="dialog-x">✕</div>
+        </div>
+        <div class="toolbar">
+          <div class="search">
+            <svg class="search-ico" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            <input class="input" placeholder="Search clients…" />
+          </div>
+          <button class="btn secondary sm">All ▾</button>
+        </div>
+        <div class="dialog-body" style="padding-top:12px">
+          <div class="rows">
+            <div class="row">
+              <div class="row-main">
+                <div class="row-title">Acme Corp <span class="badge neutral code-pill">acme</span></div>
+                <div class="row-meta">1 skill · no docs · 2 coworkers</div>
+                <div style="margin-top:6px"><span class="badge orange">3 to sync</span></div>
+              </div>
+              <span class="chev">›</span>
+            </div>
+            <div class="row">
+              <div class="row-main">
+                <div class="row-title">Broward County <span class="badge neutral code-pill">bc</span></div>
+                <div class="row-meta">4 skills · 2 docs · 5 coworkers</div>
+                <div style="margin-top:6px"><span class="badge green">Synced</span></div>
+              </div>
+              <span class="chev">›</span>
+            </div>
+            <div class="row">
+              <div class="row-main">
+                <div class="row-title">City of Hialeah <span class="badge neutral code-pill">coh</span></div>
+                <div class="row-meta">2 skills · 1 doc · 3 coworkers</div>
+                <div style="margin-top:6px"><span class="badge green">Synced</span></div>
+              </div>
+              <span class="chev">›</span>
+            </div>
+            <div class="row">
+              <div class="row-main">
+                <div class="row-title">Miami Dade County <span class="badge neutral code-pill">mdc</span></div>
+                <div class="row-meta">2 skills · 3 docs · 7 coworkers</div>
+                <div style="margin-top:6px"><span class="badge green">Synced</span></div>
+              </div>
+              <span class="chev">›</span>
+            </div>
+          </div>
+        </div>
+        <div class="dialog-foot">
+          <button class="btn primary" style="width:100%">+ New client</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="frames" style="margin-top:26px">
+    <div>
+      <div class="frame-label">search narrowing · "cou"</div>
+      <div class="dialog" style="width:520px">
+        <div class="toolbar" style="border-top:0">
+          <div class="search">
+            <svg class="search-ico" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            <input class="input" value="cou" />
+          </div>
+          <button class="btn ghost sm">Clear</button>
+        </div>
+        <div class="table-wrap">
+          <table class="tbl">
+            <thead><tr><th>Client</th><th>Code</th><th class="num">Coworkers</th><th class="tight"></th></tr></thead>
+            <tbody>
+              <tr><td><span class="cell-name">Broward <mark>Cou</mark>nty</span></td><td><span class="badge neutral code-pill">bc</span></td><td class="num">5</td><td class="tight"><span class="chev">›</span></td></tr>
+              <tr><td><span class="cell-name">Miami Dade <mark>Cou</mark>nty</span></td><td><span class="badge neutral code-pill">mdc</span></td><td class="num">7</td><td class="tight"><span class="chev">›</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="dialog-foot"><span class="hint">2 of 24 match “cou”</span></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="frame-label">nothing matches · EmptyState</div>
+      <div class="dialog" style="width:400px">
+        <div class="toolbar" style="border-top:0">
+          <div class="search">
+            <svg class="search-ico" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            <input class="input" value="orlando" />
+          </div>
+        </div>
+        <div class="empty">
+          <div class="empty-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/></svg></div>
+          <p class="empty-title">No client matches “orlando”</p>
+          <p class="empty-desc">Create it, and it is ready for the next Box.</p>
+          <button class="btn primary sm" style="margin-top:12px">+ Create “orlando”</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 2. CLIENT DETAIL ============ -->
+  <h2 class="section">2 · A client</h2>
+  <p class="section-note">The skill editor is the one presets already have — a written body or an uploaded <code>SKILL.md</code>, both stored as <code>AuthoredSkill</code>. Every label goes through <code>Field</code>; the status pills are the shared <code>Badge</code>.</p>
+
+  <div class="frames">
+    <div>
+      <div class="frame-label">desktop · 768px</div>
+      <div class="dialog">
+        <div class="dialog-head">
+          <button class="btn ghost sm" style="margin-top:1px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></button>
+          <div>
+            <p class="dialog-title">Miami Dade County</p>
+            <p class="dialog-desc">Used by 7 coworkers across 2 Boxes.</p>
+          </div>
+          <div class="dialog-x">✕</div>
+        </div>
+        <div class="dialog-body">
+
+          <div class="two-col">
+            <div class="field">
+              <label for="c-name">Name</label>
+              <input class="input" id="c-name" value="Miami Dade County" />
+            </div>
+            <div class="field">
+              <label for="c-code">Short code</label>
+              <input class="input" id="c-code" value="mdc" />
+            </div>
+          </div>
+          <p class="hint" style="margin:-10px 0 0">Names Boxes, channels and coworkers: <span class="mono">mdc-permitting-po</span>, <span class="mono">#mdc-permitting</span>.</p>
+
+          <div class="group">
+            <div class="group-head">
+              <h3>Skills</h3>
+              <span class="aside">installed on every hire</span>
+            </div>
+            <div class="rows">
+              <div class="row">
+                <div class="row-main">
+                  <div class="row-title">county-doc-format</div>
+                  <div class="row-meta">How the County wants documents written — brand, structure, reading level.</div>
+                </div>
+                <div class="row-actions">
+                  <button class="btn ghost sm">Edit</button>
+                  <button class="btn danger sm">Remove</button>
+                </div>
+              </div>
+              <div class="row">
+                <div class="row-main">
+                  <div class="row-title">county-comms-tone <span class="badge brand">uploaded</span></div>
+                  <div class="row-meta">Formal register, no first names, always cc the PM.</div>
+                </div>
+                <div class="row-actions">
+                  <button class="btn ghost sm">Edit</button>
+                  <button class="btn danger sm">Remove</button>
+                </div>
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button class="btn dashed sm"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg> Write a skill</button>
+              <button class="btn dashed sm"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 9l5-5 5 5"/><path d="M12 4v12"/></svg> Upload SKILL.md</button>
+            </div>
+          </div>
+
+          <div class="group">
+            <div class="group-head">
+              <h3>Knowledge</h3>
+              <span class="aside">written to the hire's <span class="mono">knowledge/</span></span>
+            </div>
+            <div class="rows">
+              <div class="row">
+                <div class="row-main"><div class="row-title">acronyms.md</div><div class="row-meta">2.1 KB</div></div>
+                <div class="row-actions"><button class="btn ghost sm">Edit</button><button class="btn danger sm">Remove</button></div>
+              </div>
+              <div class="row">
+                <div class="row-main"><div class="row-title">key-contacts.md</div><div class="row-meta">1.4 KB</div></div>
+                <div class="row-actions"><button class="btn ghost sm">Edit</button><button class="btn danger sm">Remove</button></div>
+              </div>
+              <div class="row">
+                <div class="row-main"><div class="row-title">org-chart.md</div><div class="row-meta">3.8 KB</div></div>
+                <div class="row-actions"><button class="btn ghost sm">Edit</button><button class="btn danger sm">Remove</button></div>
+              </div>
+            </div>
+            <button class="btn dashed sm" style="align-self:flex-start"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg> Add a document</button>
+          </div>
+
+          <div class="group">
+            <div class="group-head">
+              <h3>Default Confluence space</h3>
+              <span class="aside">prefills the Start project wizard</span>
+            </div>
+            <div class="rows">
+              <div class="row">
+                <div class="row-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg></div>
+                <div class="row-main">
+                  <div class="row-title">MDC — Miami Dade County <span class="badge green">Linked</span></div>
+                  <div class="row-meta">inforge.atlassian.net · via the workspace Atlassian account</div>
+                </div>
+                <div class="row-actions">
+                  <button class="btn ghost sm"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg> Open</button>
+                  <button class="btn secondary sm">Change</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+        <div class="dialog-foot">
+          <button class="btn danger sm">Delete client</button>
+          <span class="spacer"></span>
+          <button class="btn secondary">Cancel</button>
+          <button class="btn primary">Save and sync 7 coworkers</button>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="frame-label">mobile · 375px</div>
+      <div class="dialog phone">
+        <div class="dialog-head">
+          <button class="btn ghost sm"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></button>
+          <div>
+            <p class="dialog-title">Miami Dade County</p>
+            <p class="dialog-desc">7 coworkers · 2 Boxes</p>
+          </div>
+          <div class="dialog-x">✕</div>
+        </div>
+        <div class="dialog-body">
+          <div class="field">
+            <label>Name</label>
+            <input class="input" value="Miami Dade County" />
+          </div>
+          <div class="field">
+            <label>Short code</label>
+            <input class="input" value="mdc" />
+            <span class="hint"><span class="mono">mdc-permitting-po</span></span>
+          </div>
+
+          <div class="group">
+            <div class="group-head"><h3>Skills</h3></div>
+            <div class="rows">
+              <div class="row" style="flex-direction:column;align-items:stretch;gap:8px">
+                <div class="row-main">
+                  <div class="row-title">county-doc-format</div>
+                  <div class="row-meta">How the County wants documents written.</div>
+                </div>
+                <div class="row-actions">
+                  <button class="btn ghost sm">Edit</button>
+                  <button class="btn danger sm">Remove</button>
+                </div>
+              </div>
+              <div class="row" style="flex-direction:column;align-items:stretch;gap:8px">
+                <div class="row-main">
+                  <div class="row-title">county-comms-tone <span class="badge brand">uploaded</span></div>
+                  <div class="row-meta">Formal register, no first names.</div>
+                </div>
+                <div class="row-actions">
+                  <button class="btn ghost sm">Edit</button>
+                  <button class="btn danger sm">Remove</button>
+                </div>
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button class="btn dashed sm">+ Write a skill</button>
+              <button class="btn dashed sm">↑ Upload</button>
+            </div>
+          </div>
+
+          <div class="group">
+            <div class="group-head"><h3>Knowledge</h3></div>
+            <div class="rows">
+              <div class="row"><div class="row-main"><div class="row-title">acronyms.md</div></div><button class="btn ghost sm">Edit</button></div>
+              <div class="row"><div class="row-main"><div class="row-title">key-contacts.md</div></div><button class="btn ghost sm">Edit</button></div>
+            </div>
+          </div>
+
+          <div class="group">
+            <div class="group-head"><h3>Confluence</h3></div>
+            <div class="rows">
+              <div class="row" style="flex-direction:column;align-items:stretch;gap:8px">
+                <div class="row-main">
+                  <div class="row-title">MDC — Miami Dade County <span class="badge green">Linked</span></div>
+                </div>
+                <div class="row-actions"><button class="btn ghost sm">Open</button><button class="btn secondary sm">Change</button></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="dialog-foot" style="flex-direction:column;align-items:stretch">
+          <button class="btn primary" style="width:100%">Save and sync 7 coworkers</button>
+          <button class="btn secondary" style="width:100%">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 3. BOX CONTEXT MENU ============ -->
+  <h2 class="section">3 · Box context menu</h2>
+  <p class="section-note">One new item beside the existing <b>Project knowledge</b>. Its neighbours all carry icons, so per the <code>menu-item-icons</code> rule it gets one too — and the current client reads on the item itself, so you never open the dialog just to check.</p>
+
+  <div class="frames">
+    <div>
+      <div class="frame-label">context menu on a Box</div>
+      <div class="menu">
+        <div class="menu-item"><span class="ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></span>Rename</div>
+        <div class="menu-item"><span class="ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg></span>Project knowledge</div>
+        <div class="menu-item new"><span class="ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/></svg></span>Client<span class="tail">Miami Dade</span></div>
+        <div class="menu-item"><span class="ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg></span>Manage access</div>
+        <div class="menu-sep"></div>
+        <div class="menu-item" style="color:var(--destructive)"><span class="ico" style="color:var(--destructive)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></span>Delete Box</div>
+      </div>
+    </div>
+
+    <div style="flex:1;min-width:300px">
+      <div class="frame-label">the Box has no client yet</div>
+      <div class="menu">
+        <div class="menu-item"><span class="ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg></span>Project knowledge</div>
+        <div class="menu-item new"><span class="ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/></svg></span>Client<span class="tail">Set…</span></div>
+      </div>
+      <div class="callout" style="margin-top:16px">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="margin-top:2px;flex:none"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+        <div>Setting a client on a Box that already has coworkers installs its skills on all of them, after a <b>ConfirmDialog</b> naming the count — per the repo's rule on confirming before overwriting.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 4. START PROJECT ============ -->
+  <h2 class="section">4 · Start project → Project step</h2>
+  <p class="section-note">The free-text <b>Client</b> input at <code>StartProjectPage.tsx:294</code> becomes a combobox over the clients table, still typeable. Picking a known client prefills the short code and the Confluence space; typing a new name offers to create it. Existing behaviour is untouched — typed values are never clobbered.</p>
+
+  <div class="frames">
+    <div>
+      <div class="frame-label">desktop · the step</div>
+      <div class="dialog wizard">
+        <div class="dialog-head">
+          <div>
+            <p class="dialog-title">Start a project</p>
+            <p class="dialog-desc">The client and the project name everything else.</p>
+          </div>
+          <div class="dialog-x">✕</div>
+        </div>
+        <div class="dialog-body">
+          <div class="steps">
+            <span class="step active">Project</span>
+            <span>›</span><span class="step">Roster</span>
+            <span>›</span><span class="step">Apps</span>
+            <span>›</span><span class="step">Review</span>
+          </div>
+
+          <div class="two-col">
+            <div class="field">
+              <label for="w-client">Client</label>
+              <input class="input" id="w-client" value="Miami Dade" />
+              <div class="combo-pop">
+                <div class="combo-item on">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/></svg>
+                  Miami Dade County <span class="tail">2 skills · mdc</span>
+                </div>
+                <div class="combo-item">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                  Create “Miami Dade” <span class="tail">new client</span>
+                </div>
+              </div>
+            </div>
+            <div class="field">
+              <label for="w-code">Code</label>
+              <input class="input ghost" id="w-code" value="mdc" />
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="w-project">Project</label>
+            <input class="input" id="w-project" value="Permitting" />
+          </div>
+
+          <div class="callout">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="margin-top:2px;flex:none"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+            <div>Every coworker here starts with <b>Miami Dade County</b>'s 2 skills and 3 knowledge docs. Box <span class="mono">MDC Permitting Project</span> · channel <span class="mono">#mdc-permitting</span>.</div>
+          </div>
+        </div>
+        <div class="dialog-foot">
+          <button class="btn secondary">Back</button>
+          <span class="spacer"></span>
+          <button class="btn primary">Next — roster</button>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="frame-label">mobile · 375px</div>
+      <div class="dialog phone">
+        <div class="dialog-head">
+          <div><p class="dialog-title">Start a project</p><p class="dialog-desc">Step 1 of 4 · Project</p></div>
+          <div class="dialog-x">✕</div>
+        </div>
+        <div class="dialog-body">
+          <div class="field">
+            <label>Client</label>
+            <input class="input" value="Miami Dade" />
+            <div class="combo-pop">
+              <div class="combo-item on">Miami Dade County <span class="tail">mdc</span></div>
+              <div class="combo-item">Create “Miami Dade”</div>
+            </div>
+          </div>
+          <div class="field">
+            <label>Code</label>
+            <input class="input ghost" value="mdc" />
+          </div>
+          <div class="field">
+            <label>Project</label>
+            <input class="input" value="Permitting" />
+          </div>
+          <div class="callout"><div>Every coworker starts with <b>Miami Dade County</b>'s 2 skills and 3 docs.</div></div>
+        </div>
+        <div class="dialog-foot" style="flex-direction:column;align-items:stretch">
+          <button class="btn primary" style="width:100%">Next — roster</button>
+          <button class="btn secondary" style="width:100%">Back</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 5. SYNC ============ -->
+  <h2 class="section">5 · Saving a change</h2>
+  <p class="section-note">You chose re-push on edit. The write is per-coworker on the engine, so it reports per-coworker and survives an engine being down — a <span class="mono">client_skill_sync</span> state per agent, retried when the engine wakes.</p>
+
+  <div class="frames">
+    <div>
+      <div class="frame-label">confirm before overwriting</div>
+      <div class="dialog" style="width:440px">
+        <div class="dialog-head">
+          <div>
+            <p class="dialog-title">Update 7 coworkers?</p>
+            <p class="dialog-desc">county-doc-format changed.</p>
+          </div>
+        </div>
+        <div class="dialog-body">
+          <div class="rows">
+            <div class="row"><div class="row-main"><div class="row-title">MDC · Permitting</div><div class="row-meta">4 coworkers</div></div><span class="badge neutral">will update</span></div>
+            <div class="row"><div class="row-main"><div class="row-title">MDC · Licensing</div><div class="row-meta">3 coworkers</div></div><span class="badge neutral">will update</span></div>
+          </div>
+          <p class="hint">Their own skills and instructions are untouched. Only the client's skills are replaced.</p>
+        </div>
+        <div class="dialog-foot">
+          <span class="spacer"></span>
+          <button class="btn secondary">Cancel</button>
+          <button class="btn primary">Update them</button>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="frame-label">result</div>
+      <div class="dialog" style="width:440px">
+        <div class="dialog-head"><div><p class="dialog-title">Synced</p></div><div class="dialog-x">✕</div></div>
+        <div class="dialog-body">
+          <div class="sync">
+            <div class="sync-line ok"><span class="ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span> 6 coworkers updated</div>
+            <div class="sync-line warn"><span class="ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg></span> mdc-licensing-pe-2 — engine offline, retried on wake</div>
+          </div>
+          <div class="callout" style="margin-top:14px"><div>The client row shows <span class="badge orange">1 to sync</span> until it lands. Nothing is lost: the pending write is state on the row, not a toast you can miss.</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 6. COWORKER PANEL ============ -->
+  <h2 class="section">6 · On the coworker itself</h2>
+  <p class="section-note">In the coworker's Skills tab, the client's skills read as inherited and are not editable there — editing one would silently diverge from the client, which is the drift you wanted to avoid. The way to change it is a link straight to the client.</p>
+
+  <div class="frames">
+    <div>
+      <div class="frame-label">desktop · agent panel, Skills tab</div>
+      <div class="dialog" style="width:520px">
+        <div class="dialog-head"><div><p class="dialog-title">mdc-permitting-po · Skills</p></div><div class="dialog-x">✕</div></div>
+        <div class="dialog-body">
+          <div class="group">
+            <div class="group-head"><h3>From Miami Dade County</h3><span class="aside">client of this Box</span></div>
+            <div class="rows">
+              <div class="row">
+                <div class="row-main"><div class="row-title">county-doc-format <span class="badge brand">client</span></div><div class="row-meta">Edit it on the client — it is shared by 7 coworkers.</div></div>
+                <button class="btn ghost sm">Open client ›</button>
+              </div>
+              <div class="row">
+                <div class="row-main"><div class="row-title">county-comms-tone <span class="badge brand">client</span></div></div>
+                <button class="btn ghost sm">Open client ›</button>
+              </div>
+            </div>
+          </div>
+          <div class="group">
+            <div class="group-head"><h3>Its own</h3></div>
+            <div class="rows">
+              <div class="row">
+                <div class="row-main"><div class="row-title">permit-intake-triage</div></div>
+                <div class="row-actions"><button class="btn ghost sm">Edit</button><button class="btn danger sm">Remove</button></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="frame-label">loading · SkeletonPanelRows, never a spinner</div>
+      <div class="dialog" style="width:340px">
+        <div class="dialog-head"><div><p class="dialog-title">Clients</p></div></div>
+        <div class="dialog-body">
+          <div class="rows">
+            <div class="row"><div class="row-ico" style="background:var(--muted)"></div><div class="row-main" style="display:flex;flex-direction:column;gap:7px"><div class="skel w1"></div><div class="skel w3"></div></div></div>
+            <div class="row"><div class="row-ico" style="background:var(--muted)"></div><div class="row-main" style="display:flex;flex-direction:column;gap:7px"><div class="skel w2"></div><div class="skel w1"></div></div></div>
+            <div class="row"><div class="row-ico" style="background:var(--muted)"></div><div class="row-main" style="display:flex;flex-direction:column;gap:7px"><div class="skel w3"></div><div class="skel w2"></div></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
