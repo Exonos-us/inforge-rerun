@@ -316,14 +316,18 @@ grep -rn 'authoredSkillMarkdown' apps/ui | grep -v node_modules
 
 Expected: the new file, its import in `preset.service.ts`, and the call site. Nothing orphaned.
 
-**Step 5: Typecheck and run the preset tests**
+**Step 5: Typecheck**
 
 ```bash
 pnpm --filter rerun ts-check
-pnpm --filter rerun test app/api/_services/preset
 ```
 
-Expected: no type errors, preset tests still green. **This is a pure move — if any test changes behaviour, you moved more than the function.**
+Expected: no type errors.
+
+> **There are no tests for `preset.service.ts`.** `pnpm --filter rerun test app/api/_services/preset`
+> matches zero files and exits 1 — it cannot gate anything. The typecheck plus the function text
+> being byte-identical are what back the claim that nothing changed. Do not add a test here; Task 7
+> is where that file first gets one.
 
 **Step 6: Commit**
 
@@ -790,15 +794,51 @@ git commit -am "feat(clients): sync every coworker of a client, counting what di
 **Files:**
 - Modify: `apps/ui/app/api/_services/preset.service.ts` (the hire path that calls `applyAuthoredExtras`)
 
-**Step 1: Write the failing test** — hiring into a Box with `client_id` installs the client's skills *after* the preset's.
+**Step 1: Write the failing tests**
+
+Create `apps/ui/app/api/_services/preset.hire.test.ts` with exactly these three cases, and no more
+— the rest of the hire path stays as untested as it is today, and Task 12 drives a real hire in the
+running app:
+
+```ts
+it('installs the client’s skills after the preset’s when the Box has a client', async () => {
+    await hireFromPreset({ ...params, spaceId: 'space-with-client' })
+    expect(applyClientExtras).toHaveBeenCalled()
+    expect(order).toEqual(['authored', 'client'])   // the preset first, then the client
+})
+
+it('does not reach for a client when the Box has none', async () => {
+    await hireFromPreset({ ...params, spaceId: 'space-without-client' })
+    expect(applyClientExtras).not.toHaveBeenCalled()
+})
+
+it('still hires when the client install fails', async () => {
+    applyClientExtras.mockRejectedValueOnce(new Error('engine offline'))
+    const outcome = await hireFromPreset({ ...params, spaceId: 'space-with-client' })
+    expect(outcome.agentId).toBeTruthy()
+    expect(outcome.warnings.length).toBeGreaterThan(0)
+})
+```
+
+That third case is the important one: a coworker must still arrive when its client's skills cannot.
+A hire that throws because an engine was briefly unreachable would be a worse bug than the missing
+skills.
 
 **Step 2: Implement** — after `applyAuthoredExtras(...)`, look up the Box's client and call `applyClientExtras`, then set the new agent's `client_revision`.
 
-**Step 3: Confirm the preset tests still pass**
+**Step 3: Run your new test and the full suite**
 
 ```bash
-pnpm --filter rerun test app/api/_services/preset
+pnpm --filter rerun test app/api/_services/preset.hire.test.ts
+pnpm --filter rerun test
 ```
+
+> **You are writing the first test `preset.service.ts` has ever had**, so you bear the setup cost:
+> mocking `createServiceRoleClient`, the engine client, and `getSpaceConnection`. Follow
+> `apps/ui/app/api/v1/ai-connections/route.test.ts` for the mocking shape. Budget for this — it is
+> most of the task, and the two-line change to the hire path is the small part.
+>
+> The full suite is the real regression gate here, since nothing else covers this file.
 
 **Step 4: Commit.**
 
