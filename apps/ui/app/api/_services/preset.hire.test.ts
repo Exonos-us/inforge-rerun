@@ -2,9 +2,10 @@ import type { Database } from '@/app/api/database.types'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { applyClientExtras, createAgent, createMemory, createSchedule, createSkill, deriveUniqueHandles, getSpaceConnection, importSkill, makeDir, patchAgent, writeFileText } = vi.hoisted(() => ({
+const { applyClientExtras, createAgent, createBoxesBatch, createMemory, createSchedule, createSkill, deriveUniqueHandles, getSpaceConnection, importSkill, makeDir, patchAgent, writeFileText } = vi.hoisted(() => ({
     applyClientExtras: vi.fn(),
     createAgent: vi.fn(),
+    createBoxesBatch: vi.fn(),
     createMemory: vi.fn(),
     createSchedule: vi.fn(),
     createSkill: vi.fn(),
@@ -32,6 +33,7 @@ vi.mock('@/lib/engine/client', () => ({
     writeFileText,
 }))
 vi.mock('@/app/api/_services/space.service', () => ({ getSpaceConnection }))
+vi.mock('@/app/api/_services/box.service', () => ({ createBoxesBatch }))
 vi.mock('@/app/api/_services/agent.service', () => ({
     createAgent,
     deriveUniqueHandles,
@@ -48,14 +50,17 @@ vi.mock('@/app/api/_services/client.service', async () => ({
 }))
 
 import { selectMany, selectMaybeSingle } from '@/supabase/supabase-helpers'
-import { hireFromPreset } from './preset.service'
+import { hireFromPreset, hireTeam } from './preset.service'
 
 const MDC = 'a1b8d4fa-0db3-4de6-9305-f1fb9c37ca34'
+const ANOTHER_WORKSPACES_CLIENT = 'c9f4d0e1-5a2b-4c3d-8e7f-0a1b2c3d4e5f'
 const WITH_CLIENT = 'space-with-client'
 const WITHOUT_CLIENT = 'space-without-client'
+const FRESH_BOX = 'space-just-created'
 
 const order: string[] = []
 const agentWrites: { id: string; payload: Record<string, unknown> }[] = []
+const spaceWrites: { id: string; payload: Record<string, unknown> }[] = []
 
 const presetRow = {
     id: 'preset-1',
@@ -95,6 +100,7 @@ const supabase = {
                     },
                     then<T>(onFulfilled: (value: unknown) => T) {
                         if (table === 'agents') agentWrites.push({ id, payload })
+                        if (table === 'spaces') spaceWrites.push({ id, payload })
                         return Promise.resolve({ error: null }).then(onFulfilled)
                     },
                 }
@@ -111,13 +117,26 @@ const params = {
     answers: [],
 }
 
+const teamParams = {
+    workspaceId: 7,
+    userId: 'user-1',
+    userEmail: null,
+    actor: { userId: 'user-1', workspaceId: 7 } as never,
+    spaceName: 'MDC Permitting Project',
+    roster: [{ presetId: 'preset-1', name: 'Ava', icon: null }],
+    channel: null,
+    answers: [],
+}
+
 beforeEach(() => {
     vi.clearAllMocks()
     order.length = 0
     agentWrites.length = 0
+    spaceWrites.length = 0
 
     getSpaceConnection.mockResolvedValue({ baseUrl: 'https://engine.test', apiKey: 'k' })
     deriveUniqueHandles.mockResolvedValue(['ava'])
+    createBoxesBatch.mockResolvedValue([{ ok: true, spaceId: FRESH_BOX, name: 'MDC Permitting Project', colStart: 0, rowStart: 0, colEnd: 4, rowEnd: 4 }])
     createAgent.mockResolvedValue({ id: 'agent-1', name: 'Ava', engine_agent_id: 'engine-1', disabled_at: null })
     createSkill.mockImplementation(async () => {
         order.push('authored')
@@ -130,7 +149,8 @@ beforeEach(() => {
     vi.mocked(selectMany).mockResolvedValue({ data: [presetRow], error: null } as never)
     vi.mocked(selectMaybeSingle).mockImplementation((async (_supabase: unknown, table: string, _columns: unknown, filters: Record<string, unknown>) => {
         if (table === 'spaces') return { data: { client_id: filters.id === WITH_CLIENT ? MDC : null }, error: null }
-        return { data: clientRow, error: null }
+        // Scoped by workspace, like the real read: a client id from another workspace finds nothing.
+        return { data: filters.id === MDC ? clientRow : null, error: null }
     }) as never)
 })
 
@@ -162,5 +182,36 @@ describe('hiring into a Box that has a client', () => {
         expect(outcome.agents[0]?.id).toBe('agent-1')
         expect(outcome.warnings.length).toBeGreaterThan(0)
         expect(agentWrites).toEqual([])
+    })
+})
+
+// The Start project wizard is the only caller that knows a client before the Box exists, so the
+// pick has to land on the Box between its creation and the first hire — otherwise the roster reads
+// a Box with no client and the wizard's promise is copy over nothing.
+describe('hiring a team for the client picked in the wizard', () => {
+    it('points the fresh Box at the client, so every coworker of the batch inherits it', async () => {
+        const outcome = await hireTeam({ ...teamParams, clientId: MDC })
+
+        expect(spaceWrites).toEqual([{ id: FRESH_BOX, payload: { client_id: MDC } }])
+        expect(applyClientExtras).toHaveBeenCalledWith(expect.objectContaining({ id: MDC, revision: 5 }), FRESH_BOX, expect.objectContaining({ id: 'agent-1' }), outcome.warnings)
+        expect(agentWrites).toEqual([{ id: 'agent-1', payload: { client_revision: 5 } }])
+        expect(outcome.warnings).toEqual([])
+    })
+
+    it('leaves the Box alone when the wizard sent no client', async () => {
+        const outcome = await hireTeam({ ...teamParams, clientId: null })
+
+        expect(spaceWrites).toEqual([])
+        expect(applyClientExtras).not.toHaveBeenCalled()
+        expect(outcome.agents).toHaveLength(1)
+    })
+
+    it('still hires, and warns, when the picked client is not the workspace’s', async () => {
+        const outcome = await hireTeam({ ...teamParams, clientId: ANOTHER_WORKSPACES_CLIENT })
+
+        expect(spaceWrites).toEqual([])
+        expect(applyClientExtras).not.toHaveBeenCalled()
+        expect(outcome.agents).toHaveLength(1)
+        expect(outcome.warnings).toHaveLength(1)
     })
 })

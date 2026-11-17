@@ -1,4 +1,5 @@
 import type { ClientListEntry } from '@/app/api/_actions/client.actions'
+import type { ClientView } from '@/app/api/_services/client.service'
 import { Badge } from '@rerun/ui/primitives'
 import type { ReactNode } from 'react'
 
@@ -47,6 +48,17 @@ export function clientSummaryLine(client: ClientListEntry): string {
         client.knowledgeDocs.length ? plural(client.knowledgeDocs.length, 'doc') : 'no doc',
         client.coworkers ? plural(client.coworkers, 'coworker') : 'no coworker',
     ].join(' · ')
+}
+
+// What a coworker starts with when this client is behind its Box, said as a sentence fragment:
+// the Box dialog and the Start project wizard both promise it, and they promise the same thing.
+export function clientCarries(client: Pick<ClientView, 'skills' | 'knowledgeDocs'>): string {
+    const skills = client.skills.length
+    const docs = client.knowledgeDocs.length
+    if (!skills && !docs) return 'no skill and no document yet'
+    if (!docs) return plural(skills, 'skill')
+    if (!skills) return plural(docs, 'document')
+    return `${plural(skills, 'skill')} and ${plural(docs, 'document')}`
 }
 
 export function boxCount(count: number): string {

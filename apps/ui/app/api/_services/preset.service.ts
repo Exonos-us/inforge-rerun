@@ -386,10 +386,19 @@ async function applyAuthoredExtras(source: ArchiveSource, spaceId: string, agent
     }
 }
 
+// The client of a Box the hire did not create: hireCoworker drops a single coworker into a Box
+// that already stands on the board, with whatever engagement it already carries.
 async function clientOfBox(supabase: SupabaseClient<Database>, workspaceId: number, spaceId: string): Promise<ClientView | null> {
     const { data } = await selectMaybeSingle(supabase, 'spaces', ['client_id'] as const, { id: spaceId, workspace_id: workspaceId })
     if (!data?.client_id) return null
     return await getClient(supabase, workspaceId, data.client_id)
+}
+
+async function pointFreshBoxAt(supabase: SupabaseClient<Database>, workspaceId: number, spaceId: string, clientId: string): Promise<ClientView | null> {
+    const client = await getClient(supabase, workspaceId, clientId)
+    if (!client) return null
+    const { error } = await supabase.from('spaces').update<Database['public']['Tables']['spaces']['Update']>({ client_id: client.id }).eq('id', spaceId).eq('workspace_id', workspaceId)
+    return error ? null : client
 }
 
 // The engagement a hire inherits from its Box, installed after the preset's own extras so two
@@ -500,6 +509,7 @@ export type HireTeamParams = {
     roster: RosterEntry[]
     channel: { name: string; isPrivate: boolean } | null
     answers: HireAnswer[]
+    clientId: string | null
 }
 
 const CHANNEL_NAME_RE = /^[a-z0-9][a-z0-9-_]{0,78}$/
@@ -527,9 +537,13 @@ export async function hireTeam(params: HireTeamParams): Promise<HireOutcome> {
     const warnings: string[] = []
     const agents: HireOutcome['agents'] = []
     const engineIds = new Map<string, string>()
-    // Read once for the whole roster: the Box is the same for every coworker of the batch. It is
-    // the Box this call just created, so it carries a client only once something sets one on it.
-    const client = await clientOfBox(supabase, params.workspaceId, spaceId).catch(() => null)
+    // The Box was created a few lines above, so nothing but this call can have given it a client:
+    // the wizard's pick is written onto it here, once for the whole roster. Reading the client back
+    // from the workspace's own rows first is what keeps a Box from pointing at another workspace's,
+    // which the foreign key alone does not forbid. A Box that ends up without the client it asked
+    // for is still a hired team, so this warns rather than throws.
+    const client = params.clientId ? await pointFreshBoxAt(supabase, params.workspaceId, spaceId, params.clientId).catch(() => null) : null
+    if (params.clientId && !client) warnings.push('The Box was created without its client, so nothing of it was installed. Point the Box at it from its menu.')
 
     for (const [index, entry] of params.roster.entries()) {
         try {

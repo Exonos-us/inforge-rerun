@@ -2,7 +2,7 @@
 
 import { setBoxClientAction, type ClientListEntry } from '@/app/api/_actions/client.actions'
 import { BoxClientSyncReport, type BoxClientChange } from '@/components/clients/BoxClientSyncReport'
-import { ClientShortCode, ClientStatusBadge, clientSummaryLine, plural } from '@/components/clients/ClientCells'
+import { clientCarries, ClientShortCode, ClientStatusBadge, clientSummaryLine, plural } from '@/components/clients/ClientCells'
 import { Group } from '@/components/connections/AiProvidersPanel'
 import { ConfirmDialog } from '@/components/dialogs/ConfirmDialog'
 import { PanelDialogContent } from '@/components/dialogs/PanelDialogContent'
@@ -39,15 +39,6 @@ type BoxClientDialogProps = {
 // `null` as the next client is the unlink: the Box keeps its coworkers, they lose the client’s part.
 type PendingPick = { next: ClientListEntry | null }
 
-function carries(client: ClientListEntry): string {
-    const skills = client.skills.length
-    const docs = client.knowledgeDocs.length
-    if (!skills && !docs) return 'no skill and no document yet'
-    if (!docs) return plural(skills, 'skill')
-    if (!skills) return plural(docs, 'document')
-    return `${plural(skills, 'skill')} and ${plural(docs, 'document')}`
-}
-
 function confirmCopy(pick: PendingPick, current: ClientListEntry | null, coworkers: number, boxLabel: string): { title: string; description: string; confirmLabel: string; destructive: boolean } {
     const roster = plural(coworkers, 'coworker')
     if (!pick.next) {
@@ -61,14 +52,14 @@ function confirmCopy(pick: PendingPick, current: ClientListEntry | null, coworke
     if (current) {
         return {
             title: `Replace ${current.name} with ${pick.next.name} on ${roster}?`,
-            description: `Every coworker in ${boxLabel} loses ${current.name}’s skills and documents and gets ${pick.next.name}’s (${carries(pick.next)}). Their own skills and instructions are untouched.`,
+            description: `Every coworker in ${boxLabel} loses ${current.name}’s skills and documents and gets ${pick.next.name}’s (${clientCarries(pick.next)}). Their own skills and instructions are untouched.`,
             confirmLabel: 'Replace',
             destructive: false,
         }
     }
     return {
         title: `Install ${pick.next.name} on ${roster}?`,
-        description: `Every coworker in ${boxLabel} gets ${pick.next.name}’s ${carries(pick.next)}. Their own skills and instructions are untouched.`,
+        description: `Every coworker in ${boxLabel} gets ${pick.next.name}’s ${clientCarries(pick.next)}. Their own skills and instructions are untouched.`,
         confirmLabel: 'Install',
         destructive: false,
     }
