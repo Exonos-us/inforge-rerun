@@ -115,7 +115,29 @@ against. `short_code` is still unique per workspace (`clients_workspace_short_co
 names Boxes, channels and coworkers — `mdc-permitting-po` is ambiguous to a human if two clients
 answer to `mdc` — but nothing on the engine depends on it.
 
-Three callers, one function:
+### The engine has to allow it
+
+The engine refused an explicit slug for a skill that did not already exist:
+
+```ts
+if (input.slug && !existed) return c.json({ error: 'skill not found' }, 404)
+```
+
+So the first install of every client skill 404'd, and since `applyClientExtras` turns engine errors
+into warnings, the symptom was "every coworker warned, nothing landed" — visible only in the
+running app. The guard exists so a typo'd slug cannot silently create a stray skill; that intent
+survives if creating requires `overwrite: true` to be passed explicitly, which says "put this skill
+at this slug, replacing whatever is there".
+
+Engines are self-hosted and update independently of the app, so this ships as a capability
+(`skills.import-create`) rather than a silent contract change. On an engine that lacks it, the app
+says so once per coworker in the words `desktop.service.ts` already uses for an engine too old to
+show its screen, instead of emitting one 404 per skill. Knowledge docs are plain file writes and
+need no capability.
+
+No data-dir migration: nothing on disk changes shape, only which requests are accepted.
+
+### Three callers, one function
 
 1. **Hire** into a Box with a client — after `applyAuthoredExtras`, so ordering is deterministic.
 2. **Set or change a Box's client** — remove the previous client's namespaced skills and docs,

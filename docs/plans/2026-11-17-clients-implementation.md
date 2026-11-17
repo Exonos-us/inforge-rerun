@@ -510,6 +510,137 @@ git commit -m "feat(clients): read and write a client, revision bumped on every 
 
 ---
 
+## Task 4b: Let the engine create a skill at an explicit slug
+
+**Why this task exists.** `applyClientExtras` (Task 5) installs a client skill with
+`importSkill(..., { slug, overwrite: true })`, because an explicit slug is what makes a re-push
+replace rather than duplicate. But the engine currently refuses an explicit slug that does not
+already exist:
+
+```ts
+// apps/engine/src/http/routes/skills.ts
+const slug = input.slug ?? slugify(parsed.name)
+const existed = skillExists(agentId, slug)
+if (input.slug && !existed) return c.json({ error: 'skill not found' }, 404)
+```
+
+So the **first** install of every client skill 404s. `overwrite: true` only covers the second call.
+And because `applyClientExtras` turns engine errors into warnings, the symptom is "every coworker
+warned, no skill ever landed" — a failure that only shows up in the running app.
+
+The guard is there so a typo'd slug cannot silently create a stray skill. That intent is still
+served if creating requires `overwrite: true` to be passed explicitly: the caller is then saying
+"put this skill at this slug, replacing whatever is there", for which creating is the obvious
+meaning.
+
+**Engines are self-hosted and update independently of the app**, so this is a capability, not a
+silent contract change. No data-dir migration: nothing on disk changes shape, only which requests
+are accepted.
+
+**Files:**
+- Modify: `packages/contracts/src/health.ts` (new capability constant)
+- Modify: `apps/engine/src/http/routes/health.ts` (report it)
+- Modify: `apps/engine/src/http/routes/skills.ts` (the guard)
+- Test: `apps/engine/src/http/routes/skills.import.test.ts`
+- Modify: `apps/engine/src/http/routes/health.test.ts`
+
+**Step 1: Write the failing engine test**
+
+In `apps/engine/src/http/routes/skills.import.test.ts`, following the shape of the existing route
+tests in that directory:
+
+```ts
+it('creates a skill at an explicit slug when overwrite is set', async () => {
+    const res = await importSkill({ content: SKILL_MD, slug: 'client-a1b8d4fa-doc-format', overwrite: true })
+    expect(res.status).toBe(201)
+    expect((await res.json()).slug).toBe('client-a1b8d4fa-doc-format')
+})
+
+it('replaces, not duplicates, when the same slug is imported twice', async () => {
+    await importSkill({ content: SKILL_MD, slug: 'client-a1b8d4fa-doc-format', overwrite: true })
+    const res = await importSkill({ content: SKILL_MD_V2, slug: 'client-a1b8d4fa-doc-format', overwrite: true })
+    expect(res.status).toBe(200)
+    expect(await listSkillSlugs()).toEqual(['client-a1b8d4fa-doc-format'])
+})
+
+it('still refuses an explicit slug that does not exist when overwrite is not set', async () => {
+    const res = await importSkill({ content: SKILL_MD, slug: 'client-a1b8d4fa-doc-format' })
+    expect(res.status).toBe(404)
+})
+```
+
+That third test is the one that keeps the original guard meaningful. **Do not delete it** if it is
+inconvenient — it is the reason this change is safe.
+
+**Step 2: Run it and watch the first two fail**
+
+```bash
+pnpm --filter rerun-engine test skills.import
+```
+
+Expected: the first two FAIL with 404, the third passes already.
+
+**Step 3: Change the guard**
+
+```ts
+if (input.slug && !existed && !input.overwrite) return c.json({ error: 'skill not found' }, 404)
+```
+
+**Step 4: Add the capability**
+
+In `packages/contracts/src/health.ts`, beside the existing constants:
+
+```ts
+export const ENGINE_CAPABILITY_SKILL_IMPORT_CREATE = 'skills.import-create'
+```
+
+Report it from `apps/engine/src/http/routes/health.ts`, and extend `health.test.ts` to assert it is
+present, as that test already does for the others.
+
+**Step 5: Run the engine tests**
+
+```bash
+pnpm --filter rerun-engine test skills.import
+pnpm --filter rerun-engine test health
+pnpm --filter @rerun/contracts build
+```
+
+Expected: all green. The contracts build matters — the UI imports the constant from there.
+
+**Step 6: Commit**
+
+```bash
+git add packages/contracts/src/health.ts apps/engine/src/http/routes apps/engine/src/http/routes/skills.import.test.ts
+git commit -m "feat(engine): import a skill at an explicit slug when overwrite is set"
+```
+
+---
+
+## Task 4c: The UI says so when the engine is too old
+
+**Files:**
+- Modify: `apps/ui/lib/engine/client.ts` (a `supportsSkillImportCreate` beside the existing capability helper around line 661)
+- Modify: `apps/ui/app/api/_services/client.service.ts`
+
+`apps/ui/lib/engine/client.ts:661` already reads `/health` capabilities into a `Set`. Add a helper
+in the same shape, then have `applyClientExtras` check it **once per connection, before the skill
+loop**, and if the capability is absent push a single clear warning rather than one 404 per skill:
+
+```ts
+warnings.push(`"${agent.name}" is on a machine that needs an update before client skills can land.`)
+```
+
+Model the wording on the precedent in `apps/ui/app/api/_services/desktop.service.ts`: "The screen
+arrives with the next update of this machine." Knowledge docs are plain file writes and do not need
+the capability — install those regardless.
+
+**Test** (in `client-install.service.test.ts`, mocking the health call): an engine without the
+capability produces exactly one warning, installs no skills, and still writes the knowledge docs.
+
+**Commit:** `feat(clients): tell the user when a machine is too old for client skills`
+
+---
+
 ## Task 5: Installing a client on a coworker
 
 The heart of the feature. Mirrors `applyAuthoredExtras` (`preset.service.ts:335`) — **and like it, never throws.** It accumulates warnings.
@@ -534,7 +665,7 @@ describe('applyClientExtras', () => {
         await applyClientExtras(client, 'space-1', agent, [])
         expect(importSkill).toHaveBeenCalledWith(
             expect.anything(), 'engine-agent-1', expect.any(String), [],
-            { slug: 'client-mdc-doc-format', overwrite: true },
+            { slug: 'client-a1b8d4fa-doc-format', overwrite: true },
         )
     })
 
@@ -548,15 +679,15 @@ describe('applyClientExtras', () => {
 
     it('writes knowledge under the client’s own folder', async () => {
         await applyClientExtras(client, 'space-1', agent, [])
-        expect(writeFileText).toHaveBeenCalledWith(expect.anything(), expect.any(String), 'knowledge/client-mdc/acronyms.md', expect.any(String))
+        expect(writeFileText).toHaveBeenCalledWith(expect.anything(), expect.any(String), 'knowledge/client-a1b8d4fa/acronyms.md', expect.any(String))
     })
 })
 
 describe('removeClientExtras', () => {
     it('removes the client’s skills and only those', async () => {
-        await removeClientExtras(client, 'space-1', agent, ['client-mdc-doc-format', 'permit-intake-triage'], [])
+        await removeClientExtras(client, 'space-1', agent, ['client-a1b8d4fa-doc-format', 'permit-intake-triage'], [])
         expect(deleteSkill).toHaveBeenCalledTimes(1)
-        expect(deleteSkill).toHaveBeenCalledWith(expect.anything(), 'engine-agent-1', 'client-mdc-doc-format')
+        expect(deleteSkill).toHaveBeenCalledWith(expect.anything(), 'engine-agent-1', 'client-a1b8d4fa-doc-format')
     })
 })
 ```
@@ -582,7 +713,7 @@ export async function applyClientExtras(client: ClientView, spaceId: string, age
 
     const conn = await getSpaceConnection(spaceId)
     for (const skill of client.skills.filter(s => s.name.trim())) {
-        const slug = clientSkillSlug(client.shortCode, skill.name)
+        const slug = clientSkillSlug(client.id, skill.name)
         const content = skill.raw || authoredSkillMarkdown(skill)
         await importSkill(conn, agent.engine_agent_id, content, skill.files, { slug, overwrite: true }).catch(() => {
             warnings.push(`"${agent.name}" did not get "${skill.name.trim()}" from ${client.name}.`)
@@ -590,7 +721,7 @@ export async function applyClientExtras(client: ClientView, spaceId: string, age
     }
     if (client.knowledgeDocs.length > 0) {
         const base = `/agents/${agent.engine_agent_id}/files`
-        const dir = clientKnowledgeDir(client.shortCode)
+        const dir = clientKnowledgeDir(client.id)
         await makeDir(conn, base, dir).catch(() => {})
         for (const doc of client.knowledgeDocs.filter(d => d.path.trim())) {
             await writeFileText(conn, base, `${dir}/${doc.path.trim()}`, doc.content).catch(() => {
@@ -601,7 +732,7 @@ export async function applyClientExtras(client: ClientView, spaceId: string, age
 }
 ```
 
-`removeClientExtras` takes the coworker's existing slugs and deletes only those matching `isClientSkillSlug(slug, client.shortCode)`.
+`removeClientExtras` takes the coworker's existing slugs and deletes only those matching `isClientSkillSlug(slug, client.id)`.
 
 **Step 4: Run the tests**
 
