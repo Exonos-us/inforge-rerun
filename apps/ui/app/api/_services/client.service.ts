@@ -176,16 +176,28 @@ export async function applyClientExtras(client: ClientView, spaceId: string, age
     const docs = client.knowledgeDocs.filter(doc => doc.path.trim())
     if (skills.length === 0 && docs.length === 0) return
 
-    const conn = await getSpaceConnection(spaceId)
+    const conn = await getSpaceConnection(spaceId).catch(() => null)
+    if (!conn) {
+        warnings.push(`"${agent.name}" did not get ${client.name}'s skills and documents: its machine could not be reached.`)
+        return
+    }
     // The gate stands between the skills and nothing else: the documents below are plain file
     // writes and land on a machine of any age.
     if (skills.length > 0 && (await canInstallClientSkills(conn, agent, warnings))) {
+        let everySkillLanded = true
         for (const skill of skills) {
             await importSkill(conn, engineAgentId, skill.raw || authoredSkillMarkdown(skill), skill.files, { slug: clientSkillSlug(client.id, skill.name), overwrite: true }).catch(() => {
+                everySkillLanded = false
                 warnings.push(`"${agent.name}" did not get "${skill.name.trim()}" from ${client.name}.`)
             })
         }
-        await removeSkillsTheClientDropped(conn, client, { name: agent.name, engine_agent_id: engineAgentId }, skills, warnings)
+        // Pushing before deleting only protects a rename if the push actually landed: with
+        // "Old intake" renamed to "New intake" and the new one refused, the reconcile would read
+        // the old slug as dropped and leave the coworker with neither. So one failed push holds
+        // the whole reconcile back, and a skill the client genuinely dropped survives until the
+        // next sync. Keeping something stale is the safe direction; deleting something live is
+        // not, and the revision gap already marks this coworker as pending a retry.
+        if (everySkillLanded) await removeSkillsTheClientDropped(conn, client, { name: agent.name, engine_agent_id: engineAgentId }, skills, warnings)
     }
     if (docs.length > 0) {
         const base = `/agents/${engineAgentId}/files`
@@ -206,7 +218,11 @@ export async function removeClientExtras(client: ClientView, spaceId: string, ag
     const engineAgentId = agent.engine_agent_id
     if (!engineAgentId) return
 
-    const conn = await getSpaceConnection(spaceId)
+    const conn = await getSpaceConnection(spaceId).catch(() => null)
+    if (!conn) {
+        warnings.push(`"${agent.name}" kept ${client.name}'s skills and documents: its machine could not be reached.`)
+        return
+    }
     for (const slug of installedSlugs) {
         if (!isClientSkillSlug(client.id, slug)) continue
         await deleteSkill(conn, engineAgentId, slug).catch(() => {

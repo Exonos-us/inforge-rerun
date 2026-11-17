@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { deleteFile, deleteSkill, importSkill, listSkillSummaries, makeDir, supportsSkillImportCreate, writeFileText } = vi.hoisted(() => ({
+const { deleteFile, deleteSkill, getSpaceConnection, importSkill, listSkillSummaries, makeDir, supportsSkillImportCreate, writeFileText } = vi.hoisted(() => ({
     deleteFile: vi.fn(),
     deleteSkill: vi.fn(),
+    getSpaceConnection: vi.fn(),
     importSkill: vi.fn(),
     listSkillSummaries: vi.fn(),
     makeDir: vi.fn(),
@@ -13,7 +14,7 @@ vi.mock('@/lib/engine/client', () => ({ deleteFile, deleteSkill, importSkill, li
 vi.mock('@/supabase/supabase-helpers', () => ({ selectMany: vi.fn(), selectMaybeSingle: vi.fn() }))
 
 const conn = { baseUrl: 'https://engine.test', apiKey: 'k' }
-vi.mock('@/app/api/_services/space.service', () => ({ getSpaceConnection: async () => conn }))
+vi.mock('@/app/api/_services/space.service', () => ({ getSpaceConnection }))
 
 import { applyClientExtras, canInstallClientSkills, removeClientExtras, type ClientView } from './client.service'
 
@@ -44,6 +45,7 @@ function engineAnswers() {
     for (const call of [deleteFile, deleteSkill, importSkill, makeDir, writeFileText]) call.mockResolvedValue(undefined)
     listSkillSummaries.mockResolvedValue([])
     supportsSkillImportCreate.mockResolvedValue(true)
+    getSpaceConnection.mockResolvedValue(conn)
 }
 
 describe('a machine too old for client skills', () => {
@@ -181,6 +183,19 @@ describe('applyClientExtras', () => {
         expect(warnings[0]).toContain('client-a1b8d4fa-old-intake')
     })
 
+    it('keeps a skill the client dropped when a push did not land', async () => {
+        const renamed = client({ skills: [{ name: 'New intake', description: 'The intake as it stands', body: 'Ask for the folio number.', raw: '', files: [] }] })
+        importSkill.mockRejectedValueOnce(new Error('payload too large'))
+        listSkillSummaries.mockResolvedValue(summaries('client-a1b8d4fa-old-intake'))
+        const warnings: string[] = []
+
+        await expect(applyClientExtras(renamed, 'space-1', coworker, warnings)).resolves.toBeUndefined()
+
+        expect(deleteSkill).not.toHaveBeenCalled()
+        expect(warnings).toHaveLength(1)
+        expect(warnings[0]).toContain('New intake')
+    })
+
     it('deletes nothing when the engine cannot say what is installed', async () => {
         listSkillSummaries.mockRejectedValue(new Error('engine offline'))
         const warnings: string[] = []
@@ -188,6 +203,36 @@ describe('applyClientExtras', () => {
         await expect(applyClientExtras(client(), 'space-1', coworker, warnings)).resolves.toBeUndefined()
 
         expect(deleteSkill).not.toHaveBeenCalled()
+    })
+})
+
+describe('a machine that cannot be reached', () => {
+    beforeEach(engineAnswers)
+
+    it('warns instead of throwing when the Box has no machine to apply a client on', async () => {
+        getSpaceConnection.mockRejectedValue(new Error('Box not found'))
+        const warnings: string[] = []
+
+        await expect(applyClientExtras(client(), 'space-1', coworker, warnings)).resolves.toBeUndefined()
+
+        expect(importSkill).not.toHaveBeenCalled()
+        expect(writeFileText).not.toHaveBeenCalled()
+        expect(warnings).toHaveLength(1)
+        expect(warnings[0]).toContain('"Ava"')
+        expect(warnings[0]).toContain('Miami-Dade County')
+    })
+
+    it('warns instead of throwing when the Box has no machine to remove a client from', async () => {
+        getSpaceConnection.mockRejectedValue(new Error('Box not found'))
+        const warnings: string[] = []
+
+        await expect(removeClientExtras(client(), 'space-1', coworker, ['client-a1b8d4fa-doc-format'], warnings)).resolves.toBeUndefined()
+
+        expect(deleteSkill).not.toHaveBeenCalled()
+        expect(deleteFile).not.toHaveBeenCalled()
+        expect(warnings).toHaveLength(1)
+        expect(warnings[0]).toContain('"Ava"')
+        expect(warnings[0]).toContain('Miami-Dade County')
     })
 })
 
