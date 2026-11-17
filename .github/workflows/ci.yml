@@ -39,8 +39,22 @@ jobs:
       - uses: supabase/setup-cli@v1
         with:
           version: 2.113.0
+      # `db:types` shells out to npx and to a script importing only node:fs, so it needs node and
+      # pnpm but no install: skipping `pnpm install` keeps this job as short as it was.
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - run: supabase db start
       - run: supabase db reset --local
+      # packages/db/src/database.types.ts is generated, and for a long time nothing checked it: it
+      # drifted into missing a real foreign key (api_keys_created_by_user_id_fkey) and a real
+      # function (password_verification_attempt) while still type-checking. Regenerating it against
+      # the database the step above just built is the only thing that catches a migration that
+      # landed without its types.
+      - run: pnpm db:types
+      - name: database.types.ts is up to date with the migrations
+        run: git diff --exit-code -- packages/db/src/database.types.ts
 
   # The images take ~20 minutes to build: a pull request only builds them when it touches what
   # goes into them beyond the code the other jobs already check, and every push to master and
