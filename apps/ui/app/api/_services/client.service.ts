@@ -9,7 +9,7 @@ import type { EngineConnection } from '@/lib/engine/types'
 import { shortCodeOf } from '@/lib/presets/naming'
 import { authoredSkillMarkdown } from '@/lib/presets/skill-markdown'
 import { authoredSkillsFromRow, knowledgeDocsFromRow, type AuthoredSkill, type KnowledgeDoc } from '@/lib/presets/types'
-import { selectMany, selectMaybeSingle } from '@/supabase/supabase-helpers'
+import { selectCount, selectMany, selectMaybeSingle, type Filters } from '@/supabase/supabase-helpers'
 
 // A client is who the workspace works for: the skills and knowledge every coworker on that
 // engagement starts with. The payload columns hold the same shapes a preset holds, so the same
@@ -232,4 +232,68 @@ export async function removeClientExtras(client: ClientView, spaceId: string, ag
     await deleteFile(conn, `/agents/${engineAgentId}/files`, clientKnowledgeDir(client.id)).catch(() => {
         warnings.push(`"${agent.name}" kept the documents of ${client.name}.`)
     })
+}
+
+export type ClientSyncResult = { synced: number; pending: number; warnings: string[] }
+
+const SYNC_TARGET_COLUMNS = ['id', 'name', 'space_id', 'engine_agent_id'] as const
+
+async function boxIdsOfClient(supabase: SupabaseClient<Database>, workspaceId: number, clientId: string): Promise<string[]> {
+    const { data } = await selectMany(supabase, 'spaces', ['id'] as const, { workspace_id: workspaceId, client_id: clientId })
+    return (data ?? []).map(space => space.id)
+}
+
+// A coworker with no engine agent is on no machine, so a client can neither land on it nor trail on
+// it: both the sync and the count leave it out, which is what keeps them agreeing.
+function coworkersOnAMachine(workspaceId: number, boxIds: string[]): Filters<'agents'> {
+    return { workspace_id: workspaceId, space_id: boxIds, engine_agent_id: { notNull: true } }
+}
+
+async function markClientRevision(supabase: SupabaseClient<Database>, workspaceId: number, agentId: string, revision: number): Promise<boolean> {
+    const { error } = await supabase.from('agents').update<Database['public']['Tables']['agents']['Update']>({ client_revision: revision }).eq('id', agentId).eq('workspace_id', workspaceId)
+    return !error
+}
+
+// One coworker is never allowed to end the sync: the engine of the next Box may be perfectly
+// reachable. applyClientExtras collects rather than throws, and the catch here covers what it
+// cannot — a capability check that rejects, a payload that cannot be built.
+export async function syncClient(supabase: SupabaseClient<Database>, workspaceId: number, clientId: string): Promise<ClientSyncResult> {
+    const client = await getClient(supabase, workspaceId, clientId)
+    if (!client) throw new Error('Could not find the client')
+
+    const boxIds = await boxIdsOfClient(supabase, workspaceId, clientId)
+    if (boxIds.length === 0) return { synced: 0, pending: 0, warnings: [] }
+
+    const { data } = await selectMany(supabase, 'agents', SYNC_TARGET_COLUMNS, coworkersOnAMachine(workspaceId, boxIds))
+
+    const warnings: string[] = []
+    let synced = 0
+    let pending = 0
+    for (const coworker of data ?? []) {
+        // Each coworker gets its own warning list, because warnings are the only report of what did
+        // not land: a revision written over a partial install closes the gap for good, and nothing
+        // would ever come back for the skills that are missing.
+        const coworkerWarnings: string[] = []
+        await applyClientExtras(client, coworker.space_id, coworker, coworkerWarnings).catch(() => {
+            coworkerWarnings.push(`"${coworker.name}" did not get ${client.name}'s skills and documents: its machine could not be reached.`)
+        })
+        warnings.push(...coworkerWarnings)
+
+        if (coworkerWarnings.length === 0 && (await markClientRevision(supabase, workspaceId, coworker.id, client.revision))) synced += 1
+        else pending += 1
+    }
+    return { synced, pending, warnings }
+}
+
+// The single source of truth behind "N to sync". `client_revision is null or < revision` is two
+// conditions on one column, which the `or` of the typed helpers cannot hold, so the trailing
+// coworkers are counted as every coworker minus the ones already level with the client.
+export async function pendingSyncCount(supabase: SupabaseClient<Database>, workspaceId: number, clientId: string, revision: number): Promise<number> {
+    const boxIds = await boxIdsOfClient(supabase, workspaceId, clientId)
+    if (boxIds.length === 0) return 0
+
+    const coworkers = coworkersOnAMachine(workspaceId, boxIds)
+    const { data: total } = await selectCount(supabase, 'agents', coworkers)
+    const { data: level } = await selectCount(supabase, 'agents', { ...coworkers, client_revision: { gte: revision } })
+    return Math.max((total ?? 0) - (level ?? 0), 0)
 }
