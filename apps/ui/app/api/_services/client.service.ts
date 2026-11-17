@@ -3,12 +3,13 @@ import 'server-only'
 import type { Database } from '@/app/api/database.types'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getSpaceConnection } from '@/app/api/_services/space.service'
-import { clientKnowledgeDir, clientSkillSlug, isClientSkillSlug } from '@/lib/clients/naming'
-import { deleteFile, deleteSkill, importSkill, listSkillSummaries, makeDir, supportsSkillImportCreate, writeFileText } from '@/lib/engine/client'
+import { CLIENT_KNOWLEDGE_ROOT, clientKnowledgeDir, clientNamespace, clientSkillSlug, isAnyClientNamespace, isClientSkillSlug } from '@/lib/clients/naming'
+import { deleteFile, deleteSkill, importSkill, listFiles, listSkillSummaries, makeDir, supportsSkillImportCreate, writeFileText } from '@/lib/engine/client'
 import type { EngineConnection } from '@/lib/engine/types'
 import { shortCodeOf } from '@/lib/presets/naming'
 import { authoredSkillMarkdown } from '@/lib/presets/skill-markdown'
 import { authoredSkillsFromRow, knowledgeDocsFromRow, type AuthoredSkill, type KnowledgeDoc } from '@/lib/presets/types'
+import { createServiceRoleClient } from '@/supabase/serviceRole'
 import { selectCount, selectMany, selectMaybeSingle, type Filters } from '@/supabase/supabase-helpers'
 
 // A client is who the workspace works for: the skills and knowledge every coworker on that
@@ -234,6 +235,67 @@ export async function removeClientExtras(client: ClientView, spaceId: string, ag
     })
 }
 
+const MOVED_COWORKER_COLUMNS = ['id', 'name', 'space_id', 'workspace_id', 'engine_agent_id'] as const
+
+// What the coworker carries from the engagements it is not on. The engine is read rather than the
+// clients table: a namespace survives its row being deleted and a restored data-dir can bring one
+// back, and neither would be named by anything this workspace still points at.
+async function removeEveryOtherClient(conn: EngineConnection, engineAgentId: string, agentName: string, clientId: string | null, warnings: string[]): Promise<void> {
+    const keep = clientId ? clientNamespace(clientId) : null
+    const installed = await listSkillSummaries(conn, engineAgentId).catch(() => null)
+    for (const summary of installed ?? []) {
+        if (!isAnyClientNamespace(summary.slug) || (clientId && isClientSkillSlug(clientId, summary.slug))) continue
+        await deleteSkill(conn, engineAgentId, summary.slug).catch(() => {
+            warnings.push(`"${agentName}" kept "${summary.slug}", which came from another client.`)
+        })
+    }
+
+    const base = `/agents/${engineAgentId}/files`
+    const entries = await listFiles(conn, base, CLIENT_KNOWLEDGE_ROOT).catch(() => null)
+    for (const entry of entries ?? []) {
+        if (!isAnyClientNamespace(entry.name) || entry.name === keep) continue
+        await deleteFile(conn, base, `${CLIENT_KNOWLEDGE_ROOT}/${entry.name}`).catch(() => {
+            warnings.push(`"${agentName}" kept the documents of another client.`)
+        })
+    }
+}
+
+// Keeps a coworker in step with the client of the Box it stands in: called after a move between
+// Boxes and after one lands in a Box, best-effort both times, like the project note beside it.
+//
+// The revision is the reason this cannot be skipped. It is a number of one client's, so a coworker
+// moved out of an engagement at revision 5 into one at revision 1 reads as level with its new
+// client while carrying the old one's skills, and no sync ever comes back for it. Clearing it is
+// the safe direction: a coworker trailing by mistake is re-pushed something it already has.
+export async function syncAgentClient(agentId: string): Promise<void> {
+    const supabase = createServiceRoleClient()
+    const { data: agent } = await selectMaybeSingle(supabase, 'agents', MOVED_COWORKER_COLUMNS, { id: agentId })
+    if (!agent?.engine_agent_id) return
+
+    const { data: box } = await selectMaybeSingle(supabase, 'spaces', ['client_id'] as const, { id: agent.space_id, workspace_id: agent.workspace_id })
+    const clientId = box?.client_id ?? null
+    const client = clientId ? await getClient(supabase, agent.workspace_id, clientId) : null
+
+    const warnings: string[] = []
+    const conn = await getSpaceConnection(agent.space_id).catch(() => null)
+    if (conn) await removeEveryOtherClient(conn, agent.engine_agent_id, agent.name, client?.id ?? null, warnings)
+    else warnings.push(`"${agent.name}" kept the skills and documents of the client it left: its machine could not be reached.`)
+
+    if (!client) {
+        await markClientRevision(supabase, agent.workspace_id, agent.id, null)
+        return
+    }
+    // Only this install gates the revision, exactly as changing a Box's client does: a leftover
+    // from the client the coworker left is a different failure, and holding the revision back for
+    // it would mark the coworker as trailing a client it is in fact level with, forever — a sync
+    // re-pushes the new client's skills, it never revisits the old one's namespace.
+    const warningsBeforeInstall = warnings.length
+    await applyClientExtras(client, agent.space_id, agent, warnings).catch(() => {
+        warnings.push(`"${agent.name}" did not get ${client.name}'s skills and documents: its machine could not be reached.`)
+    })
+    if (warnings.length === warningsBeforeInstall) await markClientRevision(supabase, agent.workspace_id, agent.id, client.revision)
+}
+
 export type ClientSyncResult = { synced: number; pending: number; warnings: string[] }
 
 const SYNC_TARGET_COLUMNS = ['id', 'name', 'space_id', 'engine_agent_id'] as const
@@ -249,7 +311,7 @@ function coworkersOnAMachine(workspaceId: number, boxIds: string[]): Filters<'ag
     return { workspace_id: workspaceId, space_id: boxIds, engine_agent_id: { notNull: true } }
 }
 
-async function markClientRevision(supabase: SupabaseClient<Database>, workspaceId: number, agentId: string, revision: number): Promise<boolean> {
+async function markClientRevision(supabase: SupabaseClient<Database>, workspaceId: number, agentId: string, revision: number | null): Promise<boolean> {
     const { error } = await supabase.from('agents').update<Database['public']['Tables']['agents']['Update']>({ client_revision: revision }).eq('id', agentId).eq('workspace_id', workspaceId)
     return !error
 }

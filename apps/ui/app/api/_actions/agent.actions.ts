@@ -11,6 +11,7 @@ import { getWorkspaceConnection, NoEngineError } from '@/app/api/_services/works
 import { followCoworker } from '@/app/api/_services/notification-audience.service'
 import { getServerSession } from '@/supabase/session/getServerSession'
 import { deleteAgent, duplicateAgent, moveAgentToBox, renameAgent } from '@/app/api/_services/agent.service'
+import { syncAgentClient } from '@/app/api/_services/client.service'
 import { syncAgentProjectNote } from '@/app/api/_services/project-knowledge.service'
 import {
     type ScheduleCreateParams,
@@ -124,8 +125,13 @@ export async function moveAgentAction(input: unknown): Promise<MoveAgentResult> 
     try {
         const { agentId, spaceId } = moveInputSchema.parse(input)
         const result = await moveAgentToBox(agentId, spaceId, await requireLightSessionActor())
-        // The project note follows the coworker into (or out of) a linked Box, best-effort.
-        if (result.ok) await syncAgentProjectNote(agentId).catch(() => {})
+        // The project note and the client of the Box both follow the coworker into (or out of) the
+        // Box it joins, best-effort: a move that errored out leaves the board wrong, which is worse
+        // than a coworker a sync still has to catch up with.
+        if (result.ok) {
+            await syncAgentProjectNote(agentId).catch(() => {})
+            await syncAgentClient(agentId).catch(() => {})
+        }
         return result
     } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : 'Could not move this coworker' }

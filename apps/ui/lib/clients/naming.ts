@@ -44,6 +44,17 @@ export function isClientSkillSlug(clientId: string, slug: string): boolean {
     return slug.startsWith(`${clientNamespace(clientId)}-`)
 }
 
+// Whether a slug or a knowledge folder belongs to some client rather than to the coworker itself.
+// A coworker moved between two engagements has to drop what the client it is leaving put on it,
+// and that client is not always readable: its row may be gone, and a restored data-dir can carry a
+// namespace no Box of this workspace points at. So the question is asked of the name alone, and
+// the prefix it reads stays here next to the one clientNamespace writes.
+export function isAnyClientNamespace(name: string): boolean {
+    return name.startsWith(`${PREFIX}-`)
+}
+
+export const CLIENT_KNOWLEDGE_ROOT = 'knowledge'
+
 export function clientKnowledgeDir(clientId: string): string {
-    return `knowledge/${clientNamespace(clientId)}`
+    return `${CLIENT_KNOWLEDGE_ROOT}/${clientNamespace(clientId)}`
 }
