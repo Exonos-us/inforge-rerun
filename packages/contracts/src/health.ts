@@ -56,6 +56,10 @@ export const ENGINE_CAPABILITY_OPENCODE = 'connections.opencode'
 // The engine runs custom OpenAI-compatible connections and answers `POST /connections/probe`.
 export const ENGINE_CAPABILITY_CUSTOM = 'connections.custom'
 
+// `POST /skills/import` creates a skill at an explicit slug when `overwrite` is set, instead of
+// 404ing because that slug is not there yet. An older engine only lets an explicit slug replace.
+export const ENGINE_CAPABILITY_SKILL_IMPORT_CREATE = 'skills.import-create'
+
 // What the last `rerun update` on a box did, as `/health` reports it.
 export const engineLastUpdateSchema = z.object({
     status: z.enum(['running', 'error', 'restarting', 'success']),

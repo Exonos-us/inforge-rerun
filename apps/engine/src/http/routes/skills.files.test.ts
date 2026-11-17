@@ -245,11 +245,10 @@ describe('skill folders over HTTP', () => {
         expect(reread).toMatchObject({ name: skill.name, description: skill.description, body: skill.body })
     })
 
-    it('404s on a slug that does not exist', async () => {
+    it('404s on a slug that does not exist when overwrite is not set', async () => {
         const res = await json(`/agents/${id}/skills/import`, 'POST', {
             content: '---\nname: Ghost\ndescription: x\n---\n\nbody\n',
             slug: 'nope',
-            overwrite: true,
         })
         expect(res.status).toBe(404)
     })
