@@ -13,6 +13,7 @@ import { defaultExcludedPaths } from '@rerun/contracts'
 import { captureAgentArchive } from '@/lib/agents/capture-archive'
 import { createMemory, createSchedule, createSkill, getAgent, importSkill, makeDir, patchAgent, planAgentArchive, writeFileText } from '@/lib/engine/client'
 import { randomUuid } from '@/lib/random-uuid'
+import { authoredSkillMarkdown } from '@/lib/presets/skill-markdown'
 import {
     authoredRoutinesFromRow,
     authoredSkillsFromRow,
@@ -382,12 +383,6 @@ async function applyAuthoredExtras(source: ArchiveSource, spaceId: string, agent
             })
         }
     }
-}
-
-// JSON strings are valid YAML double-quoted scalars, so a composed frontmatter survives any name.
-function authoredSkillMarkdown(skill: AuthoredSkill): string {
-    const quote = (value: string) => JSON.stringify(value.replace(/\s+/g, ' ').trim())
-    return `---\nname: ${quote(skill.name)}\ndescription: ${quote(skill.description)}\n---\n\n${skill.body}`
 }
 
 // A captured preset is unpacked from its archive; a from-scratch one is scaffolded from its soul,
