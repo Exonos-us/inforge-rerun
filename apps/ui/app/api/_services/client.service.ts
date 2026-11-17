@@ -2,9 +2,12 @@ import 'server-only'
 
 import type { Database } from '@/app/api/database.types'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { supportsSkillImportCreate } from '@/lib/engine/client'
+import { getSpaceConnection } from '@/app/api/_services/space.service'
+import { clientKnowledgeDir, clientSkillSlug, isClientSkillSlug } from '@/lib/clients/naming'
+import { deleteFile, deleteSkill, importSkill, listSkillSummaries, makeDir, supportsSkillImportCreate, writeFileText } from '@/lib/engine/client'
 import type { EngineConnection } from '@/lib/engine/types'
 import { shortCodeOf } from '@/lib/presets/naming'
+import { authoredSkillMarkdown } from '@/lib/presets/skill-markdown'
 import { authoredSkillsFromRow, knowledgeDocsFromRow, type AuthoredSkill, type KnowledgeDoc } from '@/lib/presets/types'
 import { selectMany, selectMaybeSingle } from '@/supabase/supabase-helpers'
 
@@ -137,4 +140,80 @@ export async function canInstallClientSkills(conn: EngineConnection, agent: { na
     if (await supportsSkillImportCreate(conn)) return true
     warnings.push(`"${agent.name}" did not get the client's skills: they arrive with the next update of this machine.`)
     return false
+}
+
+export type ClientTarget = { name: string; engine_agent_id: string | null }
+
+// The client row is the intent and the engine is the truth, so what a coworker should no longer
+// have is the difference between the two rather than a list kept on the row: a recorded list drifts
+// the moment a data-dir is restored, an agent is imported, or a skill is deleted from the panel.
+//
+// An empty skill list is never permission to delete. `authoredSkillsFromRow` is `.catch([])`, so a
+// malformed `clients.skills` jsonb parses as zero skills instead of failing, and a reconcile that
+// read that as "the client dropped everything" would wipe its skills off every coworker in every
+// Box from one bad row. The caller only reaches here with at least one skill it just pushed.
+async function removeSkillsTheClientDropped(conn: EngineConnection, client: ClientView, agent: { name: string; engine_agent_id: string }, skills: AuthoredSkill[], warnings: string[]): Promise<void> {
+    const wanted = new Set(skills.map(skill => clientSkillSlug(client.id, skill.name)))
+    const installed = await listSkillSummaries(conn, agent.engine_agent_id).catch(() => null)
+    if (!installed) return
+    for (const summary of installed) {
+        if (!isClientSkillSlug(client.id, summary.slug) || wanted.has(summary.slug)) continue
+        await deleteSkill(conn, agent.engine_agent_id, summary.slug).catch(() => {
+            warnings.push(`"${agent.name}" kept "${summary.slug}", which ${client.name} no longer has.`)
+        })
+    }
+}
+
+// Mirrors applyAuthoredExtras in preset.service.ts: it never throws, it collects warnings. A
+// coworker whose engine is down keeps the skills it has and shows up as trailing the revision.
+//
+// Skills are pushed before anything is deleted, so an import that fails leaves the coworker with
+// what it had rather than with nothing.
+export async function applyClientExtras(client: ClientView, spaceId: string, agent: ClientTarget, warnings: string[]): Promise<void> {
+    const engineAgentId = agent.engine_agent_id
+    if (!engineAgentId) return
+    const skills = client.skills.filter(skill => skill.name.trim())
+    const docs = client.knowledgeDocs.filter(doc => doc.path.trim())
+    if (skills.length === 0 && docs.length === 0) return
+
+    const conn = await getSpaceConnection(spaceId)
+    // The gate stands between the skills and nothing else: the documents below are plain file
+    // writes and land on a machine of any age.
+    if (skills.length > 0 && (await canInstallClientSkills(conn, agent, warnings))) {
+        for (const skill of skills) {
+            await importSkill(conn, engineAgentId, skill.raw || authoredSkillMarkdown(skill), skill.files, { slug: clientSkillSlug(client.id, skill.name), overwrite: true }).catch(() => {
+                warnings.push(`"${agent.name}" did not get "${skill.name.trim()}" from ${client.name}.`)
+            })
+        }
+        await removeSkillsTheClientDropped(conn, client, { name: agent.name, engine_agent_id: engineAgentId }, skills, warnings)
+    }
+    if (docs.length > 0) {
+        const base = `/agents/${engineAgentId}/files`
+        const dir = clientKnowledgeDir(client.id)
+        await makeDir(conn, base, dir).catch(() => {})
+        for (const doc of docs) {
+            await writeFileText(conn, base, `${dir}/${doc.path.trim()}`, doc.content).catch(() => {
+                warnings.push(`"${agent.name}" did not get the document "${doc.path.trim()}".`)
+            })
+        }
+    }
+}
+
+// What a Box leaves behind when it changes client. The caller passes the slugs the coworker
+// actually has, and only those inside this client's namespace are touched — a coworker's own
+// skills, and another client's, are never in it.
+export async function removeClientExtras(client: ClientView, spaceId: string, agent: ClientTarget, installedSlugs: readonly string[], warnings: string[]): Promise<void> {
+    const engineAgentId = agent.engine_agent_id
+    if (!engineAgentId) return
+
+    const conn = await getSpaceConnection(spaceId)
+    for (const slug of installedSlugs) {
+        if (!isClientSkillSlug(client.id, slug)) continue
+        await deleteSkill(conn, engineAgentId, slug).catch(() => {
+            warnings.push(`"${agent.name}" kept "${slug}", which came from ${client.name}.`)
+        })
+    }
+    await deleteFile(conn, `/agents/${engineAgentId}/files`, clientKnowledgeDir(client.id)).catch(() => {
+        warnings.push(`"${agent.name}" kept the documents of ${client.name}.`)
+    })
 }
