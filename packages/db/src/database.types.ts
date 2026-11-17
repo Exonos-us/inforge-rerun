@@ -227,6 +227,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "api_keys_created_by_user_id_fkey"
+            columns: ["created_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "api_keys_workspace_id_fkey"
             columns: ["workspace_id"]
             isOneToOne: false
@@ -1331,6 +1338,35 @@ export type Database = {
           },
         ]
       }
+      foreman_builds: {
+        Row: {
+          finished_at: string | null
+          result: Json | null
+          started_at: string
+          workspace_id: number
+        }
+        Insert: {
+          finished_at?: string | null
+          result?: Json | null
+          started_at?: string
+          workspace_id: number
+        }
+        Update: {
+          finished_at?: string | null
+          result?: Json | null
+          started_at?: string
+          workspace_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "foreman_builds_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: true
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       foreman_conversations: {
         Row: {
           backend: string
@@ -1377,35 +1413,6 @@ export type Database = {
             foreignKeyName: "foreman_conversations_workspace_id_fkey"
             columns: ["workspace_id"]
             isOneToOne: false
-            referencedRelation: "workspaces"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      foreman_builds: {
-        Row: {
-          finished_at: string | null
-          result: Json | null
-          started_at: string
-          workspace_id: number
-        }
-        Insert: {
-          finished_at?: string | null
-          result?: Json | null
-          started_at?: string
-          workspace_id: number
-        }
-        Update: {
-          finished_at?: string | null
-          result?: Json | null
-          started_at?: string
-          workspace_id?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "foreman_builds_workspace_id_fkey"
-            columns: ["workspace_id"]
-            isOneToOne: true
             referencedRelation: "workspaces"
             referencedColumns: ["id"]
           },
@@ -2847,55 +2854,6 @@ export type Database = {
           },
         ]
       }
-      space_members: {
-        Row: {
-          access: string
-          created_at: string
-          granted_by: string | null
-          space_id: string
-          user_id: string
-          workspace_id: number
-        }
-        Insert: {
-          access: string
-          created_at?: string
-          granted_by?: string | null
-          space_id: string
-          user_id: string
-          workspace_id: number
-        }
-        Update: {
-          access?: string
-          created_at?: string
-          granted_by?: string | null
-          space_id?: string
-          user_id?: string
-          workspace_id?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "space_members_granted_by_fkey"
-            columns: ["granted_by"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "space_members_space_id_workspace_id_fkey"
-            columns: ["space_id", "workspace_id"]
-            isOneToOne: false
-            referencedRelation: "spaces"
-            referencedColumns: ["id", "workspace_id"]
-          },
-          {
-            foreignKeyName: "space_members_user_id_workspace_id_fkey"
-            columns: ["user_id", "workspace_id"]
-            isOneToOne: false
-            referencedRelation: "workspace_members"
-            referencedColumns: ["user_id", "workspace_id"]
-          },
-        ]
-      }
       space_knowledge: {
         Row: {
           cloud_id: string
@@ -2969,6 +2927,55 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "workspaces"
             referencedColumns: ["id"]
+          },
+        ]
+      }
+      space_members: {
+        Row: {
+          access: string
+          created_at: string
+          granted_by: string | null
+          space_id: string
+          user_id: string
+          workspace_id: number
+        }
+        Insert: {
+          access: string
+          created_at?: string
+          granted_by?: string | null
+          space_id: string
+          user_id: string
+          workspace_id: number
+        }
+        Update: {
+          access?: string
+          created_at?: string
+          granted_by?: string | null
+          space_id?: string
+          user_id?: string
+          workspace_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "space_members_granted_by_fkey"
+            columns: ["granted_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "space_members_space_id_workspace_id_fkey"
+            columns: ["space_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "spaces"
+            referencedColumns: ["id", "workspace_id"]
+          },
+          {
+            foreignKeyName: "space_members_user_id_workspace_id_fkey"
+            columns: ["user_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspace_members"
+            referencedColumns: ["user_id", "workspace_id"]
           },
         ]
       }
@@ -3057,8 +3064,8 @@ export type Database = {
           description: string
           id: string
           members: Json
-          tags: Json
           name: string
+          tags: Json
           updated_at: string
           workspace_id: number
         }
@@ -3068,8 +3075,8 @@ export type Database = {
           description?: string
           id?: string
           members?: Json
-          tags?: Json
           name: string
+          tags?: Json
           updated_at?: string
           workspace_id: number
         }
@@ -3079,8 +3086,8 @@ export type Database = {
           description?: string
           id?: string
           members?: Json
-          tags?: Json
           name?: string
+          tags?: Json
           updated_at?: string
           workspace_id?: number
         }
@@ -3812,6 +3819,53 @@ export type Database = {
           },
         ]
       }
+      workspace_apps: {
+        Row: {
+          app_slug: string
+          created_at: string
+          frozen_at: string | null
+          slots: number
+          status: string
+          trial_ends_at: string | null
+          trial_reminder_sent_at: string | null
+          trial_settled_at: string | null
+          updated_at: string
+          workspace_id: number
+        }
+        Insert: {
+          app_slug: string
+          created_at?: string
+          frozen_at?: string | null
+          slots?: number
+          status?: string
+          trial_ends_at?: string | null
+          trial_reminder_sent_at?: string | null
+          trial_settled_at?: string | null
+          updated_at?: string
+          workspace_id: number
+        }
+        Update: {
+          app_slug?: string
+          created_at?: string
+          frozen_at?: string | null
+          slots?: number
+          status?: string
+          trial_ends_at?: string | null
+          trial_reminder_sent_at?: string | null
+          trial_settled_at?: string | null
+          updated_at?: string
+          workspace_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workspace_apps_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       workspace_archives: {
         Row: {
           archived_at: string | null
@@ -4071,53 +4125,6 @@ export type Database = {
             foreignKeyName: "workspace_onboarding_workspace_id_fkey"
             columns: ["workspace_id"]
             isOneToOne: true
-            referencedRelation: "workspaces"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      workspace_apps: {
-        Row: {
-          app_slug: string
-          created_at: string
-          frozen_at: string | null
-          slots: number
-          status: string
-          trial_settled_at: string | null
-          trial_ends_at: string | null
-          trial_reminder_sent_at: string | null
-          updated_at: string
-          workspace_id: number
-        }
-        Insert: {
-          app_slug: string
-          created_at?: string
-          frozen_at?: string | null
-          slots?: number
-          status?: string
-          trial_settled_at?: string | null
-          trial_ends_at?: string | null
-          trial_reminder_sent_at?: string | null
-          updated_at?: string
-          workspace_id: number
-        }
-        Update: {
-          app_slug?: string
-          created_at?: string
-          frozen_at?: string | null
-          slots?: number
-          status?: string
-          trial_settled_at?: string | null
-          trial_ends_at?: string | null
-          trial_reminder_sent_at?: string | null
-          updated_at?: string
-          workspace_id?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "workspace_apps_workspace_id_fkey"
-            columns: ["workspace_id"]
-            isOneToOne: false
             referencedRelation: "workspaces"
             referencedColumns: ["id"]
           },
@@ -4427,11 +4434,9 @@ export type Database = {
         Args: { p_source_key: string; p_user_id: string }
         Returns: boolean
       }
+      password_verification_attempt: { Args: { event: Json }; Returns: Json }
       rerun_credit_usage: {
-        Args: {
-          p_since: string
-          p_workspace_id: number
-        }
+        Args: { p_since: string; p_workspace_id: number }
         Returns: {
           calls: number
           day: string
@@ -4445,7 +4450,10 @@ export type Database = {
         Args: { p_source_key: string }
         Returns: string[]
       }
-      touch_sandbox_activity: { Args: { p_user_id: string }; Returns: undefined }
+      touch_sandbox_activity: {
+        Args: { p_user_id: string }
+        Returns: undefined
+      }
       unseen_runs: {
         Args: { p_workspace_id: number }
         Returns: {
