@@ -16,6 +16,7 @@ import type { ServiceSearchResult } from '@/lib/services/types'
 import { useCatalogServices } from '@/hooks/useCatalogServices'
 import { ChevronLeftIcon } from '@/lib/icons'
 import { slugOf } from '@/lib/presets/naming'
+import { parseSkillMeta } from '@/lib/presets/skill-markdown'
 import type { AuthoredRoutine, AuthoredSkill, KnowledgeDoc, PresetQuestion } from '@/lib/presets/types'
 import { isTextSkillFile, readSkillFolders } from '@/lib/skills/folder-import'
 import { serviceIconProps } from '@/lib/services/icons'
@@ -201,18 +202,6 @@ export function PresetDetailPage({ preset, onBack, reload, onHired }: { preset: 
 function humanList(items: string[]): string {
     if (items.length === 1) return items[0]
     return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`
-}
-
-// The name and description a SKILL.md declares in its frontmatter, for the row the store shows.
-// The raw text stays untouched: it is what the hire imports.
-function parseSkillMeta(content: string, fallback: string): { name: string; description: string } {
-    const frontmatter = content.match(/^---\s*\n([\s\S]*?)\n---/)?.[1] ?? ''
-    const pick = (key: string) =>
-        frontmatter
-            .match(new RegExp(`^${key}:\\s*(.+)$`, 'm'))?.[1]
-            .trim()
-            .replace(/^['"]|['"]$/g, '') ?? ''
-    return { name: pick('name') || fallback, description: pick('description') }
 }
 
 function IdentitySection({ draft, onChange }: { draft: Draft; onChange: (draft: Draft) => void }) {
