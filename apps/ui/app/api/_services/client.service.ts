@@ -2,6 +2,8 @@ import 'server-only'
 
 import type { Database } from '@/app/api/database.types'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { supportsSkillImportCreate } from '@/lib/engine/client'
+import type { EngineConnection } from '@/lib/engine/types'
 import { shortCodeOf } from '@/lib/presets/naming'
 import { authoredSkillsFromRow, knowledgeDocsFromRow, type AuthoredSkill, type KnowledgeDoc } from '@/lib/presets/types'
 import { selectMany, selectMaybeSingle } from '@/supabase/supabase-helpers'
@@ -122,4 +124,17 @@ export async function updateClient(supabase: SupabaseClient<Database>, workspace
 export async function deleteClient(supabase: SupabaseClient<Database>, workspaceId: number, clientId: string): Promise<void> {
     const { error } = await supabase.from('clients').delete().eq('id', clientId).eq('workspace_id', workspaceId)
     if (error) throw new Error(error.message)
+}
+
+// A client's skills land on their own slug, which only an engine carrying `skills.import-create`
+// will create. Boxes self-update on their own schedule, so an older one is a normal state: the gate
+// is asked once per connection, before any skill is attempted, so the person reads one line instead
+// of one failure per skill. It stands between the skills and nothing else — knowledge docs are
+// plain file writes and install either way.
+//
+// Task 5's applyClientExtras calls this right before its skill loop.
+export async function canInstallClientSkills(conn: EngineConnection, agent: { name: string }, warnings: string[]): Promise<boolean> {
+    if (await supportsSkillImportCreate(conn)) return true
+    warnings.push(`"${agent.name}" did not get the client's skills: they arrive with the next update of this machine.`)
+    return false
 }
