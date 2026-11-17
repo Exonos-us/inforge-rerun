@@ -938,6 +938,57 @@ Actions: `listClientsAction`, `createClientAction`, `updateClientAction` (then `
 
 ---
 
+## Task 8b: A coworker's client follows it between Boxes
+
+**Why.** `agent.service.ts:103` moves a coworker with `{ space_id, col, row }` and nothing else.
+So a coworker moved from a Miami-Dade Box into an Acme Box keeps Miami-Dade's skills — and worse,
+reads as **synced**: its `client_revision` is 5 from the old client, Acme is at revision 1, and
+`pendingSyncCount` counts agents *below* the revision, so it is never picked up. The Box says Acme;
+the coworker works to Miami-Dade's house style; nothing anywhere disagrees.
+
+The same applies to creating a coworker in a Box and duplicating one into another.
+
+**The precedent to mirror, exactly.** Project knowledge already solves this shape:
+
+- `apps/ui/app/api/_services/agent.service.ts:201` — a private `syncProjectNote(agentId)` with a
+  **lazy import** (`project-knowledge.service` reaches back into services `agent.service` feeds) and
+  a `try/catch` that swallows, because the coworker works without the note.
+- `apps/ui/app/api/_actions/agent.actions.ts:128` — `await syncAgentProjectNote(agentId).catch(() => {})`
+  after a successful move.
+
+Follow that structure. Do not invent a third mechanism, and do not make the move fail when the
+reconcile does — a coworker that moved but kept the wrong skills is recoverable; a move that errors
+out leaves the board wrong.
+
+**Files:**
+- Modify: `apps/ui/app/api/_services/client.service.ts` (a `syncAgentClient(agentId)` entry point)
+- Modify: `apps/ui/app/api/_services/agent.service.ts` (create / import path, beside `syncProjectNote`)
+- Modify: `apps/ui/app/api/_actions/agent.actions.ts` (after a successful move, beside the project note)
+- Test: `apps/ui/app/api/_services/client-move.service.test.ts`
+
+**What `syncAgentClient(agentId)` does**, reusing what already exists:
+
+1. Read the agent's current Box and that Box's `client_id`.
+2. Remove any **other** client's namespace from the coworker. `isClientSkillSlug(clientId, slug)`
+   only answers about one client, so removal here is "every `client-*` slug that is not this Box's
+   client" — read the installed slugs with `listSkillSummaries` and drop the rest.
+3. If the Box has a client, `applyClientExtras`, then set `client_revision` to that client's
+   revision — **only when nothing warned**, exactly as Task 6 and Task 7 do.
+4. If the Box has no client, clear `client_revision` to null after the removal.
+
+**The test that matters most:** a coworker moved from a Box with client A into a Box with client B
+ends with B's skills, without A's, and with `client_revision` equal to B's revision — not A's.
+A test asserting only that B's skills arrived would pass while A's were still installed.
+
+**Also test:** a move into a Box with no client removes the old client's skills and clears the
+revision; a reconcile that throws does not fail the move.
+
+**Constraints:** never run `pnpm db:reset` or anything that drops the local database. Run only your
+own test file plus the five existing client/hire/action test files. Comments only where they carry
+non-obvious reasoning.
+
+---
+
 ## Task 9: The Clients panel
 
 **Files:**

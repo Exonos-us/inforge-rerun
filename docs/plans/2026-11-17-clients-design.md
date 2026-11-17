@@ -137,12 +137,16 @@ need no capability.
 
 No data-dir migration: nothing on disk changes shape, only which requests are accepted.
 
-### Three callers, one function
+### Four callers, one function
 
 1. **Hire** into a Box with a client — after `applyAuthoredExtras`, so ordering is deterministic.
 2. **Set or change a Box's client** — remove the previous client's namespaced skills and docs,
    then apply the new one. Confirmed first when the Box already has coworkers.
 3. **Edit a client** — apply to every coworker in every Box pointing at it.
+4. **A coworker moves, is created, or is duplicated** — its Box decides its client, so the
+   reconcile runs for that one coworker. Without this a moved coworker keeps the old
+   client's skills *and* reads as synced, because its recorded revision is higher than the
+   new client's. Project knowledge already follows a coworker this way.
 
 ## Failure and sync state
 
