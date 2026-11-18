@@ -78,7 +78,7 @@ export function BoardContextMenu({ children, target, onTargetClear }: BoardConte
     const otherBoxes = targetAgent ? spaces.filter(space => space.id !== targetAgent.spaceId && manageableSpaceIds.has(space.id)) : []
     // Read once the first time a Box is right-clicked: the item carries the client's name, so the
     // dialog is never needed just to check which one it is.
-    const { clients, reload: reloadClients } = useBoxClients(!!targetSpace || !!clientSpaceId)
+    const clients = useBoxClients(!!targetSpace || !!clientSpaceId)
     const clientOfTarget = clientOfBox(clients, targetSpace?.id)
     const coworkersInClientBox = clientSpaceId ? agents.filter(agent => agent.spaceId === clientSpaceId).length : 0
 
@@ -242,7 +242,6 @@ export function BoardContextMenu({ children, target, onTargetClear }: BoardConte
                 coworkers={coworkersInClientBox}
                 clients={clients}
                 open={!!clientSpaceId}
-                onChanged={reloadClients}
                 onOpenChange={open => {
                     if (!open) setClientSpaceId(null)
                 }}

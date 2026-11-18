@@ -1,6 +1,6 @@
 'use client'
 
-import { setBoxClientAction, type ClientListEntry } from '@/app/api/_actions/client.actions'
+import type { ClientListEntry } from '@/app/api/_actions/client.actions'
 import { BoxClientSyncReport, type BoxClientChange } from '@/components/clients/BoxClientSyncReport'
 import { clientCarries, ClientShortCode, ClientStatusBadge, clientSummaryLine, plural } from '@/components/clients/ClientCells'
 import { Group } from '@/components/connections/AiProvidersPanel'
@@ -18,6 +18,7 @@ import { clientOfBox } from '@/hooks/useBoxClients'
 import { BOX_MANAGE_ACTION_REASON } from '@/lib/board/box-access'
 import { UNNAMED_BOX_LABEL } from '@/lib/board/types'
 import { Building2, SearchIcon } from '@/lib/icons'
+import { useClientsStore } from '@/stores/clients.store'
 import { EmptyState } from '@rerun/ui/primitives'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
@@ -33,7 +34,6 @@ type BoxClientDialogProps = {
     clients: ClientListEntry[] | null
     open: boolean
     onOpenChange: (open: boolean) => void
-    onChanged: () => Promise<void>
 }
 
 // `null` as the next client is the unlink: the Box keeps its coworkers, they lose the client’s part.
@@ -65,7 +65,8 @@ function confirmCopy(pick: PendingPick, current: ClientListEntry | null, coworke
     }
 }
 
-export function BoxClientDialog({ spaceId, boxName, coworkers, clients, open, onOpenChange, onChanged }: BoxClientDialogProps) {
+export function BoxClientDialog({ spaceId, boxName, coworkers, clients, open, onOpenChange }: BoxClientDialogProps) {
+    const setBoxClient = useClientsStore(state => state.setBoxClient)
     const [query, setQuery] = useState('')
     const [pick, setPick] = useState<PendingPick | null>(null)
     const [saving, setSaving] = useState(false)
@@ -91,13 +92,12 @@ export function BoxClientDialog({ spaceId, boxName, coworkers, clients, open, on
     const apply = async (next: ClientListEntry | null) => {
         setSaving(true)
         const previous = current
-        const result = await setBoxClientAction({ spaceId, clientId: next?.id ?? null }).catch(() => null)
+        const result = await setBoxClient({ spaceId, clientId: next?.id ?? null }).catch(() => null)
         setSaving(false)
         setPick(null)
         if (!result) return toast.error('Could not change the client of this Box')
         if (!result.ok) return toast.error(result.error)
         setChange({ previous: previous?.name ?? null, next: next?.name ?? null, result: result.result })
-        await onChanged()
     }
 
     // A Box nobody stands in has nothing to overwrite, so the confirm would name a count of zero.

@@ -1,42 +1,36 @@
 'use client'
 
-import { createClientAction, listClientsAction, type ClientListEntry } from '@/app/api/_actions/client.actions'
 import { ClientDetail } from '@/components/clients/ClientDetail'
 import { ClientsTable } from '@/components/clients/ClientsTable'
 import { PanelDialogContent } from '@/components/dialogs/PanelDialogContent'
 import { Dialog, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { PanelSteps } from '@/components/ui/panel-steps'
 import { Building2 } from '@/lib/icons'
-import { useCallback, useEffect, useState } from 'react'
+import { useClientsStore } from '@/stores/clients.store'
+import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 
 // The Clients panel: who the workspace works for, and how each of them likes things done. The
 // whole list comes down in one action, so searching and sorting it never goes back to the server.
 export function ClientsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
-    const [clients, setClients] = useState<ClientListEntry[] | null>(null)
+    const clients = useClientsStore(state => state.clients)
+    const reload = useClientsStore(state => state.reload)
+    const createClient = useClientsStore(state => state.create)
     const [openId, setOpenId] = useState<string | null>(null)
     const [creating, setCreating] = useState(false)
 
-    const load = useCallback(async () => {
-        const result = await listClientsAction().catch(() => null)
-        if (!result) {
-            toast.error('The clients did not load. Reload the page and try again.')
-            return
-        }
-        if (result.ok) setClients(result.clients)
-        else toast.error(result.error)
-    }, [])
-
+    // Opening the panel is the one gesture that means "show me what is there now", so it reads
+    // again. What is already cached stays on screen while it does, rather than blanking a list the
+    // reader was looking at a second ago.
     useEffect(() => {
         if (!open) return
         setOpenId(null)
-        setClients(null)
-        void load()
-    }, [open, load])
+        void reload()
+    }, [open, reload])
 
     const create = async (name: string) => {
         setCreating(true)
-        const result = await createClientAction({ name }).catch(() => null)
+        const result = await createClient({ name }).catch(() => null)
         setCreating(false)
         if (!result) {
             toast.error('Could not create the client')
@@ -46,7 +40,6 @@ export function ClientsDialog({ open, onOpenChange }: { open: boolean; onOpenCha
             toast.error(result.error)
             return
         }
-        await load()
         setOpenId(result.client.id)
     }
 
@@ -70,7 +63,7 @@ export function ClientsDialog({ open, onOpenChange }: { open: boolean; onOpenCha
                 </DialogHeader>
                 <div className="flex min-h-0 flex-1 flex-col">
                     <PanelSteps stepKey={client ? client.id : 'list'} depth={client ? 1 : 0}>
-                        {client ? <ClientDetail client={client} onBack={() => setOpenId(null)} reload={load} /> : <ClientsTable clients={clients} creating={creating} onOpen={setOpenId} onCreate={create} />}
+                        {client ? <ClientDetail client={client} onBack={() => setOpenId(null)} /> : <ClientsTable clients={clients} creating={creating} onOpen={setOpenId} onCreate={create} />}
                     </PanelSteps>
                 </div>
             </PanelDialogContent>

@@ -1,6 +1,6 @@
 'use client'
 
-import { createClientAction, type ClientListEntry } from '@/app/api/_actions/client.actions'
+import type { ClientListEntry } from '@/app/api/_actions/client.actions'
 import type { ClientView } from '@/app/api/_services/client.service'
 import { ClientShortCode, HighlightMatch, plural } from '@/components/clients/ClientCells'
 import { Input } from '@/components/ui/input'
@@ -8,6 +8,7 @@ import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { SkeletonList } from '@/components/ui/skeleton'
 import { Building2, CheckIcon, PlusIcon } from '@/lib/icons'
 import { cn } from '@/lib/utils'
+import { useClientsStore } from '@/stores/clients.store'
 import { useRef, useState, type KeyboardEvent } from 'react'
 import { toast } from 'sonner'
 
@@ -24,7 +25,6 @@ type ClientPickerInputProps = {
     placeholder?: string
     onType: (value: string) => void
     onPick: (client: ClientView) => void
-    onCreated: () => void
 }
 
 type Row = { kind: 'client'; client: ClientListEntry } | { kind: 'create'; name: string }
@@ -41,10 +41,11 @@ function matching(clients: readonly ClientListEntry[], needle: string): ClientLi
     return hits.sort((a, b) => Number(b.name.toLowerCase().startsWith(needle)) - Number(a.name.toLowerCase().startsWith(needle)))
 }
 
-export function ClientPickerInput({ id, value, clients, picked, placeholder, onType, onPick, onCreated }: ClientPickerInputProps) {
+export function ClientPickerInput({ id, value, clients, picked, placeholder, onType, onPick }: ClientPickerInputProps) {
     const [open, setOpen] = useState(false)
     const [highlight, setHighlight] = useState(0)
     const [creating, setCreating] = useState(false)
+    const createClient = useClientsStore(state => state.create)
     const anchor = useRef<HTMLDivElement>(null)
     const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(null)
 
@@ -63,13 +64,12 @@ export function ClientPickerInput({ id, value, clients, picked, placeholder, onT
 
     const create = async (name: string) => {
         setCreating(true)
-        const result = await createClientAction({ name }).catch(() => null)
+        const result = await createClient({ name }).catch(() => null)
         setCreating(false)
         if (!result) return toast.error('Could not create the client')
         if (!result.ok) return toast.error(result.error)
         setOpen(false)
         onPick(result.client)
-        onCreated()
         toast.success(`${result.client.name} added to your clients.`)
     }
 

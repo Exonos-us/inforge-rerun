@@ -1,6 +1,6 @@
 'use client'
 
-import { deleteClientAction, updateClientAction, type ClientListEntry } from '@/app/api/_actions/client.actions'
+import type { ClientListEntry } from '@/app/api/_actions/client.actions'
 import { boxCount, ClientStatusBadge, clientUsageLine } from '@/components/clients/ClientCells'
 import { ClientConfluenceRow } from '@/components/clients/ClientConfluenceRow'
 import { ClientKnowledgeEditor } from '@/components/clients/ClientKnowledgeEditor'
@@ -11,6 +11,7 @@ import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { PanelEditorBody, PanelEditorHeader, PanelEditorShell } from '@/components/ui/panel-editor'
 import type { AuthoredSkill, KnowledgeDoc } from '@/lib/presets/types'
+import { useClientsStore } from '@/stores/clients.store'
 import { useState } from 'react'
 import { toast } from 'sonner'
 
@@ -29,7 +30,9 @@ function syncLine(sync: { synced: number; pending: number }): string {
     return sync.pending > 0 ? `${landed}, ${sync.pending} still to sync.` : `${landed}.`
 }
 
-export function ClientDetail({ client, onBack, reload }: { client: ClientListEntry; onBack: () => void; reload: () => Promise<void> }) {
+export function ClientDetail({ client, onBack }: { client: ClientListEntry; onBack: () => void }) {
+    const updateClient = useClientsStore(state => state.update)
+    const deleteClient = useClientsStore(state => state.remove)
     const [draft, setDraft] = useState<Draft>(() => draftOf(client))
     const [codeError, setCodeError] = useState<string | undefined>(undefined)
     const [saving, setSaving] = useState(false)
@@ -40,7 +43,7 @@ export function ClientDetail({ client, onBack, reload }: { client: ClientListEnt
     const save = async () => {
         setSaving(true)
         setCodeError(undefined)
-        const result = await updateClientAction({ clientId: client.id, name: draft.name, shortCode: draft.shortCode, skills: draft.skills, knowledge: draft.knowledge }).catch(() => null)
+        const result = await updateClient({ clientId: client.id, name: draft.name, shortCode: draft.shortCode, skills: draft.skills, knowledge: draft.knowledge }).catch(() => null)
         setSaving(false)
         if (!result) return toast.error('Could not save the client')
         // The short-code collision is the one error that belongs on an input rather than in a
@@ -49,18 +52,16 @@ export function ClientDetail({ client, onBack, reload }: { client: ClientListEnt
         if (!result.ok) return toast.error(result.error)
         for (const warning of result.sync.warnings.slice(0, 2)) toast.warning(warning)
         toast.success(syncLine(result.sync))
-        await reload()
     }
 
     const remove = async () => {
         setDeleting(true)
-        const result = await deleteClientAction({ clientId: client.id }).catch(() => null)
+        const result = await deleteClient({ clientId: client.id }).catch(() => null)
         setDeleting(false)
         if (!result) return toast.error('Could not delete the client')
         if (!result.ok) return toast.error(result.error)
         toast.success(`“${client.name}” deleted.`)
         onBack()
-        await reload()
     }
 
     const deleteDescription =

@@ -82,7 +82,7 @@ export function StartProjectPage({ store, team, onBack, onDone }: { store: Prese
     // What the pick itself wrote into Client/Project, so re-picking updates them while a value
     // the user typed is never clobbered.
     const autoFilled = useRef({ client: '', project: '' })
-    const { clients, reload: reloadClients } = useBoxClients(stepper.index === 1)
+    const clients = useBoxClients(stepper.index === 1)
 
     useEffect(() => {
         if (stepper.index !== 1 || knowledgeSpaces) return
@@ -323,7 +323,7 @@ export function StartProjectPage({ store, team, onBack, onDone }: { store: Prese
                             )}
                             <div className="flex flex-col gap-3 sm:flex-row">
                                 <Field label="Client" htmlFor="project-client" className="flex-[2]">
-                                    <ClientPickerInput id="project-client" value={client} clients={clients} picked={picked} placeholder="Miami Dade County" onType={typeClient} onPick={pickClient} onCreated={() => void reloadClients()} />
+                                    <ClientPickerInput id="project-client" value={client} clients={clients} picked={picked} placeholder="Miami Dade County" onType={typeClient} onPick={pickClient} />
                                 </Field>
                                 <Field label="Short code" htmlFor="project-code" className="w-full sm:w-24">
                                     <Input id="project-code" value={code} onChange={e => setCodeOverride(e.target.value)} autoComplete="off" />
