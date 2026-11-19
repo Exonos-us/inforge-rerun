@@ -74,11 +74,15 @@ export const installPath = (id: string) => resolve(agentDir(id), 'INSTALL.md')
 
 export const agentEnvPath = (id: string) => resolve(agentDir(id), '.env')
 
-// Written by the hub when the agent's Box is linked to a Confluence engagement (Project
-// knowledge); absent otherwise. Read into the system prompt, never written engine-side.
-export const projectNotePath = (id: string) => resolve(agentDir(id), '.rerun', 'project.md')
-
 export const workspaceDir = (id: string) => resolve(agentDir(id), 'workspace')
+
+// Written by the hub when the agent's Box stands for a client or is linked to a Confluence
+// engagement; absent otherwise. Read into the system prompt, never written engine-side.
+//
+// Under the workspace because that is the root of /agents/:id/files, the only door the hub has:
+// pointed at the agent directory this resolved somewhere nothing could write, so the note was
+// never read. It sits beside .rerun/services.json, which the hub writes the same way.
+export const projectNotePath = (id: string) => resolve(workspaceDir(id), '.rerun', 'project.md')
 
 export const agentDataDir = (id: string) => resolve(agentDir(id), 'data')
 

@@ -485,4 +485,17 @@ describe('project knowledge section', () => {
             await rm(notePath, { force: true })
         }
     })
+
+    // The note is written by the hub through /agents/:id/files, whose root is the workspace, and
+    // read back here by path. The test above writes it by path too, so it passed while the two
+    // ends pointed at different directories and the section never appeared in a real run.
+    it('reads it where the files route can write it', async () => {
+        const { projectNotePath, workspaceDir } = await import('../config/paths.js')
+        const { relative, isAbsolute } = await import('node:path')
+
+        const inside = relative(workspaceDir(agent.id), projectNotePath(agent.id))
+
+        expect(inside).toBe('.rerun/project.md')
+        expect(isAbsolute(inside)).toBe(false)
+    })
 })
