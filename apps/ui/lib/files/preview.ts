@@ -23,6 +23,14 @@ export function filePreviewKind(name: string): FilePreviewKind {
     return 'text'
 }
 
+const HTML_EXTS = new Set(['html', 'htm'])
+
+// Kept apart from `isCode`: html is both, and which one it is decides whether the viewer opens on
+// the page or on its source.
+export function isHtmlDocument(name: string): boolean {
+    return HTML_EXTS.has(fileExtension(name))
+}
+
 export function isArchive(name: string): boolean {
     return ARCHIVE_EXTS.has(fileExtension(name))
 }

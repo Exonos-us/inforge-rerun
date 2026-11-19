@@ -7,12 +7,14 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { createAgent, deriveUniqueHandles, findFreeCellsInSpace, importAgent } from '@/app/api/_services/agent.service'
 import { createBoxesBatch } from '@/app/api/_services/box.service'
 import { resolveAgentTarget } from '@/app/api/_services/chat.service'
+import { applyClientExtras, getClient, type ClientView } from '@/app/api/_services/client.service'
 import { getSpaceConnection } from '@/app/api/_services/space.service'
 import { bindCoworker, connectionForWorkspace, invitePrivateChannelCreator, slackChannels } from '@/app/api/_services/slack.service'
 import { defaultExcludedPaths } from '@rerun/contracts'
 import { captureAgentArchive } from '@/lib/agents/capture-archive'
 import { createMemory, createSchedule, createSkill, getAgent, importSkill, makeDir, patchAgent, planAgentArchive, writeFileText } from '@/lib/engine/client'
 import { randomUuid } from '@/lib/random-uuid'
+import { authoredSkillMarkdown } from '@/lib/presets/skill-markdown'
 import {
     authoredRoutinesFromRow,
     authoredSkillsFromRow,
@@ -384,10 +386,44 @@ async function applyAuthoredExtras(source: ArchiveSource, spaceId: string, agent
     }
 }
 
-// JSON strings are valid YAML double-quoted scalars, so a composed frontmatter survives any name.
-function authoredSkillMarkdown(skill: AuthoredSkill): string {
-    const quote = (value: string) => JSON.stringify(value.replace(/\s+/g, ' ').trim())
-    return `---\nname: ${quote(skill.name)}\ndescription: ${quote(skill.description)}\n---\n\n${skill.body}`
+// The client of a Box the hire did not create: hireCoworker drops a single coworker into a Box
+// that already stands on the board, with whatever engagement it already carries.
+async function clientOfBox(supabase: SupabaseClient<Database>, workspaceId: number, spaceId: string): Promise<ClientView | null> {
+    const { data } = await selectMaybeSingle(supabase, 'spaces', ['client_id'] as const, { id: spaceId, workspace_id: workspaceId })
+    if (!data?.client_id) return null
+    return await getClient(supabase, workspaceId, data.client_id)
+}
+
+async function pointFreshBoxAt(supabase: SupabaseClient<Database>, workspaceId: number, spaceId: string, clientId: string): Promise<ClientView | null> {
+    const client = await getClient(supabase, workspaceId, clientId)
+    if (!client) return null
+    const { error } = await supabase.from('spaces').update<Database['public']['Tables']['spaces']['Update']>({ client_id: client.id }).eq('id', spaceId).eq('workspace_id', workspaceId)
+    return error ? null : client
+}
+
+// The engagement a hire inherits from its Box, installed after the preset's own extras so two
+// coworkers hired from the same roster end up with the same folders in the same order.
+//
+// The revision is recorded only when nothing warned, exactly as syncClient records it: the gap is
+// what brings the sync back for the skills that did not land. And nothing here throws — a coworker
+// whose engine was briefly unreachable is still hired, trailing its client.
+async function applyClientOfBox(supabase: SupabaseClient<Database>, workspaceId: number, client: ClientView | null, spaceId: string, agent: { id: string; name: string; engine_agent_id: string | null }, warnings: string[]): Promise<void> {
+    if (!client) return
+    const warningsBefore = warnings.length
+    await applyClientExtras(client, spaceId, agent, warnings).catch(() => {
+        warnings.push(`"${agent.name}" did not get ${client.name}'s skills and documents: its machine could not be reached.`)
+    })
+    if (warnings.length > warningsBefore) return
+    // A revision that cannot be written leaves the coworker trailing, and the next sync re-pushes
+    // what it already has — importSkill overwrites its own slug, so that costs nothing. What it
+    // must never do is fail the hire around it.
+    try {
+        await supabase
+            .from('agents')
+            .update<Database['public']['Tables']['agents']['Update']>({ client_revision: client.revision })
+            .eq('id', agent.id)
+            .eq('workspace_id', workspaceId)
+    } catch {}
 }
 
 // A captured preset is unpacked from its archive; a from-scratch one is scaffolded from its soul,
@@ -451,6 +487,8 @@ export async function hireFromPreset(params: { workspaceId: number; actor: Actor
     const [handle] = await deriveUniqueHandles(supabase, params.workspaceId, [params.roster.name])
     const agent = await spawnFromSource(source, { supabase, actor: params.actor, workspaceId: params.workspaceId, spaceId: params.spaceId, name: params.roster.name, handle })
     await applyAuthoredExtras(source, params.spaceId, agent, warnings)
+    const client = await clientOfBox(supabase, params.workspaceId, params.spaceId).catch(() => null)
+    await applyClientOfBox(supabase, params.workspaceId, client, params.spaceId, agent, warnings)
 
     const memories = answerMemories(params.answers)
     if (memories.length && agent.engine_agent_id) {
@@ -471,6 +509,7 @@ export type HireTeamParams = {
     roster: RosterEntry[]
     channel: { name: string; isPrivate: boolean } | null
     answers: HireAnswer[]
+    clientId: string | null
 }
 
 const CHANNEL_NAME_RE = /^[a-z0-9][a-z0-9-_]{0,78}$/
@@ -498,12 +537,20 @@ export async function hireTeam(params: HireTeamParams): Promise<HireOutcome> {
     const warnings: string[] = []
     const agents: HireOutcome['agents'] = []
     const engineIds = new Map<string, string>()
+    // The Box was created a few lines above, so nothing but this call can have given it a client:
+    // the wizard's pick is written onto it here, once for the whole roster. Reading the client back
+    // from the workspace's own rows first is what keeps a Box from pointing at another workspace's,
+    // which the foreign key alone does not forbid. A Box that ends up without the client it asked
+    // for is still a hired team, so this warns rather than throws.
+    const client = params.clientId ? await pointFreshBoxAt(supabase, params.workspaceId, spaceId, params.clientId).catch(() => null) : null
+    if (params.clientId && !client) warnings.push('The Box was created without its client, so nothing of it was installed. Point the Box at it from its menu.')
 
     for (const [index, entry] of params.roster.entries()) {
         try {
             const source = sources.get(entry.presetId) as ArchiveSource
             const agent = await spawnFromSource(source, { supabase, actor: params.actor, workspaceId: params.workspaceId, spaceId, name: entry.name, handle: handles[index], position: cells[index] })
             await applyAuthoredExtras(source, spaceId, agent, warnings)
+            await applyClientOfBox(supabase, params.workspaceId, client, spaceId, agent, warnings)
             agents.push({ id: agent.id, name: agent.name })
             if (agent.engine_agent_id) engineIds.set(agent.id, agent.engine_agent_id)
             if (agent.disabled_at) warnings.push(`"${agent.name}" landed switched off: the plan has no free slot for it.`)

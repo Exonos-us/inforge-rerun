@@ -4,6 +4,10 @@ import { hireTeamAction, type PresetStoreView } from '@/app/api/_actions/preset.
 import { listKnowledgeEngagementsAction, listKnowledgeSpacesAction } from '@/app/api/_actions/project-knowledge.actions'
 import type { KnowledgeEngagementsResult, KnowledgeSpacesResult } from '@/app/api/_services/project-knowledge.service'
 import type { CoworkerPresetView, TeamPresetView } from '@/app/api/_services/preset.service'
+import type { ClientView } from '@/app/api/_services/client.service'
+import { clientCarries } from '@/components/clients/ClientCells'
+import { ClientPickerInput } from '@/components/clients/ClientPickerInput'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
@@ -11,7 +15,8 @@ import { PanelScroller } from '@/components/ui/panel-list'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import { ChevronLeftIcon } from '@/lib/icons'
+import { useBoxClients } from '@/hooks/useBoxClients'
+import { ChevronLeftIcon, InfoIcon } from '@/lib/icons'
 import { channelNameFor, coworkerNameFor, shortCodeOf, spaceNameFor } from '@/lib/presets/naming'
 import { useBoardStore } from '@/stores/board.store'
 import { useSession } from '@/supabase/session/SessionProvider'
@@ -57,6 +62,7 @@ export function StartProjectPage({ store, team, onBack, onDone }: { store: Prese
     const [teamId, setTeamId] = useState<string | 'scratch' | null>(team?.id ?? (store.teams.length === 0 ? 'scratch' : null))
     const [roster, setRoster] = useState<RosterDraft[]>(() => (team ? rosterFromTeam(team, store.presets) : []))
     const [client, setClient] = useState('')
+    const [picked, setPicked] = useState<ClientView | null>(null)
     const [project, setProject] = useState('')
     const [codeOverride, setCodeOverride] = useState<string | null>(null)
     const [spaceOverride, setSpaceOverride] = useState<string | null>(null)
@@ -76,6 +82,7 @@ export function StartProjectPage({ store, team, onBack, onDone }: { store: Prese
     // What the pick itself wrote into Client/Project, so re-picking updates them while a value
     // the user typed is never clobbered.
     const autoFilled = useRef({ client: '', project: '' })
+    const clients = useBoxClients(stepper.index === 1)
 
     useEffect(() => {
         if (stepper.index !== 1 || knowledgeSpaces) return
@@ -88,19 +95,41 @@ export function StartProjectPage({ store, team, onBack, onDone }: { store: Prese
         }
     }, [stepper.index, knowledgeSpaces])
 
-    const pickKnowledgeSpace = async (key: string) => {
+    const openSpace = async (key: string) => {
         setKnowledgeSpaceKey(key)
         setEngagementChoice('')
         setEngagements(null)
+        const result = await listKnowledgeEngagementsAction({ spaceKey: key })
+        if (result.ok) setEngagements(result.result)
+        else toast.error(result.error)
+    }
+
+    const pickKnowledgeSpace = async (key: string) => {
         const space = knowledgeSpaces?.available ? knowledgeSpaces.spaces.find(candidate => candidate.key === key) : undefined
         if (space && (!client.trim() || client === autoFilled.current.client)) {
             const stripped = stripWikiNumber(space.name)
             setClient(stripped)
+            setPicked(null)
             autoFilled.current.client = stripped
         }
-        const result = await listKnowledgeEngagementsAction({ spaceKey: key })
-        if (result.ok) setEngagements(result.result)
-        else toast.error(result.error)
+        await openSpace(key)
+    }
+
+    const typeClient = (value: string) => {
+        setClient(value)
+        if (picked && value !== picked.name) setPicked(null)
+    }
+
+    // A client taken from the list is a choice of the user's, so it joins the values a later space
+    // pick leaves alone: clearing what that pick last wrote is what makes the guard above refuse.
+    // Its own Confluence space only fills an empty slot, never one already picked here.
+    const pickClient = (chosen: ClientView) => {
+        setPicked(chosen)
+        setClient(chosen.name)
+        autoFilled.current.client = ''
+        const spaceKey = chosen.confluence?.spaceKey
+        const listed = spaceKey && knowledgeSpaces?.available && knowledgeSpaces.spaces.some(space => space.key === spaceKey)
+        if (spaceKey && listed && !knowledgeSpaceKey) void openSpace(spaceKey)
     }
 
     const pickEngagement = (choice: string) => {
@@ -116,7 +145,9 @@ export function StartProjectPage({ store, team, onBack, onDone }: { store: Prese
     const knowledge = knowledgeSpaceKey && engagementChoice ? { spaceKey: knowledgeSpaceKey, pageId: engagementChoice === WHOLE_SPACE ? null : engagementChoice, pageTitle: engagements?.engagements.find(candidate => candidate.id === engagementChoice)?.title ?? null } : null
 
     const presetOf = (presetId: string) => store.presets.find(candidate => candidate.id === presetId)
-    const code = codeOverride ?? shortCodeOf(client)
+    // A known client's code is chosen, unique in the workspace, and already names its other Boxes
+    // and channels — it wins over the one derived from the name, and loses to one typed here.
+    const code = codeOverride ?? picked?.shortCode ?? shortCodeOf(client)
     const spaceName = spaceOverride ?? spaceNameFor(code, project)
     const channelName = channelOverride ?? channelNameFor(code, project)
 
@@ -153,6 +184,7 @@ export function StartProjectPage({ store, team, onBack, onDone }: { store: Prese
                 channel: createChannel && store.slackConnected ? { name: channelName, isPrivate } : null,
                 answers: questions.map(question => ({ question: question.question, answer: answers[question.key] ?? '' })),
                 knowledge,
+                clientId: picked?.id ?? null,
             })
         )
         setHiring(false)
@@ -291,7 +323,7 @@ export function StartProjectPage({ store, team, onBack, onDone }: { store: Prese
                             )}
                             <div className="flex flex-col gap-3 sm:flex-row">
                                 <Field label="Client" htmlFor="project-client" className="flex-[2]">
-                                    <Input id="project-client" value={client} onChange={e => setClient(e.target.value)} placeholder="Miami Dade County" autoComplete="off" />
+                                    <ClientPickerInput id="project-client" value={client} clients={clients} picked={picked} placeholder="Miami Dade County" onType={typeClient} onPick={pickClient} />
                                 </Field>
                                 <Field label="Short code" htmlFor="project-code" className="w-full sm:w-24">
                                     <Input id="project-code" value={code} onChange={e => setCodeOverride(e.target.value)} autoComplete="off" />
@@ -303,6 +335,14 @@ export function StartProjectPage({ store, team, onBack, onDone }: { store: Prese
                             <Field label="Box name" htmlFor="project-space">
                                 <Input id="project-space" value={spaceName} onChange={e => setSpaceOverride(e.target.value)} placeholder="MDC Water Enforcement Project" />
                             </Field>
+                            {picked && (
+                                <Alert variant="info">
+                                    <InfoIcon />
+                                    <AlertDescription>
+                                        Every coworker hired here starts with {picked.name}’s {clientCarries(picked)}. The Box is pointed at {picked.name}, so the ones you add to it later get them too.
+                                    </AlertDescription>
+                                </Alert>
+                            )}
                             <p className="text-xs text-muted-foreground">The client and project drive everything downstream: the Box, the channel name and each coworker's name. Each stays editable on its own.</p>
                         </>
                     )}
@@ -368,6 +408,7 @@ export function StartProjectPage({ store, team, onBack, onDone }: { store: Prese
 
                             <p className="border-t pt-3 text-xs text-muted-foreground">
                                 Creates Box “{spaceName || '…'}” · hires {roster.length}
+                                {picked ? ` · ${picked.name} is its client, so every one of them starts with its ${clientCarries(picked)}` : ''}
                                 {createChannel && store.slackConnected && channelName ? ` · creates #${channelName}${isPrivate ? ' (private)' : ''} and invites everyone` : ''}
                                 {knowledge ? ` · links ${knowledge.pageTitle ?? 'the whole client space'} as the project's knowledge` : ''}
                             </p>

@@ -168,6 +168,9 @@ export async function hireTeamAction(params: {
     // The Confluence engagement the project is about, linked to the new Box once the team is
     // hired so the whole roster gets the project note and Atlassian access.
     knowledge: { spaceKey: string; pageId: string | null; pageTitle: string | null } | null
+    // The client picked in the wizard. It lands on the Box before the roster does, so every
+    // coworker of this hire inherits its skills and documents the way a later arrival would.
+    clientId: string | null
 }): Promise<ActionResult<{ outcome: HireOutcome }>> {
     try {
         const ctx = await requireWorkspaceContext()
@@ -182,6 +185,7 @@ export async function hireTeamAction(params: {
             roster: params.roster.map(entry => ({ ...entry, name: entry.name.trim() })),
             channel: params.channel,
             answers: params.answers,
+            clientId: params.clientId,
         })
         if (params.knowledge) {
             try {

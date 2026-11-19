@@ -8,6 +8,7 @@ import { ApiKeysDialog } from '@/components/dialogs/ApiKeysDialog'
 import { ServersDialog } from '@/components/dialogs/ServersDialog'
 import { ChatAppsConnectedHint } from '@/components/chat-apps/ChatAppsConnectedHint'
 import { ChatAppsDialog } from '@/components/dialogs/ChatAppsDialog'
+import { ClientsDialog } from '@/components/clients/ClientsDialog'
 import { CoworkerPresetsDialog } from '@/components/presets/CoworkerPresetsDialog'
 import { GlobalAppsDialog } from '@/components/global-apps/GlobalAppsDialog'
 import { ADMIN_URL } from '@rerun/cloud/admin'
@@ -43,7 +44,7 @@ import { useForemanStore } from '@/stores/foreman.store'
 import { useNotificationsStore } from '@/stores/notifications.store'
 import { useWorkspaceSettingsStore } from '@/stores/workspace-settings.store'
 import { useIsWorkspaceAdmin, useSession } from '@/supabase/session/SessionProvider'
-import { BadgeCheck, BellIcon, BrainIcon, CheckIcon, CreditCardIcon, FlaskConical, GaugeIcon, GlobeIcon, GridIcon, IdCardIcon, KeyIcon, LayersIcon, Loader2Icon, LockKeyholeIcon, LogOutIcon, MessagesSquare, PlusIcon, ServerIcon, SettingsIcon, ShieldCheckIcon, StoreIcon, UserRoundIcon, UsersIcon } from '@/lib/icons'
+import { BadgeCheck, BellIcon, BrainIcon, Building2, CheckIcon, CreditCardIcon, FlaskConical, GaugeIcon, GlobeIcon, GridIcon, IdCardIcon, KeyIcon, LayersIcon, Loader2Icon, LockKeyholeIcon, LogOutIcon, MessagesSquare, PlusIcon, ServerIcon, SettingsIcon, ShieldCheckIcon, StoreIcon, UserRoundIcon, UsersIcon } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 import { abortWorkspaceSwitch, beginWorkspaceSwitch, enterActiveWorkspace } from '@/lib/workspace/workspace-switch'
 import Link from 'next/link'
@@ -252,6 +253,10 @@ export function WorkspaceSwitcher() {
                 <StoreIcon className="size-4" />
                 Coworkers Store
             </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => openWorkspacePanel('clients')} className="gap-2 text-muted-foreground">
+                <Building2 className="size-4" />
+                Clients
+            </DropdownMenuItem>
             {apiKeysItem}
             {SERVERS_ENABLED && (
                 <AdminOnly allowed={workspaceAdmin} reason="Only an admin can manage servers">
@@ -438,6 +443,7 @@ export function WorkspaceSwitcher() {
             <ChatAppsDialog open={panel === 'chat_apps'} onOpenChange={open => setPanel(open ? 'chat_apps' : null)} />
             <GlobalAppsDialog open={panel === 'global_apps'} onOpenChange={open => setPanel(open ? 'global_apps' : null)} />
             <CoworkerPresetsDialog open={panel === 'coworker_presets'} onOpenChange={open => setPanel(open ? 'coworker_presets' : null)} />
+            <ClientsDialog open={panel === 'clients'} onOpenChange={open => setPanel(open ? 'clients' : null)} />
             <KnowledgeBaseDialog open={panel === 'knowledge_base'} onOpenChange={open => setPanel(open ? 'knowledge_base' : null)} />
             <PaidAppDialogs apps={paidApps} />
             <WorkspacePowerDialog action={powerAction} onOpenChange={open => setPowerAction(open ? powerAction : null)} />

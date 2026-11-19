@@ -2,17 +2,20 @@
 
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuLabel, ContextMenuSeparator, ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { ShareAgentDialog } from '@/components/agent/share/ShareAgentDialog'
+import { BoxClientDialog } from '@/components/clients/BoxClientDialog'
 import { BoxAccessDialog } from '@/components/dialogs/BoxAccessDialog'
 import { DeleteAgentDialog } from '@/components/dialogs/DeleteAgentDialog'
 import { DeleteSpaceDialog } from '@/components/dialogs/DeleteSpaceDialog'
 import { RenameAgentDialog } from '@/components/dialogs/RenameAgentDialog'
 import { ProjectKnowledgeDialog } from '@/components/project-knowledge/ProjectKnowledgeDialog'
 import { RenameBoxDialog } from '@/components/dialogs/RenameBoxDialog'
+import { Skeleton } from '@/components/ui/skeleton'
 import { TooltipDisabledReason } from '@/components/ui/tooltip'
 import { useBoxViewer, useCanManageAgent, useCanManageSpace, useManageableSpaceIds } from '@/hooks/useBoxAccess'
+import { clientOfBox, useBoxClients } from '@/hooks/useBoxClients'
 import { BOX_MANAGE_ACTION_REASON } from '@/lib/board/box-access'
 import { UNNAMED_BOX_LABEL } from '@/lib/board/types'
-import { BookOpenIcon, CopyPlusIcon, Link2, MessageCircle, PencilIcon, SettingsIcon, Trash2Icon, UsersIcon } from '@/lib/icons'
+import { BookOpenIcon, Building2, CopyPlusIcon, Link2, MessageCircle, PencilIcon, SettingsIcon, Trash2Icon, UsersIcon } from '@/lib/icons'
 import { useBoardStore } from '@/stores/board.store'
 import { useIsWorkspaceAdmin } from '@/supabase/session/SessionProvider'
 import { useState, type ReactNode } from 'react'
@@ -52,6 +55,7 @@ export function BoardContextMenu({ children, target, onTargetClear }: BoardConte
     const [renameSpaceId, setRenameSpaceId] = useState<string | null>(null)
     const [accessSpaceId, setAccessSpaceId] = useState<string | null>(null)
     const [knowledgeSpaceId, setKnowledgeSpaceId] = useState<string | null>(null)
+    const [clientSpaceId, setClientSpaceId] = useState<string | null>(null)
 
     const targetAgent = target?.kind === 'agent' ? agents.find(agent => agent.id === target.id) : undefined
     const targetSpace = target?.kind === 'space' ? spaces.find(space => space.id === target.id) : undefined
@@ -63,6 +67,7 @@ export function BoardContextMenu({ children, target, onTargetClear }: BoardConte
     const spaceToRename = renameSpaceId ? spaces.find(space => space.id === renameSpaceId) : undefined
     const spaceForAccess = accessSpaceId ? spaces.find(space => space.id === accessSpaceId) : undefined
     const spaceForKnowledge = knowledgeSpaceId ? spaces.find(space => space.id === knowledgeSpaceId) : undefined
+    const spaceForClient = clientSpaceId ? spaces.find(space => space.id === clientSpaceId) : undefined
     const workspaceAdmin = useIsWorkspaceAdmin()
     const canManageAgent = useCanManageAgent(targetAgent?.id)
     const canManageSpace = useCanManageSpace(targetSpace?.id)
@@ -71,6 +76,11 @@ export function BoardContextMenu({ children, target, onTargetClear }: BoardConte
     const agentReason = canManageAgent ? undefined : BOX_MANAGE_ACTION_REASON
     const spaceReason = canManageSpace ? undefined : BOX_MANAGE_ACTION_REASON
     const otherBoxes = targetAgent ? spaces.filter(space => space.id !== targetAgent.spaceId && manageableSpaceIds.has(space.id)) : []
+    // Read once the first time a Box is right-clicked: the item carries the client's name, so the
+    // dialog is never needed just to check which one it is.
+    const clients = useBoxClients(!!targetSpace || !!clientSpaceId)
+    const clientOfTarget = clientOfBox(clients, targetSpace?.id)
+    const coworkersInClientBox = clientSpaceId ? agents.filter(agent => agent.spaceId === clientSpaceId).length : 0
 
     return (
         <>
@@ -153,6 +163,15 @@ export function BoardContextMenu({ children, target, onTargetClear }: BoardConte
                             <BookOpenIcon className="size-4" />
                             Project knowledge
                         </ContextMenuItem>
+                        <Forbidden reason={spaceReason}>
+                            <ContextMenuItem disabled={!canManageSpace} className="w-full" onSelect={() => setClientSpaceId(targetSpace.id)}>
+                                <Building2 className="size-4" />
+                                Client
+                                <span className="ml-auto flex max-w-28 items-center pl-3 text-xs text-muted-foreground">
+                                    {clients === null ? <Skeleton className="h-3 w-14" /> : <span className="truncate">{clientOfTarget?.name ?? 'Set…'}</span>}
+                                </span>
+                            </ContextMenuItem>
+                        </Forbidden>
                         <Forbidden reason={workspaceAdmin ? undefined : BOX_ACCESS_ADMIN_ONLY}>
                             <ContextMenuItem disabled={!workspaceAdmin} className="w-full" onSelect={() => setAccessSpaceId(targetSpace.id)}>
                                 <UsersIcon className="size-4" />
@@ -214,6 +233,17 @@ export function BoardContextMenu({ children, target, onTargetClear }: BoardConte
                 open={!!knowledgeSpaceId}
                 onOpenChange={open => {
                     if (!open) setKnowledgeSpaceId(null)
+                }}
+            />
+
+            <BoxClientDialog
+                spaceId={clientSpaceId}
+                boxName={spaceForClient?.name}
+                coworkers={coworkersInClientBox}
+                clients={clients}
+                open={!!clientSpaceId}
+                onOpenChange={open => {
+                    if (!open) setClientSpaceId(null)
                 }}
             />
 

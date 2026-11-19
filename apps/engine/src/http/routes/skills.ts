@@ -91,7 +91,10 @@ skillRoutes.post('/import', async c => {
 
     const slug = input.slug ?? slugify(parsed.name)
     const existed = skillExists(agentId, slug)
-    if (input.slug && !existed) return c.json({ error: 'skill not found' }, 404)
+    // An explicit slug alone must not create: a typo would silently leave a stray skill behind.
+    // With `overwrite` the caller is saying "put this skill at this slug, whatever is there", so
+    // creating it is the obvious meaning — that is how a client skill lands the first time.
+    if (input.slug && !existed && !input.overwrite) return c.json({ error: 'skill not found' }, 404)
     if (existed && !input.overwrite) return c.json({ error: `A skill named "${parsed.name}" already exists` }, 409)
 
     try {

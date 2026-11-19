@@ -82,6 +82,7 @@ export function runForemanClientTool(name: ForemanClientToolName, input: unknown
                 case 'chat_apps':
                 case 'global_apps':
                 case 'coworker_presets':
+                case 'clients':
                 case 'knowledge_base':
                     useWorkspaceSettingsStore.getState().openWorkspacePanel(panel)
                     break

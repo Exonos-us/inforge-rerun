@@ -1,0 +1,1093 @@
+# Clients Implementation Plan
+
+> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+
+**Goal:** A client is a workspace entity carrying skills and knowledge docs; a Box points at one, and every coworker hired into that Box inherits it.
+
+**Architecture:** A `clients` table holding the same `AuthoredSkill[]` / `KnowledgeDoc[]` payloads a preset holds. `spaces.client_id` is the attach point. Skills reach a coworker through the engine's existing `importSkill` with an explicit `slug` and `overwrite: true`, which swaps a skill folder atomically and makes re-pushing safe. A `revision` integer on the client, compared against `agents.client_revision`, is the whole sync model.
+
+**Tech Stack:** Next.js 16 (App Router, server actions), Supabase (Postgres + RLS), Vitest, Tailwind v4, `@rerun/ui/primitives`.
+
+**Design doc:** `docs/plans/2026-11-17-clients-design.md` — read it first. It records what was rejected and why.
+
+---
+
+## Before you start
+
+Read these, in this order. They are the patterns you will copy; do not invent new ones.
+
+| File | Why |
+|---|---|
+| `apps/ui/lib/presets/types.ts` | The Zod schemas you reuse verbatim (`authoredSkillSchema`, `knowledgeDocSchema`) |
+| `apps/ui/app/api/_services/preset.service.ts:335-385` | `applyAuthoredExtras` — the function `applyClientExtras` mirrors |
+| `apps/ui/app/api/_actions/preset.actions.ts:1-55` | The server-action shape (`ActionResult`, try/catch, no throwing to the client) |
+| `apps/ui/components/project-knowledge/ProjectKnowledgeDialog.tsx` | The Box-attached dialog this feature copies |
+| `supabase/migrations/20261112150000_space_knowledge.sql` | Migration house style: RLS, revoke, grant |
+| `CLAUDE.md` (repo root) | **Supabase rules are strict.** Reads go through typed helpers; writes carry an explicit payload generic. Grep your own diff for `.from('` before finishing. |
+
+**Local stack:** `pnpm db:start`, then `pnpm dev:engine` and `pnpm dev:ui` in separate terminals. Never run any of this against production.
+
+**Commands you will use repeatedly:**
+
+```bash
+pnpm --filter rerun test <path>      # one vitest file
+pnpm --filter rerun ts-check         # typecheck apps/ui
+pnpm db:reset                        # reapply every migration + seed (wipes local data)
+```
+
+---
+
+## Task 1: The migration
+
+**Files:**
+- Create: `supabase/migrations/<timestamp>_clients.sql` (generate with `pnpm db:new clients`)
+- Modify: `packages/db/src/database.types.ts` (regenerated, not hand-edited)
+
+**Step 1: Create the migration file**
+
+```bash
+pnpm db:new clients
+```
+
+**Step 2: Write the migration**
+
+Paste into the generated file:
+
+```sql
+-- A client is who the workspace works for, and how they like things done: the skills and
+-- knowledge every coworker on that engagement should start with. A Box points at one
+-- (spaces.client_id), the way it already points at a Confluence engagement (space_knowledge).
+-- The payload columns hold the same shapes a preset holds, so the same parsers read both.
+
+create table public.clients (
+    id uuid primary key default gen_random_uuid(),
+    workspace_id bigint not null references public.workspaces(id) on delete cascade,
+    name text not null,
+    -- Names Boxes, channels and coworkers (mdc-permitting-po), so two clients sharing one would
+    -- make those names ambiguous to read. It never keys the skills a client installs: that is the
+    -- id, which no rename can move. shortCodeOf() is initials-based, so "Miami Dade County" and
+    -- "Miami Dade City" both propose "mdc" and one of them has to pick something else.
+    short_code text not null,
+    skills jsonb not null default '[]'::jsonb,
+    knowledge jsonb not null default '[]'::jsonb,
+    site_url text,
+    cloud_id text,
+    space_key text,
+    space_name text,
+    -- Bumped on every save. An agent records the revision that actually landed on its engine,
+    -- so "3 to sync" is a count of agents trailing this number, not a job queue.
+    revision integer not null default 1,
+    created_by uuid references public.users(id) on delete set null,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    constraint clients_short_code_not_blank check (short_code <> '')
+);
+
+create index clients_workspace_name_idx on public.clients (workspace_id, name);
+create unique index clients_workspace_short_code_idx on public.clients (workspace_id, short_code);
+
+alter table public.spaces add column client_id uuid references public.clients(id) on delete set null;
+create index spaces_client_idx on public.spaces (client_id);
+
+alter table public.agents add column client_revision integer;
+
+alter table public.clients enable row level security;
+
+revoke all on table public.clients from anon, authenticated;
+-- Readable by every member of the workspace, as coworker_presets is. Writes go through server
+-- actions on the service role, whose grant is spelled out because the revoke above would
+-- otherwise strip it on a database whose grants came from default privileges — the slack tables
+-- learned this the hard way.
+grant select on table public.clients to authenticated;
+grant select, insert, update, delete on table public.clients to service_role;
+
+create policy "clients_select_workspace_members" on public.clients
+    for select to authenticated
+    using (workspace_id in (select workspace_id from public.workspace_members where user_id = auth.uid()));
+```
+
+**Step 3: Apply it**
+
+```bash
+./node_modules/.bin/supabase migration up --local
+```
+
+Expected: the new migration applies, nothing else runs.
+
+> **Do not run `pnpm db:reset` here.** It wipes the local database: workspaces, agents, and the
+> Composio `authConfigId`s that were set by hand (`ONBOARDING.md` §7.4 has to be redone after a
+> reset). `migration up` applies the pending migration and leaves the data alone.
+>
+> The clean-replay check `db:reset` gives you is still worth having — a migration that only works
+> on an existing database is a broken migration. Run it **once, deliberately**, when you are
+> willing to lose the local workspace, or let CI do it. Not as part of this task.
+
+**Step 4: Regenerate the database types**
+
+```bash
+./node_modules/.bin/supabase gen types typescript --local > packages/db/src/database.types.ts
+```
+
+**Step 5: Verify the types landed**
+
+```bash
+grep -c 'clients:' packages/db/src/database.types.ts   # expect >= 1
+grep -n 'client_revision' packages/db/src/database.types.ts | head -3
+```
+
+Expected: `clients` appears under `Tables`, and `client_revision` appears on `agents`.
+
+**Step 6: Typecheck**
+
+```bash
+pnpm --filter rerun ts-check
+```
+
+Expected: no errors. (Regenerated types sometimes reorder unrelated tables — that's fine, commit it.)
+
+**Step 7: Commit**
+
+```bash
+git add supabase/migrations packages/db/src/database.types.ts
+git commit -m "feat(clients): the clients table, its Box pointer and the agent revision mark"
+```
+
+---
+
+## Task 2: Slug derivation (pure, TDD)
+
+Client skills need a namespaced slug so that changing a Box's client removes exactly that client's
+files, and a coworker's own skill can never collide with the client's.
+
+**The key is the client's `id`, not its `short_code`.** `shortCodeOf` is initials-based, so
+"Miami Dade County", "Miami Dade City" and "Monroe Dade Collective" all yield `mdc`; and
+`short_code` is editable, so keying on it would orphan every installed skill on a rename. An id
+cannot collide and cannot be renamed. See the design doc's "The write path" section.
+
+**Files:**
+- Create: `apps/ui/lib/clients/naming.ts`
+- Test: `apps/ui/lib/clients/naming.test.ts`
+
+**Step 1: Write the failing test**
+
+Create `apps/ui/lib/clients/naming.test.ts`:
+
+```ts
+import { describe, expect, it } from 'vitest'
+
+import { clientKnowledgeDir, clientSkillSlug, isClientSkillSlug } from './naming'
+
+const MDC = 'a1b8d4fa-0db3-4de6-9305-f1fb9c37ca34'
+const BROWARD = 'c7e2119b-55aa-4f01-9f3e-2b6d0e4a7781'
+
+describe('clientSkillSlug', () => {
+    it('namespaces a skill under its client id', () => {
+        expect(clientSkillSlug(MDC, 'Document format')).toBe('client-a1b8d4fa-document-format')
+    })
+
+    it('gives two clients whose short codes would collide different slugs', () => {
+        // "Miami Dade County" and "Miami Dade City" both shortCodeOf() to "mdc".
+        expect(clientSkillSlug(MDC, 'Doc format')).not.toBe(clientSkillSlug(BROWARD, 'Doc format'))
+    })
+
+    it('collapses punctuation and case', () => {
+        expect(clientSkillSlug(MDC, 'Comms / tone!')).toBe('client-a1b8d4fa-comms-tone')
+    })
+
+    it('keeps a name that slugs to nothing addressable', () => {
+        expect(clientSkillSlug(MDC, '日本語')).toBe('client-a1b8d4fa-skill')
+    })
+})
+
+describe('isClientSkillSlug', () => {
+    it('recognises its own client’s slugs', () => {
+        expect(isClientSkillSlug('client-a1b8d4fa-doc-format', MDC)).toBe(true)
+    })
+
+    it('does not claim another client’s slug', () => {
+        expect(isClientSkillSlug('client-a1b8d4fa-doc-format', BROWARD)).toBe(false)
+    })
+
+    it('does not claim a coworker’s own skill', () => {
+        expect(isClientSkillSlug('permit-intake-triage', MDC)).toBe(false)
+    })
+
+    it('does not match a slug that merely starts with the same characters', () => {
+        expect(isClientSkillSlug('client-a1b8d4faXX-doc', MDC)).toBe(false)
+    })
+})
+
+describe('clientKnowledgeDir', () => {
+    it('gives each client its own folder under knowledge/', () => {
+        expect(clientKnowledgeDir(MDC)).toBe('knowledge/client-a1b8d4fa')
+    })
+})
+```
+
+**Step 2: Run it and watch it fail**
+
+```bash
+pnpm --filter rerun test lib/clients/naming.test.ts
+```
+
+Expected: FAIL — `Cannot find module './naming'`.
+
+**Step 3: Write the implementation**
+
+Create `apps/ui/lib/clients/naming.ts`:
+
+```ts
+import { slugOf } from '@/lib/presets/naming'
+
+// A client's skills live under a slug keyed on its id, so that changing a Box's client removes
+// exactly that client's files and a coworker's own skill can never collide with one of them.
+// Not the short code: shortCodeOf() is initials-based ("Miami Dade County" and "Miami Dade City"
+// both give "mdc") and the code stays editable, so a rename would orphan everything installed.
+const PREFIX = 'client'
+const KEY_LENGTH = 8
+
+function keyOf(clientId: string): string {
+    return clientId.replace(/-/g, '').slice(0, KEY_LENGTH)
+}
+
+export function clientNamespace(clientId: string): string {
+    return `${PREFIX}-${keyOf(clientId)}`
+}
+
+export function clientSkillSlug(clientId: string, skillName: string): string {
+    return `${clientNamespace(clientId)}-${slugOf(skillName) || 'skill'}`
+}
+
+export function isClientSkillSlug(slug: string, clientId: string): boolean {
+    return slug.startsWith(`${clientNamespace(clientId)}-`)
+}
+
+export function clientKnowledgeDir(clientId: string): string {
+    return `knowledge/${clientNamespace(clientId)}`
+}
+```
+
+**Step 4: Run the test**
+
+```bash
+pnpm --filter rerun test lib/clients/naming.test.ts
+```
+
+Expected: PASS, 9 tests.
+
+**Step 5: Commit**
+
+```bash
+git add apps/ui/lib/clients/naming.ts apps/ui/lib/clients/naming.test.ts
+git commit -m "feat(clients): slugs keyed on the client id, immune to rename and code collision"
+```
+
+## Task 3: Extract `authoredSkillMarkdown` so both services share it
+
+`authoredSkillMarkdown` is private in `preset.service.ts:388`. The client service needs the same function. Move it rather than copy it.
+
+**Files:**
+- Create: `apps/ui/lib/presets/skill-markdown.ts`
+- Modify: `apps/ui/app/api/_services/preset.service.ts`
+
+**Step 1: Read the current function**
+
+```bash
+sed -n '386,400p' apps/ui/app/api/_services/preset.service.ts
+```
+
+**Step 2: Move it verbatim**
+
+Create `apps/ui/lib/presets/skill-markdown.ts` containing that function, exported, with its comment, importing `AuthoredSkill` from `@/lib/presets/types`.
+
+**Step 3: Delete it from `preset.service.ts` and import instead**
+
+Add to the imports of `preset.service.ts`:
+
+```ts
+import { authoredSkillMarkdown } from '@/lib/presets/skill-markdown'
+```
+
+**Step 4: Verify nothing else referenced it**
+
+```bash
+grep -rn 'authoredSkillMarkdown' apps/ui | grep -v node_modules
+```
+
+Expected: the new file, its import in `preset.service.ts`, and the call site. Nothing orphaned.
+
+**Step 5: Typecheck**
+
+```bash
+pnpm --filter rerun ts-check
+```
+
+Expected: no type errors.
+
+> **There are no tests for `preset.service.ts`.** `pnpm --filter rerun test app/api/_services/preset`
+> matches zero files and exits 1 — it cannot gate anything. The typecheck plus the function text
+> being byte-identical are what back the claim that nothing changed. Do not add a test here; Task 7
+> is where that file first gets one.
+
+**Step 6: Commit**
+
+```bash
+git add apps/ui/lib/presets/skill-markdown.ts apps/ui/app/api/_services/preset.service.ts
+git commit -m "refactor(presets): share authoredSkillMarkdown with the client service"
+```
+
+---
+
+## Task 4: Reading and writing clients
+
+**Files:**
+- Create: `apps/ui/app/api/_services/client.service.ts`
+- Test: `apps/ui/app/api/_services/client.service.test.ts`
+
+**CLAUDE.md rule, non-negotiable here:** every read goes through a typed helper (`selectMany`, `selectMaybeSingle`), every write carries its payload generic. No raw `.from(table).select(...)` for a read, not even an existence check.
+
+**Step 1: Write the view type and the column list**
+
+Create `apps/ui/app/api/_services/client.service.ts`:
+
+```ts
+import 'server-only'
+
+import type { Database } from '@/app/api/database.types'
+import { authoredSkillsFromRow, knowledgeDocsFromRow, type AuthoredSkill, type KnowledgeDoc } from '@/lib/presets/types'
+import { shortCodeOf } from '@/lib/presets/naming'
+import { selectMany, selectMaybeSingle } from '@/supabase/supabase-helpers'
+import type { SupabaseClient } from '@supabase/supabase-js'
+
+const CLIENT_COLUMNS = ['id', 'name', 'short_code', 'skills', 'knowledge', 'site_url', 'cloud_id', 'space_key', 'space_name', 'revision', 'updated_at'] as const
+
+export type ClientView = {
+    id: string
+    name: string
+    shortCode: string
+    skills: AuthoredSkill[]
+    knowledgeDocs: KnowledgeDoc[]
+    confluence: { siteUrl: string; cloudId: string; spaceKey: string; spaceName: string } | null
+    revision: number
+}
+
+export type ClientPatch = {
+    name?: string
+    shortCode?: string
+    skills?: AuthoredSkill[]
+    knowledge?: KnowledgeDoc[]
+    confluence?: { siteUrl: string; cloudId: string; spaceKey: string; spaceName: string } | null
+}
+```
+
+**Step 2: Write the failing test for `listClients`**
+
+Create `apps/ui/app/api/_services/client.service.test.ts`. Mock the Supabase helpers the way the suite already does — follow `apps/ui/app/api/_services/agent-rename.test.ts` for the shape. The first test:
+
+```ts
+it('parses a row written by an older build rather than throwing', async () => {
+    const row = { id: 'c1', name: 'Miami Dade County', short_code: 'mdc', skills: 'not-an-array', knowledge: null, site_url: null, cloud_id: null, space_key: null, space_name: null, revision: 3, updated_at: '2026-11-17T00:00:00Z' }
+    const [client] = toClientViews([row])
+    expect(client.skills).toEqual([])
+    expect(client.knowledgeDocs).toEqual([])
+    expect(client.revision).toBe(3)
+})
+```
+
+This is the `.catch([])` tolerance `CLAUDE.md` requires: a client written by an older build must render, not crash the panel.
+
+**Step 3: Run it and watch it fail**
+
+```bash
+pnpm --filter rerun test app/api/_services/client.service.test.ts
+```
+
+Expected: FAIL — `toClientViews` is not exported.
+
+**Step 4: Implement `toClientViews`, `listClients`, `getClient`**
+
+```ts
+export function toClientViews(rows: readonly Record<string, unknown>[]): ClientView[] {
+    return rows.map(row => ({
+        id: row.id as string,
+        name: row.name as string,
+        shortCode: (row.short_code as string) || '',
+        skills: authoredSkillsFromRow.parse(row.skills),
+        knowledgeDocs: knowledgeDocsFromRow.parse(row.knowledge),
+        confluence: row.cloud_id ? { siteUrl: row.site_url as string, cloudId: row.cloud_id as string, spaceKey: row.space_key as string, spaceName: row.space_name as string } : null,
+        revision: (row.revision as number) ?? 1,
+    }))
+}
+
+export async function listClients(supabase: SupabaseClient<Database>, workspaceId: number): Promise<ClientView[]> {
+    const { data } = await selectMany(supabase, 'clients', CLIENT_COLUMNS, { workspace_id: workspaceId })
+    return toClientViews(data ?? [])
+}
+```
+
+**Step 5: Run the test**
+
+Expected: PASS.
+
+**Step 6: Add create / update / delete**
+
+`short_code` is `not null`, non-blank and **unique per workspace**, so `createClient` must resolve
+a collision rather than let the insert fail: `shortCodeOf` is initials-based, and "Miami Dade
+County" / "Miami Dade City" both propose `mdc`. Write a test for this before the implementation:
+
+```ts
+it('gives the second client a free code when the proposed one is taken', async () => {
+    existingCodes = ['mdc']
+    await createClient(supabase, 7, 'user-1', 'Miami Dade City')
+    expect(captured.short_code).toBe('mdc2')
+})
+
+it('never writes a blank code, whatever the name', async () => {
+    await createClient(supabase, 7, 'user-1', '日本語')
+    expect(captured.short_code).not.toBe('')
+})
+```
+
+Resolve by reading the workspace's existing codes through `selectMany` and appending the smallest
+free integer. Do not catch the unique-violation and retry blindly — the user should see the code
+they are getting, and Task 9's form shows it in an editable field.
+
+Writes carry the generic explicitly — the verbose form, never `TablesInsert<'x'>`:
+
+```ts
+export async function createClient(supabase: SupabaseClient<Database>, workspaceId: number, userId: string, name: string): Promise<string> {
+    const { data, error } = await supabase
+        .from('clients')
+        .insert<Database['public']['Tables']['clients']['Insert']>({ workspace_id: workspaceId, name: name.trim(), short_code: shortCodeOf(name), created_by: userId })
+        .select('id')
+        .single()
+    if (error || !data) throw new Error(error?.message ?? 'Could not create the client')
+    return data.id
+}
+```
+
+`updateClient` applies the patch **and bumps `revision`** in the same statement — the revision is what the sync reads, so it must never be updated separately from the payload:
+
+```ts
+export async function updateClient(supabase: SupabaseClient<Database>, workspaceId: number, clientId: string, patch: ClientPatch, currentRevision: number): Promise<void> {
+    const { error } = await supabase
+        .from('clients')
+        .update<Database['public']['Tables']['clients']['Update']>({
+            ...(patch.name !== undefined ? { name: patch.name.trim() } : {}),
+            ...(patch.shortCode !== undefined ? { short_code: patch.shortCode.trim() } : {}),
+            ...(patch.skills !== undefined ? { skills: patch.skills } : {}),
+            ...(patch.knowledge !== undefined ? { knowledge: patch.knowledge } : {}),
+            revision: currentRevision + 1,
+            updated_at: new Date().toISOString(),
+        })
+        .eq('id', clientId)
+        .eq('workspace_id', workspaceId)
+    if (error) throw new Error(error.message)
+}
+```
+
+**Step 7: Add a test that the revision always moves**
+
+```ts
+it('bumps the revision on every save, so a stale coworker is always countable', async () => {
+    await updateClient(supabase, 7, 'c1', { skills: [] }, 4)
+    expect(captured.revision).toBe(5)
+})
+```
+
+**Step 8: Run, typecheck, grep your own diff**
+
+```bash
+pnpm --filter rerun test app/api/_services/client.service.test.ts
+pnpm --filter rerun ts-check
+git diff --cached -U0 | grep "\.from('" || true
+```
+
+Expected: tests pass, no type errors, and **every `.from('` in your diff is a write** (insert/update/delete). Any read must use a helper.
+
+**Step 9: Commit**
+
+```bash
+git add apps/ui/app/api/_services/client.service.ts apps/ui/app/api/_services/client.service.test.ts
+git commit -m "feat(clients): read and write a client, revision bumped on every save"
+```
+
+---
+
+## Task 4b: Let the engine create a skill at an explicit slug
+
+**Why this task exists.** `applyClientExtras` (Task 5) installs a client skill with
+`importSkill(..., { slug, overwrite: true })`, because an explicit slug is what makes a re-push
+replace rather than duplicate. But the engine currently refuses an explicit slug that does not
+already exist:
+
+```ts
+// apps/engine/src/http/routes/skills.ts
+const slug = input.slug ?? slugify(parsed.name)
+const existed = skillExists(agentId, slug)
+if (input.slug && !existed) return c.json({ error: 'skill not found' }, 404)
+```
+
+So the **first** install of every client skill 404s. `overwrite: true` only covers the second call.
+And because `applyClientExtras` turns engine errors into warnings, the symptom is "every coworker
+warned, no skill ever landed" — a failure that only shows up in the running app.
+
+The guard is there so a typo'd slug cannot silently create a stray skill. That intent is still
+served if creating requires `overwrite: true` to be passed explicitly: the caller is then saying
+"put this skill at this slug, replacing whatever is there", for which creating is the obvious
+meaning.
+
+**Engines are self-hosted and update independently of the app**, so this is a capability, not a
+silent contract change. No data-dir migration: nothing on disk changes shape, only which requests
+are accepted.
+
+**Files:**
+- Modify: `packages/contracts/src/health.ts` (new capability constant)
+- Modify: `apps/engine/src/http/routes/health.ts` (report it)
+- Modify: `apps/engine/src/http/routes/skills.ts` (the guard)
+- Test: `apps/engine/src/http/routes/skills.import.test.ts`
+- Modify: `apps/engine/src/http/routes/health.test.ts`
+
+**Step 1: Write the failing engine test**
+
+In `apps/engine/src/http/routes/skills.import.test.ts`, following the shape of the existing route
+tests in that directory:
+
+```ts
+it('creates a skill at an explicit slug when overwrite is set', async () => {
+    const res = await importSkill({ content: SKILL_MD, slug: 'client-a1b8d4fa-doc-format', overwrite: true })
+    expect(res.status).toBe(201)
+    expect((await res.json()).slug).toBe('client-a1b8d4fa-doc-format')
+})
+
+it('replaces, not duplicates, when the same slug is imported twice', async () => {
+    await importSkill({ content: SKILL_MD, slug: 'client-a1b8d4fa-doc-format', overwrite: true })
+    const res = await importSkill({ content: SKILL_MD_V2, slug: 'client-a1b8d4fa-doc-format', overwrite: true })
+    expect(res.status).toBe(200)
+    expect(await listSkillSlugs()).toEqual(['client-a1b8d4fa-doc-format'])
+})
+
+it('still refuses an explicit slug that does not exist when overwrite is not set', async () => {
+    const res = await importSkill({ content: SKILL_MD, slug: 'client-a1b8d4fa-doc-format' })
+    expect(res.status).toBe(404)
+})
+```
+
+That third test is the one that keeps the original guard meaningful. **Do not delete it** if it is
+inconvenient — it is the reason this change is safe.
+
+**Step 2: Run it and watch the first two fail**
+
+```bash
+pnpm --filter rerun-engine test skills.import
+```
+
+Expected: the first two FAIL with 404, the third passes already.
+
+**Step 3: Change the guard**
+
+```ts
+if (input.slug && !existed && !input.overwrite) return c.json({ error: 'skill not found' }, 404)
+```
+
+**Step 4: Add the capability**
+
+In `packages/contracts/src/health.ts`, beside the existing constants:
+
+```ts
+export const ENGINE_CAPABILITY_SKILL_IMPORT_CREATE = 'skills.import-create'
+```
+
+Report it from `apps/engine/src/http/routes/health.ts`, and extend `health.test.ts` to assert it is
+present, as that test already does for the others.
+
+**Step 5: Run the engine tests**
+
+```bash
+pnpm --filter rerun-engine test skills.import
+pnpm --filter rerun-engine test health
+pnpm --filter @rerun/contracts build
+```
+
+Expected: all green. The contracts build matters — the UI imports the constant from there.
+
+**Step 6: Commit**
+
+```bash
+git add packages/contracts/src/health.ts apps/engine/src/http/routes apps/engine/src/http/routes/skills.import.test.ts
+git commit -m "feat(engine): import a skill at an explicit slug when overwrite is set"
+```
+
+---
+
+## Task 4c: The UI says so when the engine is too old
+
+**Files:**
+- Modify: `apps/ui/lib/engine/client.ts` (a `supportsSkillImportCreate` beside the existing capability helper around line 661)
+- Modify: `apps/ui/app/api/_services/client.service.ts`
+
+`apps/ui/lib/engine/client.ts:661` already reads `/health` capabilities into a `Set`. Add a helper
+in the same shape, then have `applyClientExtras` check it **once per connection, before the skill
+loop**, and if the capability is absent push a single clear warning rather than one 404 per skill:
+
+```ts
+warnings.push(`"${agent.name}" is on a machine that needs an update before client skills can land.`)
+```
+
+Model the wording on the precedent in `apps/ui/app/api/_services/desktop.service.ts`: "The screen
+arrives with the next update of this machine." Knowledge docs are plain file writes and do not need
+the capability — install those regardless.
+
+**Test** (in `client-install.service.test.ts`, mocking the health call): an engine without the
+capability produces exactly one warning, installs no skills, and still writes the knowledge docs.
+
+**Commit:** `feat(clients): tell the user when a machine is too old for client skills`
+
+---
+
+## Task 5: Installing a client on a coworker
+
+The heart of the feature. Mirrors `applyAuthoredExtras` (`preset.service.ts:335`) — **and like it, never throws.** It accumulates warnings.
+
+**Files:**
+- Modify: `apps/ui/app/api/_services/client.service.ts`
+- Test: `apps/ui/app/api/_services/client-install.service.test.ts`
+
+**Step 1: Write the failing tests**
+
+Create `apps/ui/app/api/_services/client-install.service.test.ts`, mocking `@/lib/engine/client` as `apps/ui/app/api/v1/ai-connections/route.test.ts:1-40` does:
+
+```ts
+const importSkill = vi.fn()
+const deleteSkill = vi.fn()
+const writeFileText = vi.fn()
+const makeDir = vi.fn()
+vi.mock('@/lib/engine/client', () => ({ importSkill, deleteSkill, writeFileText, makeDir, createSkill: vi.fn() }))
+
+describe('applyClientExtras', () => {
+    it('re-pushes a skill onto its own slug so a second call replaces rather than duplicates', async () => {
+        await applyClientExtras(client, 'space-1', agent, [])
+        expect(importSkill).toHaveBeenCalledWith(
+            expect.anything(), 'engine-agent-1', expect.any(String), [],
+            { slug: 'client-a1b8d4fa-doc-format', overwrite: true },
+        )
+    })
+
+    it('collects a warning instead of throwing when the engine refuses', async () => {
+        importSkill.mockRejectedValueOnce(new Error('engine offline'))
+        const warnings: string[] = []
+        await expect(applyClientExtras(client, 'space-1', agent, warnings)).resolves.toBeUndefined()
+        expect(warnings).toHaveLength(1)
+        expect(warnings[0]).toContain('doc-format')
+    })
+
+    it('writes knowledge under the client’s own folder', async () => {
+        await applyClientExtras(client, 'space-1', agent, [])
+        expect(writeFileText).toHaveBeenCalledWith(expect.anything(), expect.any(String), 'knowledge/client-a1b8d4fa/acronyms.md', expect.any(String))
+    })
+})
+
+describe('removeClientExtras', () => {
+    it('removes the client’s skills and only those', async () => {
+        await removeClientExtras(client, 'space-1', agent, ['client-a1b8d4fa-doc-format', 'permit-intake-triage'], [])
+        expect(deleteSkill).toHaveBeenCalledTimes(1)
+        expect(deleteSkill).toHaveBeenCalledWith(expect.anything(), 'engine-agent-1', 'client-a1b8d4fa-doc-format')
+    })
+})
+```
+
+That third `removeClientExtras` test is the one that matters most. **If it ever goes green while deleting two skills, a coworker's own work is being destroyed.**
+
+**Step 2: Run and watch them fail**
+
+```bash
+pnpm --filter rerun test app/api/_services/client-install.service.test.ts
+```
+
+Expected: FAIL — `applyClientExtras` is not exported.
+
+**Step 2b: Wire the capability gate (already built, Task 4c)**
+
+`canInstallClientSkills(conn, agent, warnings)` exists in `client.service.ts`. Call it **once, right
+before the skill loop** — not per skill.
+
+> **Do not return early when it refuses.** It gates the skills and nothing else: knowledge docs are
+> plain file writes that install on any engine. An early return silently costs the coworker its
+> documents on every older machine.
+>
+> `client-install.service.test.ts` carries `it.todo('writes the knowledge docs even when the gate
+> refuses the skills')`. **Turn it into a real test in this task.** It is the only thing standing
+> between this design and that bug, and Task 4c could not write it because the function did not
+> exist yet.
+
+**Step 3: Implement**
+
+```ts
+// Mirrors applyAuthoredExtras in preset.service.ts: it never throws, it collects warnings. A
+// coworker whose engine is down keeps the skills it has and shows up as trailing the revision.
+export async function applyClientExtras(client: ClientView, spaceId: string, agent: { name: string; engine_agent_id: string | null }, warnings: string[]): Promise<void> {
+    if (!agent.engine_agent_id) return
+    if (client.skills.length === 0 && client.knowledgeDocs.length === 0) return
+
+    const conn = await getSpaceConnection(spaceId)
+    for (const skill of client.skills.filter(s => s.name.trim())) {
+        const slug = clientSkillSlug(client.id, skill.name)
+        const content = skill.raw || authoredSkillMarkdown(skill)
+        await importSkill(conn, agent.engine_agent_id, content, skill.files, { slug, overwrite: true }).catch(() => {
+            warnings.push(`"${agent.name}" did not get "${skill.name.trim()}" from ${client.name}.`)
+        })
+    }
+    if (client.knowledgeDocs.length > 0) {
+        const base = `/agents/${agent.engine_agent_id}/files`
+        const dir = clientKnowledgeDir(client.id)
+        await makeDir(conn, base, dir).catch(() => {})
+        for (const doc of client.knowledgeDocs.filter(d => d.path.trim())) {
+            await writeFileText(conn, base, `${dir}/${doc.path.trim()}`, doc.content).catch(() => {
+                warnings.push(`"${agent.name}" did not get the document "${doc.path.trim()}".`)
+            })
+        }
+    }
+}
+```
+
+`removeClientExtras` takes the coworker's existing slugs and deletes only those matching `isClientSkillSlug(slug, client.id)`.
+
+
+### Removing what the client dropped
+
+`applyClientExtras` installs; nothing yet removes. Delete or rename a skill on a client and the old
+slug stays installed on every coworker forever — `removeClientExtras` only runs when a Box *changes*
+client. Editing a client has to reconcile too, or the fleet accumulates skills their client no
+longer has.
+
+Reconcile **statelessly**: the engine is the truth, and the client row is the intent.
+
+```ts
+const wanted = new Set(client.skills.filter(s => s.name.trim()).map(s => clientSkillSlug(client.id, s.name)))
+const installed = await listSkillSummaries(conn, agent.engine_agent_id)   // ?summary=1, slugs only
+for (const summary of installed) {
+    if (!isClientSkillSlug(client.id, summary.slug)) continue   // never touch the coworker's own
+    if (wanted.has(summary.slug)) continue
+    await deleteSkill(conn, agent.engine_agent_id, summary.slug).catch(() => {
+        warnings.push(`"${agent.name}" kept "${summary.slug}", which ${client.name} no longer has.`)
+    })
+}
+```
+
+Use `listSkillSummaries` (`apps/ui/lib/engine/client.ts:768`), not `listSkills` — the summary
+carries the slug, which is all `isClientSkillSlug` needs, and it avoids pulling every skill body
+back over the wire for a comparison that only reads names.
+
+**Do not record the installed slugs on the client row instead.** That is a second copy of state
+with no path back to the truth: it drifts every time a data-dir archive is restored, an agent is
+imported, or someone deletes a skill from the agent panel. The engine already knows what is
+installed — ask it.
+
+**Push before you delete.** If an import fails, the coworker keeps the skill it had rather than
+losing it to a reconcile that ran first.
+
+#### The guard that makes this safe
+
+> **An empty skill list must never authorize deletions.**
+>
+> `client.skills` is parsed with `authoredSkillsFromRow`, which is `.catch([])`
+> (`apps/ui/lib/presets/types.ts:38`). A malformed or half-migrated `clients.skills` jsonb
+> therefore parses as **zero skills** rather than failing — and a reconcile that trusts it reads
+> that as "this client dropped everything" and wipes its skills off every coworker in every Box,
+> silently, from one bad row.
+>
+> So: skip the removal pass entirely when `client.skills` is empty, or parse with the uncaught
+> schema here so a malformed row throws into a warning instead of becoming an empty array. The
+> tolerance that lets an old row still *render* must not double as permission to delete.
+
+Everything else about this fails in the safe direction: a truncated or failed `listSkillSummaries`
+yields fewer deletions, never more.
+
+**Test it.** These three, and the third is the one that matters:
+
+```ts
+it('removes a skill the client no longer has', async () => { /* installed has 2, client wants 1 */ })
+it('never removes a skill outside the client namespace', async () => { /* 'permit-intake-triage' survives */ })
+it('deletes nothing when the client parses to zero skills', async () => {
+    const malformed = { ...client, skills: [] }          // what .catch([]) produces from a bad row
+    await applyClientExtras(malformed, 'space-1', agent, [])
+    expect(deleteSkill).not.toHaveBeenCalled()
+})
+```
+
+**Step 4: Run the tests**
+
+Expected: PASS, 4 tests.
+
+**Step 5: Commit**
+
+```bash
+git add apps/ui/app/api/_services/client.service.ts apps/ui/app/api/_services/client-install.service.test.ts
+git commit -m "feat(clients): install and remove a client's skills on a coworker"
+```
+
+---
+
+## Task 6: Syncing every coworker of a client
+
+**Files:**
+- Modify: `apps/ui/app/api/_services/client.service.ts`
+- Test: extend `client-install.service.test.ts`
+
+`syncClient(clientId)` finds every Box with that `client_id`, every agent in those Boxes, calls `applyClientExtras` on each, and writes `agents.client_revision = client.revision` **only for the ones that succeeded**.
+
+**Step 1: Write the failing test**
+
+```ts
+it('marks only the coworkers whose install actually landed', async () => {
+    importSkill.mockRejectedValueOnce(new Error('offline'))   // the first agent fails
+    const result = await syncClient(supabase, 7, 'c1')
+    expect(result.synced).toBe(1)
+    expect(result.pending).toBe(1)
+    expect(markedRevisions).toEqual([{ agentId: 'a2', revision: 5 }])
+})
+```
+
+**Step 2: Run, watch it fail, implement, run again.**
+
+The count the UI shows comes from the same source of truth:
+
+```ts
+export async function pendingSyncCount(supabase: SupabaseClient<Database>, workspaceId: number, clientId: string, revision: number): Promise<number>
+```
+
+— a count of agents in Boxes with this `client_id` whose `client_revision` is null or `< revision`. Use `selectCount`, not a raw query.
+
+**Step 3: Commit**
+
+```bash
+git commit -am "feat(clients): sync every coworker of a client, counting what did not land"
+```
+
+---
+
+## Task 7: Hiring into a Box that has a client
+
+**Files:**
+- Modify: `apps/ui/app/api/_services/preset.service.ts` (the hire path that calls `applyAuthoredExtras`)
+
+**Step 1: Write the failing tests**
+
+Create `apps/ui/app/api/_services/preset.hire.test.ts` with exactly these three cases, and no more
+— the rest of the hire path stays as untested as it is today, and Task 12 drives a real hire in the
+running app:
+
+```ts
+it('installs the client’s skills after the preset’s when the Box has a client', async () => {
+    await hireFromPreset({ ...params, spaceId: 'space-with-client' })
+    expect(applyClientExtras).toHaveBeenCalled()
+    expect(order).toEqual(['authored', 'client'])   // the preset first, then the client
+})
+
+it('does not reach for a client when the Box has none', async () => {
+    await hireFromPreset({ ...params, spaceId: 'space-without-client' })
+    expect(applyClientExtras).not.toHaveBeenCalled()
+})
+
+it('still hires when the client install fails', async () => {
+    applyClientExtras.mockRejectedValueOnce(new Error('engine offline'))
+    const outcome = await hireFromPreset({ ...params, spaceId: 'space-with-client' })
+    expect(outcome.agentId).toBeTruthy()
+    expect(outcome.warnings.length).toBeGreaterThan(0)
+})
+```
+
+That third case is the important one: a coworker must still arrive when its client's skills cannot.
+A hire that throws because an engine was briefly unreachable would be a worse bug than the missing
+skills.
+
+**Step 2: Implement** — after `applyAuthoredExtras(...)`, look up the Box's client and call `applyClientExtras`, then set the new agent's `client_revision`.
+
+**Step 3: Run your new test and the full suite**
+
+```bash
+pnpm --filter rerun test app/api/_services/preset.hire.test.ts
+pnpm --filter rerun test
+```
+
+> **You are writing the first test `preset.service.ts` has ever had**, so you bear the setup cost:
+> mocking `createServiceRoleClient`, the engine client, and `getSpaceConnection`. Follow
+> `apps/ui/app/api/v1/ai-connections/route.test.ts` for the mocking shape. Budget for this — it is
+> most of the task, and the two-line change to the hire path is the small part.
+>
+> The full suite is the real regression gate here, since nothing else covers this file.
+
+**Step 4: Commit.**
+
+---
+
+## Task 8: Server actions
+
+**Files:**
+- Create: `apps/ui/app/api/_actions/client.actions.ts`
+
+Copy the shape from `preset.actions.ts` exactly: `'use server'`, `requireWorkspaceContext()`, every function returns `ActionResult<T>`, every error is caught and returned as `{ ok: false, error }` — never thrown at the client.
+
+Actions: `listClientsAction`, `createClientAction`, `updateClientAction` (then `syncClient`, returning the counts), `deleteClientAction`, `setBoxClientAction`, `retryClientSyncAction`.
+
+`updateClientAction` must surface a short-code collision as a **field error on the code input**, not a toast. `updateClient` deliberately does not auto-rename a code the user typed — they chose it, so they get told rather than silently corrected — which means the Postgres unique-violation message reaches the action, and the form has to put it where the user can see which field is wrong.
+
+`setBoxClientAction` is the one with teeth: it removes the previous client's extras from every coworker in the Box before applying the new client's. Guard it with `assertSpaceAccess` — only a manager of the Box may change its client.
+
+**Commit:** `feat(clients): server actions for the clients panel and the Box pointer`
+
+---
+
+## Task 8b: A coworker's client follows it between Boxes
+
+**Why.** `agent.service.ts:103` moves a coworker with `{ space_id, col, row }` and nothing else.
+So a coworker moved from a Miami-Dade Box into an Acme Box keeps Miami-Dade's skills — and worse,
+reads as **synced**: its `client_revision` is 5 from the old client, Acme is at revision 1, and
+`pendingSyncCount` counts agents *below* the revision, so it is never picked up. The Box says Acme;
+the coworker works to Miami-Dade's house style; nothing anywhere disagrees.
+
+The same applies to creating a coworker in a Box and duplicating one into another.
+
+**The precedent to mirror, exactly.** Project knowledge already solves this shape:
+
+- `apps/ui/app/api/_services/agent.service.ts:201` — a private `syncProjectNote(agentId)` with a
+  **lazy import** (`project-knowledge.service` reaches back into services `agent.service` feeds) and
+  a `try/catch` that swallows, because the coworker works without the note.
+- `apps/ui/app/api/_actions/agent.actions.ts:128` — `await syncAgentProjectNote(agentId).catch(() => {})`
+  after a successful move.
+
+Follow that structure. Do not invent a third mechanism, and do not make the move fail when the
+reconcile does — a coworker that moved but kept the wrong skills is recoverable; a move that errors
+out leaves the board wrong.
+
+**Files:**
+- Modify: `apps/ui/app/api/_services/client.service.ts` (a `syncAgentClient(agentId)` entry point)
+- Modify: `apps/ui/app/api/_services/agent.service.ts` (create / import path, beside `syncProjectNote`)
+- Modify: `apps/ui/app/api/_actions/agent.actions.ts` (after a successful move, beside the project note)
+- Test: `apps/ui/app/api/_services/client-move.service.test.ts`
+
+**What `syncAgentClient(agentId)` does**, reusing what already exists:
+
+1. Read the agent's current Box and that Box's `client_id`.
+2. Remove any **other** client's namespace from the coworker. `isClientSkillSlug(clientId, slug)`
+   only answers about one client, so removal here is "every `client-*` slug that is not this Box's
+   client" — read the installed slugs with `listSkillSummaries` and drop the rest.
+3. If the Box has a client, `applyClientExtras`, then set `client_revision` to that client's
+   revision — **only when nothing warned**, exactly as Task 6 and Task 7 do.
+4. If the Box has no client, clear `client_revision` to null after the removal.
+
+**The test that matters most:** a coworker moved from a Box with client A into a Box with client B
+ends with B's skills, without A's, and with `client_revision` equal to B's revision — not A's.
+A test asserting only that B's skills arrived would pass while A's were still installed.
+
+**Also test:** a move into a Box with no client removes the old client's skills and clears the
+revision; a reconcile that throws does not fail the move.
+
+**Constraints:** never run `pnpm db:reset` or anything that drops the local database. Run only your
+own test file plus the five existing client/hire/action test files. Comments only where they carry
+non-obvious reasoning.
+
+---
+
+## Task 9: The Clients panel
+
+**Files:**
+- Modify: `apps/ui/lib/settings/panels.ts` (add `'clients'` to `SETTINGS_PANELS` and a label)
+- Create: `apps/ui/components/clients/ClientsDialog.tsx`, `ClientsTable.tsx`, `ClientDetail.tsx`
+
+Mockup: `docs/plans/2026-11-17-clients-mockup.html`, section 1 and 2. Open it next to your editor.
+
+Non-negotiables, each from a repo skill:
+
+- A dialog holding a list is a `PanelDialogContent`, never a bare `DialogContent` (`create-dialog`).
+- Every field label goes through `Field` (`form-field-labels`).
+- Every status pill is the shared `Badge` with a tone — `green` Synced, `orange` N to sync, `neutral` Not in use (`shared-badge`).
+- Loading shows `SkeletonPanelRows` shaped like the table, never a centred spinner (`loading-skeletons`).
+- Deleting a client and changing a Box's client both go through `ConfirmDialog` naming the count (`confirm-destructive-actions`).
+- Keep each file under ~250 lines; the table, the detail and the skill editor are separate components (`split-components`).
+
+Search is client-side over the loaded list for now; the table is sortable by Client, Skills, Docs, Coworkers.
+
+**Responsive, checked before you call it done:** at 375px the table drops to stacked rows with the search pinned — it does not scroll sideways. At 768px and up it is a table. Check a 700px-tall viewport too: the header and footer must stay reachable with the list scrolling between them.
+
+**Commit:** `feat(clients): the Clients panel, searchable and sortable`
+
+---
+
+## Task 10: The Box pointer
+
+**Files:**
+- Modify: `apps/ui/components/builder/BoardContextMenu.tsx` (add the item next to Project knowledge, around line 152)
+- Create: `apps/ui/components/clients/BoxClientDialog.tsx`
+
+The menu item carries the current client's name on its right, so the dialog is not needed just to check. It gets an icon, because every neighbour has one (`menu-item-icons`).
+
+Setting a client on a Box that already has coworkers installs its skills on all of them — behind a `ConfirmDialog` naming the count.
+
+**Commit:** `feat(clients): point a Box at its client from the board`
+
+---
+
+## Task 11: The Start project step
+
+**Files:**
+- Modify: `apps/ui/components/presets/StartProjectPage.tsx` (the Client field, line ~293)
+
+The free-text input becomes a combobox over `clients`, **still typeable**. Picking a known client prefills the short code and the Confluence space. Typing an unknown name offers to create it.
+
+**Do not break what is there.** `autoFilled` (line 78) exists so the wiki pick never clobbers a value someone typed. Your combobox must respect the same rule: a typed Client is never overwritten by a pick.
+
+**Commit:** `feat(clients): pick a known client when starting a project`
+
+---
+
+## Task 12: Verify in the running app
+
+Required by `CLAUDE.md` — this feature shows on screen, so tests and typecheck are not enough.
+
+**Step 1: Full suite and typecheck**
+
+```bash
+pnpm --filter rerun test
+pnpm --filter rerun ts-check
+```
+
+**Step 2: Write the scenario**
+
+Create a scenario under `.context/verify/` clicking the whole path: create a client → add a skill → attach it to a Box → hire a coworker → edit the skill → see the sync count land.
+
+**Step 3: Run the verifier on the local stack only**
+
+```bash
+pnpm db:start
+pnpm cloud env:local
+pnpm verify:ui
+```
+
+**Step 4: Look at every capture.** Both themes, every width. Fix what the change broke, run it again.
+
+**Step 5: Confirm the engine side by hand**
+
+```bash
+curl -s -H "Authorization: Bearer $RERUN_ENGINE_API_KEY" http://localhost:3000/agents/<id>/skills
+```
+
+Expected: the client's skill present under its namespaced slug. Edit the skill in the app, re-run: **the same slug, updated content — not a second skill.** This is the one thing a mocked test cannot prove.
+
+**Step 6: Commit**
+
+```bash
+git add .context/verify
+git commit -m "test(clients): verify scenario for the client install path"
+```
+
+---
+
+## Definition of done
+
+- `pnpm --filter rerun test` and `pnpm --filter rerun ts-check` both green.
+- `git diff` grepped for `.from('`: every hit is a write carrying its payload generic.
+- `pnpm verify:ui` captures reviewed at every width, both themes, no console errors.
+- Editing a client twice leaves **one** skill on the engine, not two.
+- Changing a Box's client removes the old client's skills and leaves the coworker's own untouched.
+- No new step in `DATA_DIR_MIGRATIONS` — if you found yourself needing one, stop: something is writing engine state outside the HTTP API, and the design says nothing should.

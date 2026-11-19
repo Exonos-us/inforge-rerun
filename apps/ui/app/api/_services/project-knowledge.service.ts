@@ -3,20 +3,17 @@ import { enableGlobalApp, ensureGlobalOauthAccess, markGlobalNeedsReconnect } fr
 import { getWorkspaceConnection } from '@/app/api/_services/workspace-engine.service'
 import { atlassianSession, getSite, listEngagements, listSpaces, pageIndex, type ConfluenceEngagement, type ConfluenceSpace, type PageIndexEntry } from '@/lib/atlassian/confluence'
 import { AtlassianAuthError, type AtlassianMcpSession } from '@/lib/atlassian/mcp'
-import { deleteFile, makeDir, writeFileText } from '@/lib/engine/client'
-import type { EngineConnection } from '@/lib/engine/types'
+import { refreshProjectNote } from '@/app/api/_services/project-note.service'
 import { entriesOfSlug, readRegistry } from '@/lib/services/registry'
 import type { Database } from '@/app/api/database.types'
 import { createServiceRoleClient } from '@/supabase/serviceRole'
-import { selectMany, selectMaybeSingle, selectSingle } from '@/supabase/supabase-helpers'
+import { selectMany, selectMaybeSingle } from '@/supabase/supabase-helpers'
 
 // Project knowledge: a Box points at the Confluence engagement it is about. The pages stay in
 // Confluence — the Company Brain is untouched — and every coworker of the Box carries a note
 // (.rerun/project.md on its engine) telling it where to read before working and where to write
 // back. Reads here ride the workspace's Atlassian account from Global apps.
 
-const PROJECT_NOTE_DIR = '.rerun'
-const PROJECT_NOTE_PATH = '.rerun/project.md'
 const ATLASSIAN_SLUG = 'atlassian'
 const INDEX_STALE_MS = 60 * 60 * 1000
 
@@ -100,53 +97,21 @@ function asIndex(value: unknown): PageIndexEntry[] {
     return Array.isArray(value) ? (value as PageIndexEntry[]) : []
 }
 
-// What a coworker of the Box reads in its system prompt. Written to the engine, next to the
-// services registry, so unlinking is deleting one file.
-function buildProjectNote(row: KnowledgeRow, boxName: string): string {
-    const scope = row.page_title ? `the engagement "${row.page_title}"` : `the whole client space`
-    const index = asIndex(row.page_index)
-    const indexLines = index.length ? `Page index (titles under it):\n${index.map(page => `- ${page.title}`).join('\n')}` : ''
-    return [
-        `# Project knowledge`,
-        `Your Box "${boxName}" is the project for ${scope} in the Confluence space "${row.space_name}" (key ${row.space_key}, site ${row.site_url}).${row.page_title ? ` Its root page is "${row.page_title}" (page id ${row.page_id}).` : ''}`,
-        `These pages are this project's brain, shared with people and other AIs outside Rerun. Before working on anything about this project, read the relevant pages with your atlassian tools (search within space ${row.space_key}). Write back what you learn so the brain stays current: decisions on the Decisions page, meeting preparation under Meeting preps, unknowns under Open questions, each inside this page tree. Edit carefully and comment when unsure; never restructure pages you did not create.`,
-        indexLines,
-    ]
-        .filter(Boolean)
-        .join('\n\n')
-}
-
 async function boxAgents(spaceId: string): Promise<{ id: string; name: string; engineAgentId: string | null }[]> {
     const supabase = createServiceRoleClient()
     const { data } = await selectMany(supabase, 'agents', ['id', 'name', 'engine_agent_id'] as const, { space_id: spaceId })
     return (data ?? []).map(agent => ({ id: agent.id, name: agent.name, engineAgentId: agent.engine_agent_id }))
 }
 
-function filesBase(engineAgentId: string): string {
-    return `/agents/${engineAgentId}/files`
-}
-
-async function writeProjectNote(conn: EngineConnection, engineAgentId: string, note: string): Promise<void> {
-    await makeDir(conn, filesBase(engineAgentId), PROJECT_NOTE_DIR).catch(() => {})
-    await writeFileText(conn, filesBase(engineAgentId), PROJECT_NOTE_PATH, note)
-}
-
-async function removeProjectNote(conn: EngineConnection, engineAgentId: string): Promise<void> {
-    await deleteFile(conn, filesBase(engineAgentId), PROJECT_NOTE_PATH)
-}
-
-async function pushNotesToBox(workspaceId: number, spaceId: string, row: KnowledgeRow | null): Promise<string[]> {
+async function pushNotesToBox(workspaceId: number, spaceId: string): Promise<string[]> {
     const warnings: string[] = []
     const agents = await boxAgents(spaceId)
     if (!agents.length) return warnings
     const conn = await getWorkspaceConnection(workspaceId)
-    const { data: space } = await selectSingle(createServiceRoleClient(), 'spaces', ['name'] as const, { id: spaceId })
-    const note = row ? buildProjectNote(row, space?.name ?? 'this project') : null
     for (const agent of agents) {
         if (!agent.engineAgentId) continue
         try {
-            if (note) await writeProjectNote(conn, agent.engineAgentId, note)
-            else await removeProjectNote(conn, agent.engineAgentId)
+            await refreshProjectNote(conn, agent.engineAgentId, spaceId)
         } catch (err) {
             warnings.push(`${agent.name}: ${err instanceof Error ? err.message : 'could not update the project note'}`)
         }
@@ -212,8 +177,7 @@ export async function linkProjectKnowledge(params: { actor: Actor; spaceId: stri
     const { error } = await supabase.from('space_knowledge').upsert<Database['public']['Tables']['space_knowledge']['Insert']>(payload, { onConflict: 'space_id' })
     if (error) throw new Error(`Failed to link the engagement: ${error.message}`)
 
-    const row = await knowledgeRow(spaceId)
-    const warnings = [...(await pushNotesToBox(workspaceId, spaceId, row)), ...(await enableAtlassianForBox(workspaceId, spaceId, access.access.connection.id, actor))]
+    const warnings = [...(await pushNotesToBox(workspaceId, spaceId)), ...(await enableAtlassianForBox(workspaceId, spaceId, access.access.connection.id, actor))]
     return { warnings }
 }
 
@@ -222,7 +186,7 @@ export async function unlinkProjectKnowledge(actor: Actor, spaceId: string): Pro
     const supabase = createServiceRoleClient()
     const { error } = await supabase.from('space_knowledge').delete().eq('space_id', spaceId)
     if (error) throw new Error(`Failed to unlink: ${error.message}`)
-    await pushNotesToBox(actor.workspaceId, spaceId, null).catch(() => {})
+    await pushNotesToBox(actor.workspaceId, spaceId).catch(() => {})
 }
 
 async function agentAtlassianStates(workspaceId: number, spaceId: string, connectionId: string | null): Promise<ProjectKnowledgeAgent[]> {
@@ -310,12 +274,6 @@ export async function syncAgentProjectNote(agentId: string): Promise<void> {
     const supabase = createServiceRoleClient()
     const { data: agent } = await selectMaybeSingle(supabase, 'agents', ['space_id', 'workspace_id', 'engine_agent_id'] as const, { id: agentId })
     if (!agent?.engine_agent_id) return
-    const row = await knowledgeRow(agent.space_id)
     const conn = await getWorkspaceConnection(agent.workspace_id)
-    if (!row) {
-        await removeProjectNote(conn, agent.engine_agent_id)
-        return
-    }
-    const { data: space } = await selectSingle(supabase, 'spaces', ['name'] as const, { id: agent.space_id })
-    await writeProjectNote(conn, agent.engine_agent_id, buildProjectNote(row, space?.name ?? 'this project'))
+    await refreshProjectNote(conn, agent.engine_agent_id, agent.space_id)
 }

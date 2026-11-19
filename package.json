@@ -28,7 +28,8 @@
         "db:start": "supabase start",
         "db:stop": "supabase stop",
         "db:reset": "supabase db reset",
-        "db:fresh:local": "supabase start && supabase db reset"
+        "db:fresh:local": "supabase start && supabase db reset",
+        "db:types": "npx --yes supabase@2.117.0 gen types typescript --local --schema public | node scripts/patch-db-types.mjs packages/db/src/database.types.ts"
     },
     "devDependencies": {
         "@react-email/preview-server": "5.2.10",

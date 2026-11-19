@@ -35,7 +35,7 @@ export function AttachmentLightbox({ agentId, paths, names, index, rawUrlFor, re
         filePath => (readFile ? readFile(filePath) : agentId ? readFileAction(agentId, filePath) : Promise.resolve({ content: '', truncated: false })),
         [readFile, agentId]
     )
-    const { content, loading, error } = useFileContent({ path, name, read })
+    const { content, truncated, loading, error } = useFileContent({ path, name, read })
 
     return (
         <Dialog open onOpenChange={open => !open && onClose()}>
@@ -62,7 +62,7 @@ export function AttachmentLightbox({ agentId, paths, names, index, rawUrlFor, re
                     </Button>
                 </div>
                 <div className="min-h-0 flex-1 overflow-hidden pb-[env(safe-area-inset-bottom)] sm:pb-0">
-                    {error ? <p className="p-3 text-xs text-destructive">{error}</p> : <FilePreview fileName={name} content={content} rawUrl={rawUrl} loading={loading} />}
+                    {error ? <p className="p-3 text-xs text-destructive">{error}</p> : <FilePreview fileName={name} content={content} rawUrl={rawUrl} loading={loading} truncated={truncated} />}
                 </div>
             </DialogContent>
         </Dialog>

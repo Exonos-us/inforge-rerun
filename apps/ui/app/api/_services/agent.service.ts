@@ -192,6 +192,7 @@ export async function createAgent(params: CreateAgentParams) {
     }
 
     await syncProjectNote(agent.id)
+    await syncBoxClient(agent.id)
     return agent
 }
 
@@ -204,6 +205,19 @@ async function syncProjectNote(agentId: string): Promise<void> {
         await syncAgentProjectNote(agentId)
     } catch {
         // The coworker works without the note; the next link or move rewrites it.
+    }
+}
+
+// And the client of that Box, on the same terms: a coworker created in an engagement's Box starts
+// with its skills, and a copy that landed in another one drops the skills of the Box it was copied
+// from. Lazy import for the same reason, and the same swallow: a coworker carrying the wrong house
+// style is recoverable by a sync, a creation that fails here is not.
+async function syncBoxClient(agentId: string): Promise<void> {
+    try {
+        const { syncAgentClient } = await import('@/app/api/_services/client.service')
+        await syncAgentClient(agentId)
+    } catch {
+        // The next move, or the client's own sync, comes back for it.
     }
 }
 
@@ -268,6 +282,7 @@ export async function importAgent(params: ImportAgentParams) {
     if (!enabled) await pauseAgentSchedules(agent.id).catch(err => console.error('[activation] failed to pause the schedules of an imported agent', agent.id, err))
 
     await syncProjectNote(agent.id)
+    await syncBoxClient(agent.id)
     return { agent, imported }
 }
 
@@ -358,6 +373,7 @@ export async function duplicateAgent(params: DuplicateAgentParams): Promise<Dupl
 
     // The copied folder carries the source's project note; the copy's own Box decides it.
     await syncProjectNote(agent.id)
+    await syncBoxClient(agent.id)
     return { agent, schedules: copy.schedules, triggers: copy.triggers }
 }
 

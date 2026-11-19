@@ -15,6 +15,7 @@ import {
     ENGINE_CAPABILITY_FILES_STREAM,
     ENGINE_CAPABILITY_FOREMAN_FILES,
     ENGINE_CAPABILITY_SCHEDULE_RENAME,
+    ENGINE_CAPABILITY_SKILL_IMPORT_CREATE,
     engineDbGroupsSchema,
     engineRowUpdateResultSchema,
     engineTableViewSchema,
@@ -685,6 +686,10 @@ export async function supportsCustomProvider(conn: EngineConnection): Promise<bo
 
 export async function supportsScheduleRename(conn: EngineConnection): Promise<boolean> {
     return (await engineCapabilities(conn)).has(ENGINE_CAPABILITY_SCHEDULE_RENAME)
+}
+
+export async function supportsSkillImportCreate(conn: EngineConnection): Promise<boolean> {
+    return (await engineCapabilities(conn)).has(ENGINE_CAPABILITY_SKILL_IMPORT_CREATE)
 }
 
 // --- Desktop ---
