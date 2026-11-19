@@ -1,4 +1,7 @@
 import type { Database } from '@/app/api/database.types'
+const { refreshProjectNote } = vi.hoisted(() => ({ refreshProjectNote: vi.fn(async () => {}) }))
+vi.mock('@/app/api/_services/project-note.service', async importOriginal => ({ ...(await importOriginal<object>()), refreshProjectNote }))
+
 import { selectCount, selectMany, selectMaybeSingle } from '@/supabase/supabase-helpers'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { beforeEach, describe, expect, it, vi } from 'vitest'

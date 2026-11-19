@@ -15,6 +15,9 @@ vi.mock('@/supabase/supabase-helpers', () => ({ selectMany: vi.fn(), selectMaybe
 
 const conn = { baseUrl: 'https://engine.test', apiKey: 'k' }
 vi.mock('@/app/api/_services/space.service', () => ({ getSpaceConnection }))
+const { refreshProjectNote } = vi.hoisted(() => ({ refreshProjectNote: vi.fn(async () => {}) }))
+vi.mock('@/app/api/_services/project-note.service', async importOriginal => ({ ...(await importOriginal<object>()), refreshProjectNote }))
+
 
 import { applyClientExtras, canInstallClientSkills, removeClientExtras, type ClientView } from './client.service'
 

@@ -9,6 +9,7 @@ import type { EngineConnection } from '@/lib/engine/types'
 import { shortCodeOf } from '@/lib/presets/naming'
 import { authoredSkillMarkdown } from '@/lib/presets/skill-markdown'
 import { authoredSkillsFromRow, knowledgeDocsFromRow, type AuthoredSkill, type KnowledgeDoc } from '@/lib/presets/types'
+import { refreshProjectNote, toClientNote } from '@/app/api/_services/project-note.service'
 import { createServiceRoleClient } from '@/supabase/serviceRole'
 import { selectCount, selectMany, selectMaybeSingle, type Filters } from '@/supabase/supabase-helpers'
 
@@ -175,13 +176,18 @@ export async function applyClientExtras(client: ClientView, spaceId: string, age
     if (!engineAgentId) return
     const skills = client.skills.filter(skill => skill.name.trim())
     const docs = client.knowledgeDocs.filter(doc => doc.path.trim())
-    if (skills.length === 0 && docs.length === 0) return
 
     const conn = await getSpaceConnection(spaceId).catch(() => null)
     if (!conn) {
         warnings.push(`"${agent.name}" did not get ${client.name}'s skills and documents: its machine could not be reached.`)
         return
     }
+    // Who the coworker works for is stated whether or not the client brings anything else: a skill
+    // it has to pick is not the same as knowing whose work this is.
+    await refreshProjectNote(conn, engineAgentId, spaceId, toClientNote({ id: client.id, name: client.name, short_code: client.shortCode, skills: client.skills, knowledge: client.knowledgeDocs })).catch(() => {
+        warnings.push(`"${agent.name}" was not told it works for ${client.name}.`)
+    })
+    if (skills.length === 0 && docs.length === 0) return
     // The gate stands between the skills and nothing else: the documents below are plain file
     // writes and land on a machine of any age.
     if (skills.length > 0 && (await canInstallClientSkills(conn, agent, warnings))) {
@@ -232,6 +238,9 @@ export async function removeClientExtras(client: ClientView, spaceId: string, ag
     }
     await deleteFile(conn, `/agents/${engineAgentId}/files`, clientKnowledgeDir(client.id)).catch(() => {
         warnings.push(`"${agent.name}" kept the documents of ${client.name}.`)
+    })
+    await refreshProjectNote(conn, engineAgentId, spaceId, null).catch(() => {
+        warnings.push(`"${agent.name}" was not told it no longer works for ${client.name}.`)
     })
 }
 
