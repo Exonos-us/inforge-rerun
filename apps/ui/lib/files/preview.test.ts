@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { ArchiveIcon, BinaryIcon, Code2 } from '@/lib/icons'
-import { fileExtension, filePreviewKind, fileTypeIcon, isArchive, isCode } from './preview'
+import { fileExtension, filePreviewKind, fileTypeIcon, isArchive, isCode, isHtmlDocument } from './preview'
 
 describe('fileExtension', () => {
     it('lowercases the last extension and has none without a dot', () => {
@@ -23,6 +23,24 @@ describe('filePreviewKind', () => {
         expect(filePreviewKind('notes.md')).toBe('text')
         expect(filePreviewKind('Dockerfile')).toBe('text')
         expect(filePreviewKind('data.xyz')).toBe('text')
+    })
+})
+
+describe('isHtmlDocument', () => {
+    it('is a page whatever the case or the spelling of the extension', () => {
+        expect(isHtmlDocument('brief.html')).toBe(true)
+        expect(isHtmlDocument('BRIEF.HTM')).toBe(true)
+    })
+
+    it('leaves the other text files alone', () => {
+        expect(isHtmlDocument('index.ts')).toBe(false)
+        expect(isHtmlDocument('notes.md')).toBe(false)
+        expect(isHtmlDocument('page.html.bak')).toBe(false)
+    })
+
+    // A page is still read as text, which is what gets it a `content` to render.
+    it('stays a text file to the viewer', () => {
+        expect(filePreviewKind('brief.html')).toBe('text')
     })
 })
 

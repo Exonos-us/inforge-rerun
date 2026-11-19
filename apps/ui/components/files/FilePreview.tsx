@@ -2,17 +2,20 @@
 
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { filePreviewKind } from '@/lib/files/preview'
+import { filePreviewKind, isHtmlDocument } from '@/lib/files/preview'
 import { DownloadIcon, FileIcon } from '@/lib/icons'
+
+import { HtmlFilePreview } from './HtmlFilePreview'
 
 type FilePreviewProps = {
     fileName: string
     content: string | null
     rawUrl: string
     loading: boolean
+    truncated?: boolean
 }
 
-export function FilePreview({ fileName, content, rawUrl, loading }: FilePreviewProps) {
+export function FilePreview({ fileName, content, rawUrl, loading, truncated = false }: FilePreviewProps) {
     if (loading) return <FilePreviewSkeleton />
 
     const kind = filePreviewKind(fileName)
@@ -41,6 +44,7 @@ export function FilePreview({ fileName, content, rawUrl, loading }: FilePreviewP
         )
     }
     if (kind === 'text' && content !== null) {
+        if (isHtmlDocument(fileName)) return <HtmlFilePreview fileName={fileName} content={content} truncated={truncated} />
         return <pre className="h-full overflow-auto p-3 text-xs font-mono whitespace-pre-wrap break-all">{content}</pre>
     }
 

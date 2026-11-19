@@ -105,7 +105,7 @@ export function FileDetail({ name, path, rawUrl, readFile, siblings, onBack, onD
                 />
             </PanelEditorHeader>
             <div key={path} ref={previewRef} className="flex-1 min-h-0 overflow-hidden">
-                {error ? <p className="p-3 text-xs text-destructive">{error}</p> : <FilePreview fileName={name} content={content} rawUrl={rawUrl} loading={loading} />}
+                {error ? <p className="p-3 text-xs text-destructive">{error}</p> : <FilePreview fileName={name} content={content} rawUrl={rawUrl} loading={loading} truncated={truncated} />}
             </div>
             {editingPath === path && <FileEditorDialog fileName={name} initialContent={content ?? ''} onSave={save} onSaved={saved} onClose={() => setEditingPath(null)} />}
         </PanelEditorShell>
