@@ -22,6 +22,8 @@ const nextConfig: NextConfig = {
   },
   experimental: {
     serverActions: { bodySizeLimit: "64mb" },
+    // Set by `next upgrade --agent=security`: keeps the app on the security channel.
+    agentUpgrade: "security",
   },
   // The brand pages live in the back office of Rerun Cloud, an app of its own.
   async redirects() {
